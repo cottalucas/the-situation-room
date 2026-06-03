@@ -75,10 +75,22 @@ function commit(next) {
   listeners.forEach((fn) => fn());
 }
 
-function chatsFor(decisions) {
+/** Message types persisted to Firestore and rehydrated on load. Welcome, play,
+ * and loading cards stay transient UI only. */
+const PERSISTED_MESSAGE_TYPES = new Set(["user", "updated", "note", "added", "fallback"]);
+
+function welcomeMessage() {
+  return [{ id: mid(), type: "welcome", body: WELCOME }];
+}
+
+/** Resolve the chat for each decision. Existing in-memory chat wins (keeps
+ * optimistic turns and avoids flicker); otherwise seed from the persisted
+ * Firestore history, falling back to the welcome card. */
+function chatsFor(decisions, loadedChats = {}) {
   const chats = {};
   decisions.forEach((d) => {
-    chats[d.id] = state.chats[d.id] || [{ id: mid(), type: "welcome", body: WELCOME }];
+    const persisted = loadedChats[d.id];
+    chats[d.id] = state.chats[d.id] || (persisted && persisted.length ? persisted : welcomeMessage());
   });
   return chats;
 }
@@ -126,7 +138,7 @@ export async function connect(authedUid) {
       uid,
       (loaded) => {
         if (token !== connectionToken) return;
-        commit({ ...loaded, chats: chatsFor(loaded.decisions), prefs: state.prefs || prefs });
+        commit({ ...loaded, chats: chatsFor(loaded.decisions, loaded.chats), prefs: state.prefs || prefs });
       },
       (e) => console.error("[store] listen failed", e)
     );
@@ -505,10 +517,14 @@ export function removeEdge(decisionId, index) {
 export function pushMessage(decisionId, message) {
   const list = state.chats[decisionId] || [];
   commit({ ...state, chats: { ...state.chats, [decisionId]: [...list, { id: mid(), ...message }] } });
+  if (fs() && PERSISTED_MESSAGE_TYPES.has(message.type)) {
+    const d = getDecision(decisionId);
+    if (d) repo.addMessage(d.roomId, decisionId, message);
+  }
 }
 export function ensureChat(decisionId) {
   if (state.chats[decisionId]) return;
-  commit({ ...state, chats: { ...state.chats, [decisionId]: [{ id: mid(), type: "welcome", body: WELCOME }] } });
+  commit({ ...state, chats: { ...state.chats, [decisionId]: welcomeMessage() } });
 }
 /** Persist a generated play. Durable record, separate from the chat stream. */
 export function savePlay(decisionId, { situation, output }) {

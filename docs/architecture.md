@@ -43,7 +43,11 @@ Edge            rooms/{roomId}/decisions/{decId}/edges/{edgeId}
 
 Play            rooms/{roomId}/decisions/{decId}/plays/{playId}
                 situation, output, ts
-  durable generated plays. The chat stream remains transient UI state.
+  durable generated plays.
+
+Message         rooms/{roomId}/decisions/{decId}/messages/{msgId}
+                role, type, body, text, label, personName, command, questions, ts
+  the persisted chat thread for a decision. Free text fields are encrypted.
 ```
 
 Relationships in one line: a room has a roster and decisions; a decision has
@@ -51,7 +55,7 @@ participants drawn from the roster plus externals; a person carries memory that
 spans every decision they appear in.
 
 Deletion semantics: deleting a decision removes only that decision, its network
-edges, generated plays, and transient chat. Person profiles and person
+edges, generated plays, and persisted chat messages. Person profiles and person
 observations stay. Removing a person from a room only removes them from that
 room roster; their profile, notes, relationships, positions, placements, and
 network influence in existing decisions stay. Deleting a room removes the room,
@@ -138,7 +142,7 @@ and session consistency.
 The Firestore repository encrypts these fields before write and decrypts them
 after read: person goal, person context, baseRead text, visual tag teaser text,
 decision context strings, decisionNotes text, derivedSummary, observation text,
-and generated play situation/output.
+generated play situation/output, and chat message body/text/questions.
 
 Names, roles, ids, relationship structure, positions, placements, and edge types
 stay plaintext so the app can query and render the map.
@@ -158,7 +162,19 @@ rooms/{roomId}/decisions/{decId}                { title, context, decisionNotes,
                                                   positions, placements, createdAt }
 rooms/{roomId}/decisions/{decId}/edges/{edgeId} { from, to, type }
 rooms/{roomId}/decisions/{decId}/plays/{playId} { situation, output, ts }
+rooms/{roomId}/decisions/{decId}/messages/{msgId} { role, type, body, text,
+                                                  label, personName, command,
+                                                  questions, ts }
 ```
+
+Chat messages persist per decision under the owning room. Free text (body, text,
+questions) is encrypted before write and decrypted on read; role, type, label,
+personName, command, and ts stay plaintext so the thread renders and sorts
+without decrypting structure. Only meaningful turns are stored (user commands and
+assistant confirmations: user, updated, note, added, fallback). Welcome, loading,
+and parked play cards stay transient UI state. The store keeps optimistic chat in
+its mirror and seeds from this history on load, so the conversation survives
+reload and sign-in on another device.
 
 All account reads query top level `people` and `rooms` by `ownerId == uid`.
 Decision, edge, and play access is authorized through the parent room owner.
@@ -255,6 +271,16 @@ low. The validator rejects out-of-range values rather than clamping a stray 150
 into a fake near-max. If a changed value lands at an extreme, `Room.jsx` holds
 the placement and asks one calibration question; if a placed value has low
 confidence, it commits the value but appends one non-blocking soft confirm.
+
+Conversation context window. `compactRoomCommandContext` attaches `recentTurns`,
+the last eight persisted user and assistant turns (each trimmed to 240 chars),
+alongside the compact room snapshot (people with role, position, placement, recent
+notes, and the decision edges). The command system prompt instructs the model to
+resolve pronouns and follow-ups like "he", "she", "they", "this", and "too"
+against `recentTurns` and the room people, and never to invent a person not in the
+room. This gives anaphora resolution through context on Haiku rather than a larger
+model. Token budget per call stays small: eight short turns plus the room snapshot
+is well under the per-command max tokens.
 
 Command application is scoped by command. `@note` may save notes and profile
 reads, `@grid` may update placement and stance, `@network` may update edges,

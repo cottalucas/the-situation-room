@@ -448,3 +448,56 @@ The internal tab id `grid`, the `GridTab` component, the store functions
 (`setPlacement`, `getPlacement`), the `decision.placements` / `decision.positions`
 fields, the Firestore schema, and the LLM `grid` command key. Only the
 command-and-label layer changed.
+
+---
+
+## PHASE 6 — Persistent, context-aware conversation
+
+Timestamp: 2026-06-03
+
+### 1. Persistence (Firestore, under the signed-in user)
+Chat messages now persist to `rooms/{roomId}/decisions/{decId}/messages/{msgId}`,
+authorized through the room owner (same scope as edges and plays; rule added).
+Stored fields: `role`, `type`, `body`, `text`, `label`, `personName`, `command`,
+`questions`, `ts`. Free text (`body`, `text`, `questions`) is encrypted before
+write and decrypted on read; structure stays plaintext so the thread sorts and
+renders without decrypting. Only meaningful turns persist (`user`, `updated`,
+`note`, `added`, `fallback`); welcome, loading, and parked play cards stay
+transient. The store keeps its optimistic mirror and seeds chat from this history
+on load (`chatsFor` prefers existing in-memory chat, then persisted Firestore
+history, then the welcome card), so the conversation survives reload and a
+sign-in on another device. Messages are deleted with their decision and room.
+- Privacy: this is room conversation under the owner, encrypted at rest. It does
+  not introduce a new plaintext copy of notes; the `text`/`body` carrying note
+  echoes are encrypted like every other free-text field.
+
+Files: `firestore.rules`, `firestore-repo.js` (converters, `addMessage`, message
+watch in `watchAll`, load in `loadAll`, delete paths), `store.js`
+(`pushMessage` persistence, `chatsFor` rehydration).
+
+### 2. Context window (anaphora without a bigger model)
+`compactRoomCommandContext` now attaches `recentTurns`: the last 8 persisted
+user/assistant turns (each trimmed to 240 chars) next to the compact room
+snapshot (people with role, position, placement, recent notes; decision edges).
+The command system prompt instructs the model to resolve pronouns and follow-ups
+("he", "she", "they", "this", "too"/"also") against `recentTurns` and the room
+people, and never to invent someone not in the room. So "and he reports to her
+too" resolves against prior turns and the roster. `Room.jsx` captures the prior
+turns before the new user message lands and passes them to both the `@note` and
+the map-command calls. Prompt version bumped to
+`room-command-v3-context-2026-06-03` in both `src/` and `functions/`.
+- Token budget per call: 8 short turns (<=240 chars each, ~ up to 2k chars) plus
+  the room snapshot, well under the per-command max tokens (800-2600). Stays
+  Haiku, stays cheap. N=8 is a single constant (`RECENT_TURNS`) if you want to
+  tune it.
+
+### 3. Grounding
+The surface stays grounded by construction: only `@` commands run; non-command
+input still returns the "only commands run here" fallback, so the assistant does
+not behave like a generic chatbot. The grounded conversational strategist is
+Phase 7, which builds on this persisted context.
+
+### Verification
+Build clean, offline evals 12/12, function syntax OK, prompt versions in sync.
+The persistence path is exercised through Firestore at runtime; a live signed-in
+reload is the manual confirmation (offline evals do not touch Firestore).

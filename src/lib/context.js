@@ -88,7 +88,7 @@ export async function generatePlay(situation, ctx) {
   }
 }
 
-export async function interpretRoomCommand({ command, text, room, decision, participants, edges, focusPerson }) {
+export async function interpretRoomCommand({ command, text, room, decision, participants, edges, focusPerson, messages }) {
   const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
   if (!liveEnabled) {
     return {
@@ -107,7 +107,7 @@ export async function interpretRoomCommand({ command, text, room, decision, part
         focusPerson: focusPerson
           ? { id: focusPerson.id, name: focusPerson.name, role: focusPerson.role }
           : null,
-        context: compactRoomCommandContext({ room, decision, participants, edges }),
+        context: compactRoomCommandContext({ room, decision, participants, edges, messages }),
       }),
     });
     if (!res.ok) {

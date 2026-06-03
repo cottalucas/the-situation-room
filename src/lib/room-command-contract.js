@@ -72,8 +72,23 @@ function cleanProfilePatch(patch) {
   return Object.keys(out).length ? out : null;
 }
 
-export function compactRoomCommandContext({ room, decision, participants, edges }) {
+const TURN_TYPES = new Set(["user", "updated", "note", "added", "fallback"]);
+const RECENT_TURNS = 8;
+
+function recentTurnsFrom(messages = []) {
+  return (messages || [])
+    .filter((m) => TURN_TYPES.has(m.type))
+    .slice(-RECENT_TURNS)
+    .map((m) => ({
+      role: m.type === "user" ? "user" : "assistant",
+      text: cleanText(m.body || m.text || (m.personName ? `Saved a note on ${m.personName}` : ""), 240),
+    }))
+    .filter((t) => t.text);
+}
+
+export function compactRoomCommandContext({ room, decision, participants, edges, messages }) {
   return {
+    recentTurns: recentTurnsFrom(messages),
     room: {
       id: cleanText(room?.id, 120),
       name: cleanText(room?.name, 160),

@@ -5,6 +5,22 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 6: persistent context-aware chat
+
+Chat now persists to `rooms/{roomId}/decisions/{decId}/messages` under the owning
+room, with free text (body, text, questions) encrypted and structure plaintext.
+Only meaningful turns persist (user, updated, note, added, fallback); welcome,
+loading, and parked play cards stay transient. The store seeds chat from this
+history on load, so the conversation survives reload and another device. Messages
+delete with the decision and room. Rule added for the messages subcollection.
+
+Context window: `compactRoomCommandContext` attaches `recentTurns` (last 8 turns,
+240 chars each) plus the room snapshot, and the command system prompt resolves
+pronouns and follow-ups against them and the roster, never inventing a person.
+Anaphora on Haiku, no bigger model. Prompt version bumped to
+`room-command-v3-context-2026-06-03` in both src and functions. Grounding holds:
+only @ commands run. Build clean, evals 12/12, function syntax OK.
+
 ## 2026-06-03 - Overnight audit Phase 5: Grid lens renamed to Energy
 
 Renamed the user-facing lens and command from Grid to Energy / @energy. `@grid`

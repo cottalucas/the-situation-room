@@ -155,7 +155,51 @@ async function decisionFromFirestore(id, roomId, data, edges = []) {
   };
 }
 
-function stateFromMaps(peopleDocs, observationsByPerson, roomDocs, decisionDocs, edgesByDecision) {
+/* Chat messages. Free text (body, text, questions) is encrypted; role, type,
+ * label, personName, command, and ts stay plaintext so the thread can render and
+ * sort without decrypting structure. Welcome, loading, and play cards are not
+ * persisted (see store.pushMessage). */
+async function messageToFirestore(message) {
+  return {
+    role: message.role || (message.type === "user" ? "user" : "assistant"),
+    type: message.type || "updated",
+    body: await encryptText(message.body || ""),
+    text: await encryptText(message.text || ""),
+    label: message.label || "",
+    personName: message.personName || "",
+    command: message.command || "",
+    questions: await Promise.all((message.questions || []).map((q) => encryptText(q || ""))),
+    ts: serverTimestamp(),
+  };
+}
+
+async function messageFromFirestore(id, data) {
+  return {
+    id,
+    role: data.role || "assistant",
+    type: data.type || "updated",
+    body: await decryptText(data.body || ""),
+    text: await decryptText(data.text || ""),
+    label: data.label || "",
+    personName: data.personName || "",
+    command: data.command || "",
+    questions: await Promise.all((data.questions || []).map((q) => decryptText(q || ""))),
+    ts: data.ts || null,
+  };
+}
+
+function tsToMs(ts) {
+  if (!ts) return Number.MAX_SAFE_INTEGER; // pending serverTimestamp sorts last (newest)
+  if (typeof ts.toMillis === "function") return ts.toMillis();
+  return Number(ts) || Number.MAX_SAFE_INTEGER;
+}
+
+async function messagesFromSnap(snap) {
+  const messages = await Promise.all(snap.docs.map((m) => messageFromFirestore(m.id, m.data())));
+  return messages.sort((a, b) => tsToMs(a.ts) - tsToMs(b.ts));
+}
+
+function stateFromMaps(peopleDocs, observationsByPerson, roomDocs, decisionDocs, edgesByDecision, chatsByDecision = {}) {
   return Promise.all([
     Promise.all(
       Object.entries(peopleDocs).map(async ([id, data]) => [
@@ -172,6 +216,7 @@ function stateFromMaps(peopleDocs, observationsByPerson, roomDocs, decisionDocs,
     people: Object.fromEntries(peoplePairs),
     rooms: Object.entries(roomDocs).map(([id, data]) => ({ id, ...data })),
     decisions,
+    chats: chatsByDecision,
   }));
 }
 
@@ -185,6 +230,7 @@ export async function loadAll(uid) {
   const roomDocs = {};
   const decisionDocs = {};
   const edgesByDecision = {};
+  const chatsByDecision = {};
 
   const peopleSnap = await getDocs(query(collection(db, "people"), where("ownerId", "==", uid)));
   for (const p of peopleSnap.docs) {
@@ -201,10 +247,12 @@ export async function loadAll(uid) {
       decisionDocs[d.id] = { roomId: r.id, data: d.data() };
       const edgeSnap = await getDocs(collection(db, "rooms", r.id, "decisions", d.id, "edges"));
       edgesByDecision[d.id] = edgeSnap.docs.map((e) => ({ id: e.id, ...e.data() }));
+      const msgSnap = await getDocs(collection(db, "rooms", r.id, "decisions", d.id, "messages"));
+      chatsByDecision[d.id] = await messagesFromSnap(msgSnap);
     }
   }
 
-  return stateFromMaps(peopleDocs, observationsByPerson, roomDocs, decisionDocs, edgesByDecision);
+  return stateFromMaps(peopleDocs, observationsByPerson, roomDocs, decisionDocs, edgesByDecision, chatsByDecision);
 }
 
 /* ------------------------------------------------------------------ */
@@ -217,16 +265,18 @@ export function watchAll(uid, onChange, onError = log) {
   const roomDocs = {};
   const decisionDocs = {};
   const edgesByDecision = {};
+  const chatsByDecision = {};
   const unsubs = [];
   const obsUnsubs = new Map();
   const decUnsubs = new Map();
   const edgeUnsubs = new Map();
+  const msgUnsubs = new Map();
   let version = 0;
 
   const emit = async () => {
     const current = ++version;
     try {
-      const next = await stateFromMaps(peopleDocs, observationsByPerson, roomDocs, decisionDocs, edgesByDecision);
+      const next = await stateFromMaps(peopleDocs, observationsByPerson, roomDocs, decisionDocs, edgesByDecision, chatsByDecision);
       if (current === version) onChange(next);
     } catch (e) {
       onError(e);
@@ -239,6 +289,12 @@ export function watchAll(uid, onChange, onError = log) {
     delete edgesByDecision[decisionId];
   };
 
+  const stopMessageWatch = (decisionId) => {
+    msgUnsubs.get(decisionId)?.();
+    msgUnsubs.delete(decisionId);
+    delete chatsByDecision[decisionId];
+  };
+
   const stopDecisionWatch = (roomId) => {
     decUnsubs.get(roomId)?.();
     decUnsubs.delete(roomId);
@@ -246,6 +302,7 @@ export function watchAll(uid, onChange, onError = log) {
       if (entry.roomId === roomId) {
         delete decisionDocs[decisionId];
         stopEdgeWatch(decisionId);
+        stopMessageWatch(decisionId);
       }
     });
   };
@@ -319,11 +376,25 @@ export function watchAll(uid, onChange, onError = log) {
                         )
                       );
                     }
+                    if (!msgUnsubs.has(decisionDoc.id)) {
+                      msgUnsubs.set(
+                        decisionDoc.id,
+                        onSnapshot(
+                          collection(db, "rooms", roomDoc.id, "decisions", decisionDoc.id, "messages"),
+                          async (msgSnap) => {
+                            chatsByDecision[decisionDoc.id] = await messagesFromSnap(msgSnap);
+                            emit();
+                          },
+                          onError
+                        )
+                      );
+                    }
                   });
                   Object.entries(decisionDocs).forEach(([decisionId, entry]) => {
                     if (entry.roomId === roomDoc.id && !seenDecisions.has(decisionId)) {
                       delete decisionDocs[decisionId];
                       stopEdgeWatch(decisionId);
+                      stopMessageWatch(decisionId);
                     }
                   });
                   emit();
@@ -350,6 +421,7 @@ export function watchAll(uid, onChange, onError = log) {
     obsUnsubs.forEach((fn) => fn());
     decUnsubs.forEach((fn) => fn());
     edgeUnsubs.forEach((fn) => fn());
+    msgUnsubs.forEach((fn) => fn());
   };
 }
 
@@ -419,6 +491,7 @@ export async function deleteDecision(roomId, decId) {
     const ref = decRef(roomId, decId);
     await deleteNestedCollection(ref, "edges");
     await deleteNestedCollection(ref, "plays");
+    await deleteNestedCollection(ref, "messages");
     await deleteDoc(ref);
   } catch (e) {
     log(e);
@@ -442,6 +515,7 @@ export async function deleteRoom(roomId, personIds = []) {
     for (const decisionDoc of decSnap.docs) {
       await deleteNestedCollection(decisionDoc.ref, "edges");
       await deleteNestedCollection(decisionDoc.ref, "plays");
+      await deleteNestedCollection(decisionDoc.ref, "messages");
       await deleteDoc(decisionDoc.ref);
     }
     await deleteDoc(roomRef);
@@ -466,6 +540,16 @@ export async function removeEdgeDoc(roomId, decId, edgeId) {
     await deleteDoc(doc(decRef(roomId, decId), "edges", edgeId));
   } catch (e) {
     log(e);
+  }
+}
+
+export async function addMessage(roomId, decId, message) {
+  try {
+    const ref = await addDoc(collection(decRef(roomId, decId), "messages"), await messageToFirestore(message));
+    return ref.id;
+  } catch (e) {
+    log(e);
+    return null;
   }
 }
 

@@ -91,6 +91,12 @@ service cloud.firestore {
           allow create: if ownsRoom(roomId);
           allow update: if false;
         }
+
+        match /messages/{messageId} {
+          allow read, delete: if ownsRoom(roomId);
+          allow create: if ownsRoom(roomId);
+          allow update: if false;
+        }
       }
     }
   }

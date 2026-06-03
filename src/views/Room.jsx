@@ -400,6 +400,8 @@ export default function Room({ onExit }) {
         return;
       }
       setShowPath(false);
+      // Capture prior turns before the new user message lands, for anaphora.
+      const priorMessages = store.getChat(decision.id);
       store.pushMessage(decision.id, { type: "user", body: q });
 
       const note = q.match(/^@note(?:s)?\s+(\S+)\s+([\s\S]+)$/i);
@@ -419,6 +421,7 @@ export default function Room({ onExit }) {
               participants,
               edges: store.getEdges(decision.id),
               focusPerson: target,
+              messages: priorMessages,
             });
             if (resp.kind === "update") {
               const message = applyRoomUpdate(resp.update, "note") || { label: "Note saved", body: `Updated ${target.name}.` };
@@ -463,6 +466,7 @@ export default function Room({ onExit }) {
             decision,
             participants,
             edges: store.getEdges(decision.id),
+            messages: priorMessages,
           });
           if (resp.kind === "update") {
             const message = applyRoomUpdate(resp.update, command) || { label: "Map updated", body: "Updated the room." };
