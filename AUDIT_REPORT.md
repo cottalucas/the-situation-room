@@ -230,3 +230,111 @@ Phase 2 where the surrounding prompt and validator work lives.
 ### Left for your review
 - Whether reporting lines / structural ties should persist room-wide
   (`person.relationships`) instead of per-decision edges (finding 5).
+
+---
+
+## PHASE 2 — LLM interpretation quality on @grid and @network (CORE)
+
+Timestamp: 2026-06-03
+
+The core problem: the model over-committed to extremes ("very low interest" ->
+0 instead of an honest 1-3 band) and over-inferred influence from single
+org-chart statements. Fixed at the interpretation layer: prompt, validator,
+apply loop, and offline evals. Every prompt change was applied to BOTH
+`src/lib/llm-prompts.js` and `functions/index.js`, and the prompt version was
+bumped in both (`room-command-v1-local-2026-06-03d` ->
+`room-command-v2-calibrated-2026-06-03`).
+
+### 1. Banded calibration (before / after)
+
+BEFORE (`COMMAND_SYSTEM_PROMPT`):
+```
+- For grid values, use 12 to 88 by default. Use 3 to 97 only when the user
+  explicitly says no influence, no interest, total control, or full attention.
+  If an extreme is uncertain, omit the value and ask a short open question.
+```
+
+AFTER:
+```
+- Grid calibration. Map qualitative language to a calibrated band, never to an
+  extreme: very low maps to 10 to 20, low maps to 25 to 35, moderate or medium
+  or some maps to 45 to 55, high maps to 70 to 80, very high maps to 85 to 95.
+  Use the band center when unsure. Apply the same bands to both power and interest.
+- Reserve values below 10 or above 95 for explicit absolutes only, such as zero
+  interest, no power at all, completely disengaged, total control, or full
+  attention. A single strong adjective is not an absolute.
+```
+The `@grid` command rules were updated to point at the bands and to forbid
+sub-10 / over-95 output unless the user states an absolute. Same rubric reused by
+`@map` and `@create` through the shared system prompt (Phase 3).
+
+### 2. Confidence + clarification loop
+
+- The output schema now carries a `confidence` of high / medium / low per grid
+  value and per edge. Added to the system prompt, the per-command rules, every
+  schema example, and the validators (`cleanConfidence`, an enum guard).
+- `Room.jsx` clarification behaviour now has two tiers:
+  - Extreme + changed value: HOLD the placement and ask one calibration question
+    (unchanged, pre-existing safeguard).
+  - Low-confidence + changed value (not extreme): PLACE the calibrated value but
+    append one soft confirm ("I read Sam as roughly 48 power and 30 interest, but
+    I was not certain. Adjust if that is off."). This matches the brief's
+    "propose a value AND ask a one-line confirming question," is non-blocking,
+    and is capped at one confirm. Total questions per turn stay capped at two.
+
+### 3. @network inference discipline (before / after)
+
+BEFORE: `Return every explicit or strongly implied relationship, up to 12 edges.`
+plus blanket rules that turned any closeness/conflict language into edges.
+
+AFTER:
+```
+- Return only relationships the user explicitly states or strongly implies. Do
+  not pad the map with inferred edges.
+- Edges require explicit user signal. A single reporting or defers statement
+  creates exactly one defers edge. Do not also fabricate influence, alliance, or
+  conflict from that one statement.
+- Add ally only when the user names alignment, support, shared goals, privilege,
+  or being helped. Add conflict only when the user names friction, opposition,
+  blocking, or competing interests. An org-chart line alone is a defers edge,
+  nothing more.
+```
+
+### 4. Validation hardening
+
+- `clampPercent` now REJECTS out-of-range values (returns `null` for anything
+  below 0 or above 100) instead of silently clamping a `150` up to `97` and
+  fabricating a near-max placement. Valid `0`/`100` absolutes still clamp into
+  the 3-97 plot range. Mirrored in both validators.
+- Unknown-person references were already rejected at apply time:
+  `Room.jsx#ensurePersonForUpdate` returns null when a ref cannot be resolved and
+  `create` is false, so the write is skipped. Confirmed, no change needed.
+- Full path re-verified for each command: input -> `interpretRoomCommand` ->
+  `/api/interpret-room-command` -> `normalizeRoomUpdate` -> `applyRoomUpdate`
+  (id resolution + scope caps) -> `store` write -> render. `@note` writes only
+  notes/profile, `@grid` only placement/position, `@network` only edges; out-of-
+  scope model fields are dropped by `commandCapabilities`.
+
+### 5. Offline eval fixtures added (mocked, no API)
+
+- `command-grid-banded-calibration`: "very low interest, very high power" must
+  land in the 10-20 and 85-95 bands, with confidence present.
+- `command-grid-low-confidence-not-extreme`: "fairly low, not sure" lands in the
+  25-35 band (not 0), confidence low.
+- `command-network-single-statement-single-edge`: "Maya reports to Sam" produces
+  exactly one defers edge (`maxEdges: 1`), no fabricated extras.
+- `command-validator-rejects-bad-write`: out-of-range power/interest are dropped
+  to null and self / empty edges are removed.
+- Harness gained `requireConfidence`, `gridBands`, and `maxEdges` checks.
+  Offline suite now 11/11.
+
+### UI affordance decision
+The confirm/adjust affordance is delivered as the one-line chat question, which
+is the cheapest non-blocking surface. A dashed "needs-confirm" grid dot would
+require adding `confidence` to the stored `placements` shape; that is a stored-
+schema change, so it is FLAGGED for review rather than done overnight. The
+interpretation-layer confidence (the substantive fix) is complete.
+
+### Left for your review
+- Optional: persist `confidence` onto `decision.placements[id]` and render a
+  dashed dot for low-confidence reads. Cheap but touches stored shape.

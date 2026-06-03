@@ -99,7 +99,25 @@ function scoreCommand(testCase, candidate) {
     checks.push(["grid_absent", normalized.people.every((p) => p.power == null && p.interest == null)]);
   }
   if (expect.requireOpenQuestion) checks.push(["open_question_present", normalized.openQuestions.length > 0]);
+  if (expect.requireConfidence) {
+    checks.push([
+      "confidence_present",
+      normalized.people.some((p) => p.confidence) || normalized.edges.some((e) => e.confidence),
+    ]);
+  }
+  if (expect.gridBands) {
+    Object.entries(expect.gridBands).forEach(([pid, bands]) => {
+      const person = normalized.people.find((p) => p.id === pid || p.name?.toLowerCase() === pid);
+      ["power", "interest"].forEach((axis) => {
+        if (!bands[axis]) return;
+        const [min, max] = bands[axis];
+        const value = person?.[axis];
+        checks.push([`grid_band_${pid}_${axis}`, value != null && value >= min && value <= max]);
+      });
+    });
+  }
   if (expect.minEdges != null) checks.push(["edge_count", normalized.edges.length >= expect.minEdges]);
+  if (expect.maxEdges != null) checks.push(["edge_count_max", normalized.edges.length <= expect.maxEdges]);
   (expect.requiredEdges || []).forEach((edge, index) => {
     const found = normalized.edges.some((e) => e.from === edge.from && e.to === edge.to && e.type === edge.type);
     checks.push([`required_edge_${index + 1}_${edge.from}_${edge.to}_${edge.type}`, found]);

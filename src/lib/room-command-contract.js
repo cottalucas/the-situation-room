@@ -4,6 +4,7 @@ const MAX_ITEMS = 16;
 
 const EDGE_TYPES = new Set(["ally", "conflict", "defers"]);
 const POSITIONS = new Set(["for", "against", "neutral", "unknown"]);
+const CONFIDENCE = new Set(["high", "medium", "low"]);
 const TKI = new Set(["Competing", "Avoiding", "Compromising", "Collaborating", "Accommodating"]);
 const SCARF = new Set(["Status", "Certainty", "Autonomy", "Relatedness", "Fairness"]);
 
@@ -25,7 +26,14 @@ function cleanParagraph(value, max = MAX_TEXT) {
 function clampPercent(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
+  // Reject out-of-range values rather than fabricating a near-max placement.
+  if (n < 0 || n > 100) return null;
+  // 0 and 100 are valid absolutes; storage clamps them to the 3 to 97 plot range.
   return Math.max(3, Math.min(97, Math.round(n)));
+}
+
+function cleanConfidence(value) {
+  return CONFIDENCE.has(value) ? value : undefined;
 }
 
 function cleanProfilePatch(patch) {
@@ -115,6 +123,7 @@ export function normalizeRoomUpdate(raw) {
         position,
         power,
         interest,
+        confidence: cleanConfidence(p.confidence),
         profilePatch,
       };
     })
@@ -126,6 +135,7 @@ export function normalizeRoomUpdate(raw) {
       from: cleanText(e.from, 120),
       to: cleanText(e.to, 120),
       type: EDGE_TYPES.has(e.type) ? e.type : "defers",
+      confidence: cleanConfidence(e.confidence),
       note: cleanText(e.note, MAX_NOTE),
     }))
     .filter((e) => e.from && e.to && e.from !== e.to);

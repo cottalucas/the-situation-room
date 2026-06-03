@@ -67,6 +67,10 @@ function gridClarification(person, axis, value) {
   return `${person.name}'s ${label} landed ${direction}. Is that literal, or should it be more moderate?`;
 }
 
+function softGridConfirm(person, power, interest) {
+  return `I read ${person.name} as roughly ${power} power and ${interest} interest, but I was not certain. Adjust if that is off.`;
+}
+
 function commandCapabilities(sourceCommand) {
   return {
     notes: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
@@ -307,6 +311,7 @@ export default function Room({ onExit }) {
       let edges = 0;
       let created = 0;
       const clarificationQuestions = [];
+      const confirmQuestions = [];
       const caps = commandCapabilities(sourceCommand);
 
       update.people.forEach((item) => {
@@ -341,6 +346,9 @@ export default function Room({ onExit }) {
           }
           store.setPlacement(decision.id, id, item.power, item.interest);
           placements += 1;
+          if (item.confidence === "low" && !confirmQuestions.length) {
+            confirmQuestions.push(softGridConfirm(store.getPerson(id) || item, item.power, item.interest));
+          }
         }
         currentDecision = store.getDecision(decision.id);
       });
@@ -376,7 +384,7 @@ export default function Room({ onExit }) {
       return {
         label: commandResultLabel(sourceCommand),
         body,
-        questions: [...clarificationQuestions, ...modelQuestions].slice(0, 2),
+        questions: [...clarificationQuestions, ...confirmQuestions, ...modelQuestions].slice(0, 2),
       };
     },
     [decision, ensurePersonForUpdate, findPersonRef, store]

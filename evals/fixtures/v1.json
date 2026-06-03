@@ -443,6 +443,121 @@
         "requireGrid": true,
         "forbiddenTerms": ["too visionary", "low credibility"]
       }
+    },
+    {
+      "id": "command-grid-banded-calibration",
+      "kind": "command",
+      "tags": ["grid", "calibration", "banded"],
+      "input": {
+        "command": "grid",
+        "text": "Priya has very low interest in this but very high power over it.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "priya", "name": "Priya", "role": "VP", "currentPosition": "unknown", "currentPlacement": { "power": 50, "interest": 55 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Placed Priya: very low interest, very high power.",
+        "people": [{ "id": "priya", "power": 88, "interest": 15, "confidence": "high" }],
+        "edges": [],
+        "openQuestions": []
+      },
+      "expect": {
+        "requireGrid": true,
+        "requireConfidence": true,
+        "gridBands": { "priya": { "power": [85, 95], "interest": [10, 20] } }
+      }
+    },
+    {
+      "id": "command-grid-low-confidence-not-extreme",
+      "kind": "command",
+      "tags": ["grid", "calibration", "confidence"],
+      "input": {
+        "command": "grid",
+        "text": "I think Sam is maybe fairly low interest? Not totally sure honestly.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "sam", "name": "Sam", "role": "Engineer", "currentPosition": "unknown", "currentPlacement": { "power": 50, "interest": 55 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Read Sam as low interest, but confidence is low.",
+        "people": [{ "id": "sam", "power": 48, "interest": 30, "confidence": "low" }],
+        "edges": [],
+        "openQuestions": []
+      },
+      "expect": {
+        "requireGrid": true,
+        "requireConfidence": true,
+        "gridBands": { "sam": { "interest": [25, 35] } }
+      }
+    },
+    {
+      "id": "command-network-single-statement-single-edge",
+      "kind": "command",
+      "tags": ["network", "inference_discipline"],
+      "input": {
+        "command": "network",
+        "text": "Maya reports to Sam.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "maya", "name": "Maya", "role": "PM", "currentPosition": "unknown", "currentPlacement": { "power": 50, "interest": 55 }, "goal": "", "context": "", "recentNotes": [] },
+            { "id": "sam", "name": "Sam", "role": "Director", "currentPosition": "unknown", "currentPlacement": { "power": 70, "interest": 60 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Mapped one reporting line.",
+        "people": [],
+        "edges": [{ "from": "maya", "to": "sam", "type": "defers", "confidence": "high" }],
+        "openQuestions": []
+      },
+      "expect": {
+        "maxEdges": 1,
+        "requireConfidence": true,
+        "requiredEdges": [{ "from": "maya", "to": "sam", "type": "defers" }]
+      }
+    },
+    {
+      "id": "command-validator-rejects-bad-write",
+      "kind": "command",
+      "tags": ["grid", "validator", "rejection"],
+      "input": {
+        "command": "grid",
+        "text": "Internal regression fixture for the validator. Out-of-range values and degenerate edges must be dropped.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "alberto", "name": "Alberto", "role": "CEO", "currentPosition": "unknown", "currentPlacement": { "power": 50, "interest": 55 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Bad shapes that the validator must reject.",
+        "people": [{ "id": "alberto", "power": 150, "interest": -10 }],
+        "edges": [
+          { "from": "alberto", "to": "alberto", "type": "defers" },
+          { "from": "", "to": "sam", "type": "ally" }
+        ],
+        "openQuestions": []
+      },
+      "expect": {
+        "noGrid": true,
+        "maxEdges": 0
+      }
     }
   ]
 }

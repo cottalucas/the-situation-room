@@ -243,10 +243,14 @@ from prose. Open questions are capped at two, with one as the normal target.
 Network and grid updates stay decision-scoped. Person notes and framework reads
 stay on the person profile.
 
-Grid command updates are conservative around extremes. Normal model outputs
-should use moderate values. If a changed power or interest value lands near
-zero or near maximum, `Room.jsx` holds that placement and asks a clarifying
-question instead of moving the person blindly.
+Grid command updates are calibrated, not extreme. The `@grid` prompt maps
+qualitative language to explicit bands (very low 10-20, low 25-35, moderate
+45-55, high 70-80, very high 85-95) and reserves sub-10 or over-95 for stated
+absolutes. Every grid value and edge carries a `confidence` of high, medium, or
+low. The validator rejects out-of-range values rather than clamping a stray 150
+into a fake near-max. If a changed value lands at an extreme, `Room.jsx` holds
+the placement and asks one calibration question; if a placed value has low
+confidence, it commits the value but appends one non-blocking soft confirm.
 
 Command application is scoped by command. `@note` may save notes and profile
 reads, `@grid` may update placement and stance, `@network` may update edges,

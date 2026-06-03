@@ -5,6 +5,29 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 2: calibrated interpretation
+
+Fixed the main pain: the model over-committed to extreme grid values and
+over-inferred network edges. The `@grid` prompt now maps qualitative language to
+explicit bands (very low 10-20, low 25-35, moderate 45-55, high 70-80, very high
+85-95) and reserves sub-10 / over-95 for stated absolutes. Every grid value and
+edge now carries a `confidence` of high/medium/low. `@network` rules now forbid
+fabricating edges from a single org-chart statement: one reporting line is one
+defers edge.
+
+`clampPercent` rejects out-of-range values instead of clamping a 150 up to a
+fake near-max. `Room.jsx` keeps the extreme-value hold and adds a non-blocking
+soft confirm when a placed value has low confidence. Unknown-person references
+were already rejected at apply time.
+
+All prompt and validator changes were applied to both `src/lib/llm-prompts.js`
+and `functions/index.js`; prompt version bumped to
+`room-command-v2-calibrated-2026-06-03` in both. Four offline fixtures added
+(banded calibration, low-confidence non-extreme, single-statement single-edge,
+validator rejection); offline suite now 11/11. Before/after prompt diffs in
+`AUDIT_REPORT.md`. Deferred for review: persisting confidence on placements for a
+dashed needs-confirm grid dot (touches stored shape).
+
 ## 2026-06-03 - Overnight audit Phase 1: data model review
 
 Audited the People/Grid/Network/Notes/Rooms/Decisions model. Verdict: sound and
