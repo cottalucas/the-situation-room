@@ -5,6 +5,17 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 4: rendering verified, no mismatch
+
+Verified stored values against the rendered output in code and CSS. Grid: power
+plots to Y (high at top via bottom%), interest to X (high at right via left%),
+and the 2x2 row-major quadrant DOM order maps correctly to Mendelow (Keep
+satisfied top-left, Manage closely top-right, Monitor bottom-left, Keep informed
+bottom-right). Stance dots match the position tokens, unknown is a dashed ring.
+Network: ally green, conflict red, defers grey, arrowhead only on defers pointing
+at the influencer, orphans render, self-loops unreachable. No store-vs-render
+mismatch, no code change. Verification table in `AUDIT_REPORT.md`.
+
 ## 2026-06-03 - Overnight audit Phase 3: @map reuses the hardened path
 
 Confirmed `@map` and `@create` are not a separate or looser code path: they share

@@ -376,3 +376,45 @@ Added `command-map-calibrated-mixed`: a mixed `@map` input ("very low interest
 but a lot of power. She reports to Omar.") that must produce a banded grid value
 (power 70-95, interest 10-20), exactly one defers edge, a note, and a confidence.
 Offline suite now 12/12.
+
+---
+
+## PHASE 4 — Rendering & display correctness
+
+Timestamp: 2026-06-03
+
+Verified stored values against what is drawn, in code and CSS. No mismatch found;
+no code change required.
+
+### Grid (`GridTab.jsx` + styles.css)
+| Concern | Stored | Rendered | Verdict |
+|---|---|---|---|
+| Power axis | `placements[id].power` | `bottom: {power}%` (high = top); Y axis labelled high-top/low-bottom | OK |
+| Interest axis | `placements[id].interest` | `left: {interest}%` (high = right); X axis labelled low-left/high-right | OK |
+| Quadrant mapping | n/a | `.quadrants` is a 2x2 row-major grid; DOM order satisfied, manage, monitor, informed lands top-left, top-right, bottom-left, bottom-right | OK |
+
+Mendelow check on the quadrant cells:
+- top-left = high power / low interest = **Keep satisfied** -> `quad-satisfied` OK
+- top-right = high power / high interest = **Manage closely** -> `quad-manage` OK
+- bottom-left = low power / low interest = **Monitor** -> `quad-monitor` OK
+- bottom-right = low power / high interest = **Keep informed** -> `quad-informed` OK
+
+Stance dots: `dot-for` green (`--for`), `dot-against` red (`--against`),
+`dot-neutral` grey (`--neutral`), `dot-unknown` transparent with a dashed
+`--unknown` ring. Matches the design system and the legend.
+
+### Network (`NetworkTab.jsx` + seed `EDGE_META` + styles.css)
+- Colors: `ally -> --for` (green), `conflict -> --against` (red),
+  `defers -> --ink-faint` (grey). The legend swatches (`edge-ally`,
+  `edge-conflict`, `edge-defers`) use the same tokens. OK.
+- Direction: an arrowhead (`marker #arr`) is drawn only on `defers` edges and
+  points at `to`, the influencer. `ally`/`conflict` are undirected lines with no
+  arrow, which is the correct semantics. OK.
+- Orphans: every participant gets a deterministic layout position
+  (`autoNetworkPositions`), so a person with no edges still renders. OK.
+- Self-loops: unreachable. `store.addEdge` and `normalizeRoomUpdate` both drop
+  `from === to`. OK.
+
+No store-vs-render mismatch. Because nothing changed, there is nothing new to
+verify in a browser; the seeded preview room (`VITE_ENABLE_LOCAL_PREVIEW=true`)
+remains the visual smoke-test surface if you want an eyes-on pass.
