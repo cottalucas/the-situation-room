@@ -25,8 +25,8 @@ think this way. They lack a place to map it and a sharp second opinion.
 ## Scope
 - Rooms (a standing group with a roster) that hold Decisions.
 - Decisions pull participants from the roster and may add externals.
-- Three lenses per decision: People (who you are dealing with), Grid (who to
-  spend energy on), Network (who moves whom).
+- Three lenses per decision: People (who you are dealing with), Energy (who to
+  spend energy on, the Mendelow power/interest map), Network (who moves whom).
 - A command-first chat that updates notes, grid, and network from prose. Open
   play coaching comes back after the command layer is reliable.
 - Person profiles that compound across decisions: read, goal, notes, history.

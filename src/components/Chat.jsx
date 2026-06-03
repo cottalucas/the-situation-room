@@ -216,7 +216,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
             className="chat-input"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder={locked ? "Create a decision to start the conversation" : "Type @network, @grid, @map, @note, or /"}
+            placeholder={locked ? "Create a decision to start the conversation" : "Type @network, @energy, @map, @note, or /"}
             disabled={locked || isGenerating}
           />
           <button className="chat-send" type="submit" disabled={locked || isGenerating || !commandReady}>
@@ -224,7 +224,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
           </button>
         </form>
         <p className="chat-hint">
-          Only commands run here. <code>@note</code> saves memory. <code>@network</code>, <code>@grid</code>, and <code>@map</code> update the room.
+          Only commands run here. <code>@note</code> saves memory. <code>@network</code>, <code>@energy</code>, and <code>@map</code> update the room.
         </p>
       </div>
     </section>

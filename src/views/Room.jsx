@@ -18,7 +18,7 @@ import { ConfirmModal } from "../components/modals/ConfirmModal.jsx";
 
 const TABS = [
   { id: "people", label: "People", hint: "Who you are dealing with" },
-  { id: "grid", label: "Grid", hint: "Who to spend energy on" },
+  { id: "grid", label: "Energy", hint: "Who to spend energy on" },
   { id: "network", label: "Network", hint: "Who moves whom" },
 ];
 
@@ -446,9 +446,12 @@ export default function Room({ onExit }) {
         setDraft("");
         return;
       }
-      const mapCommand = q.match(/^@(map|grid|network|net|create)\s+([\s\S]+)$/i);
+      const mapCommand = q.match(/^@(map|energy|grid|network|net|create)\s+([\s\S]+)$/i);
       if (mapCommand) {
-        const command = mapCommand[1].toLowerCase() === "net" ? "network" : mapCommand[1].toLowerCase();
+        const rawCommand = mapCommand[1].toLowerCase();
+        // @energy is the user-facing name; @grid stays as a hidden alias. Both
+        // route to the internal "grid" command and the grid data fields.
+        const command = rawCommand === "net" ? "network" : rawCommand === "energy" ? "grid" : rawCommand;
         const text = mapCommand[2].trim();
         setDraft("");
         setIsGenerating(true);
@@ -476,7 +479,7 @@ export default function Room({ onExit }) {
       setDraft("");
       store.pushMessage(decision.id, {
         type: "fallback",
-        body: "Use @note, @grid, @network, @map, @create, or @add. Open play chat is paused while mapping gets sharper.",
+        body: "Use @note, @energy, @network, @map, @create, or @add. Open play chat is paused while mapping gets sharper.",
       });
     },
     [applyRoomUpdate, decision, draft, findPersonRef, isGenerating, participants, room, store]

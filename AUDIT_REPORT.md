@@ -418,3 +418,33 @@ Stance dots: `dot-for` green (`--for`), `dot-against` red (`--against`),
 No store-vs-render mismatch. Because nothing changed, there is nothing new to
 verify in a browser; the seeded preview room (`VITE_ENABLE_LOCAL_PREVIEW=true`)
 remains the visual smoke-test surface if you want an eyes-on pass.
+
+---
+
+## PHASE 5 — Rename "Grid" to "Energy"
+
+Timestamp: 2026-06-03
+
+Renamed the user-facing lens and command to **Energy** / **@energy** (the
+subtitle already read "Who to spend energy on"). `@grid` keeps working as a
+hidden alias, and no data field or collection was renamed, so there is no
+migration and existing muscle memory and stored data are intact.
+
+### Rename map
+| Surface | Before | After |
+|---|---|---|
+| Lens tab label | "Grid" | "Energy" (tab id stays `grid` internally) |
+| Command | `@grid` | `@energy` primary, `@grid` hidden alias |
+| Command routing | `@grid` -> grid | `@energy` and `@grid` both -> internal `grid` command + `decision.placements`/`positions` |
+| Chat placeholder | "Type @network, @grid, @map, @note, or /" | "...@energy..." |
+| Chat hint | `@network`, `@grid`, `@map` | `@network`, `@energy`, `@map` |
+| Prompt chip | "@grid power and interest" | "@energy power and interest" |
+| Commands modal | "@grid <text>" | "@energy <text>" (note: "@grid also works") |
+| Fallback message | "Use @note, @grid, ..." | "Use @note, @energy, ..." |
+| Docs | brief / roadmap / architecture lens name | "Energy", alias documented |
+
+### What did NOT change (deliberately)
+The internal tab id `grid`, the `GridTab` component, the store functions
+(`setPlacement`, `getPlacement`), the `decision.placements` / `decision.positions`
+fields, the Firestore schema, and the LLM `grid` command key. Only the
+command-and-label layer changed.

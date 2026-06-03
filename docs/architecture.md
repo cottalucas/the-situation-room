@@ -234,8 +234,12 @@ both. A shared module or a CI version-match check is the planned hardening.
 
 The LLM bridge supports `/api/interpret-room-command` for chat commands.
 `@note` rewrites a user note into a concise professional observation and may
-update the person's framework read when there is enough signal. `@grid` reads
-power, interest, and stance only. `@network` reads reporting lines, control,
+update the person's framework read when there is enough signal. `@energy` reads
+power, interest, and stance only and is the user-facing name for the power and
+interest lens; `@grid` is kept as a hidden alias for backward compatibility.
+Both route to the same internal `grid` command and the same
+`decision.placements` and `decision.positions` fields, so the rename is a
+command and label change only, with no data migration. `@network` reads reporting lines, control,
 micromanagement, influence, alliances, close ties, and conflict into edges.
 `@map` is the broad intake command that may create people, save notes, place
 people on the grid, set stance, and add network edges. `@create` creates people

@@ -5,6 +5,16 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 5: Grid lens renamed to Energy
+
+Renamed the user-facing lens and command from Grid to Energy / @energy. `@grid`
+stays as a hidden alias and both route to the internal `grid` command and the
+unchanged `decision.placements` / `positions` fields, so no migration. Updated
+the tab label, chat placeholder, hint, prompt chip, commands modal, the fallback
+message, and the brief/roadmap/architecture docs. The tab id, GridTab component,
+store functions, and schema were intentionally left as `grid`. Rename map in
+`AUDIT_REPORT.md`.
+
 ## 2026-06-03 - Overnight audit Phase 4: rendering verified, no mismatch
 
 Verified stored values against the rendered output in code and CSS. Grid: power

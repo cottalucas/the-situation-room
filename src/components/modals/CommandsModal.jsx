@@ -3,7 +3,7 @@ import { Modal } from "./Modal.jsx";
 
 const COMMANDS = [
   { cmd: "@note <name> <text>", desc: "Rewrite the note, save it, and update the person's read when there is enough signal." },
-  { cmd: "@grid <text>", desc: "Read power, interest, and stance from plain language, then update the grid." },
+  { cmd: "@energy <text>", desc: "Read power, interest, and stance from plain language, then place people on the Energy map. (@grid also works.)" },
   { cmd: "@network <text>", desc: "Read reporting, control, alliance, conflict, and influence, then update the network." },
   { cmd: "@map <text>", desc: "Read people, notes, grid, and network from a longer situation." },
   { cmd: "@create <text>", desc: "Create people from a longer description, then add them to this decision." },

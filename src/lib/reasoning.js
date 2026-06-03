@@ -131,6 +131,6 @@ export function getResponse(question, participants, context) {
 
 export const EXAMPLE_PROMPTS = [
   "@network who moves whom",
-  "@grid power and interest",
+  "@energy power and interest",
   "@note Chad protects PMs",
 ];

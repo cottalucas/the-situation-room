@@ -19,7 +19,8 @@
   `delete` confirmation.
 - Decisions inside a room, with context, deadline, archive, positions, and
   placements.
-- Three lenses: People, Grid (draggable), Network (typed edges, sequence path).
+- Three lenses: People, Energy (the draggable power/interest map, command
+  @energy with @grid as a hidden alias), Network (typed edges, sequence path).
 - Floating person profile, compact from grid and network, full from People.
 - Visual first frameworks (SCARF, Thomas Kilmann, Cialdini, Fisher and Ury).
 - Command-first chat. Send is enabled only for `@` commands while open play
