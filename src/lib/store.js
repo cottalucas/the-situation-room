@@ -18,7 +18,7 @@ import { saveCache, loadCache, clearCache } from "./cache.js";
 import { isConfigured } from "./firebase.js";
 import * as repo from "./firestore-repo.js";
 
-export const WELCOME = "Select a participant to open their profile, or ask below for a play.";
+export const WELCOME = "Select a participant to open their profile, or map the room below with a command.";
 
 let _seq = 0;
 const mid = () => `m${++_seq}`;

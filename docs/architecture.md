@@ -223,6 +223,15 @@ The local Vite bridge and production Firebase Function use the same contracts
 and prompt shape. In production, `src/lib/context.js` adds the signed-in user's
 Firebase Auth token before calling `/api/**`.
 
+Source of truth versus hand-synced copy: the Vite bridge imports the real prompt
+and contract modules from `src/lib/`, so local runs and offline evals share one
+source. The Firebase Function is a separate deployed package and cannot import
+across that boundary, so `functions/index.js` keeps a hand-copied mirror of the
+system prompts, command rules, schemas, and normalizers. The two are kept in
+sync by the `COMMAND_PROMPT_VERSION` and `PLAY_PROMPT_VERSION` constants: any
+prompt change must be applied to both files and the version string bumped in
+both. A shared module or a CI version-match check is the planned hardening.
+
 The LLM bridge supports `/api/interpret-room-command` for chat commands.
 `@note` rewrites a user note into a concise professional observation and may
 update the person's framework read when there is enough signal. `@grid` reads
@@ -308,6 +317,8 @@ src/
     firebase.js           Firebase init from env, optional App Check
     firestore-repo.js     Firestore schema mapping and live subscriptions
     frameworks.js         quadrant logic, framework constants, helpers
+    llm-prompts.js        play and command system prompts, prompt versions
+    llm-trace.js          local raw trace writer and cost estimator
     play-contract.js      compact LLM context and validate returned plays
     room-command-contract.js compact and validate LLM command updates
     reasoning.js          canned play engine, Claude API later
@@ -318,6 +329,7 @@ src/
     runs/                 ignored local eval traces
   scripts/
     eval-v1.mjs           offline/live eval harness
+    trace-summary.mjs     aggregate local trace latency, tokens, cost
   hooks/
     useAuth.js            Firebase auth state
     useStore.js           subscribe a component to the store
@@ -327,6 +339,7 @@ src/
     primitives.jsx        Avatar, PositionBadge, QuadChip
     highlight.jsx         framework name highlighting in play text
     Chip.jsx              person token for grid and network
+    OverflowMenu.jsx      hover overflow menu for rail edit and delete
     FrameworkVisuals.jsx  visual first framework display
     PersonProfile.jsx     floating profile, variant compact | full
     Rail.jsx              rooms and decisions navigation

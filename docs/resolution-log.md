@@ -5,6 +5,26 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 0: architecture coherence
+
+Full-project audit pass. Confirmed the layering is production-standard: UI never
+touches raw data, `store.js` is the one access layer, `firestore-repo.js` owns
+all Firestore mapping and encryption, and the LLM service is split across the
+browser bridge, the Vite local endpoint, and the Firebase Function. Build clean,
+offline evals 7/7, no committed secret, Haiku-only.
+
+Main finding: the LLM contract logic (prompts, rules, schemas, normalizers) is
+hand-copied into `functions/index.js` because the Function is a separate package
+and cannot import from `src/`. The copies are in sync today via the prompt
+version string. Documented the drift risk in `architecture.md` and flagged a
+shared module or CI version-match check for deliberate follow-up rather than an
+overnight refactor.
+
+Fixed doc drift: completed the `architecture.md` folder map (`llm-prompts.js`,
+`llm-trace.js`, `trace-summary.mjs`, `OverflowMenu.jsx`) and reworded the
+`WELCOME` chat string, which still invited a play, to match the command-first
+surface. Findings written to `AUDIT_REPORT.md`.
+
 ## 2026-06-03 - Production LLM path smoke tested
 
 The deployed product successfully ran live command calls through the Firebase
