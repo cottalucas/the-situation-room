@@ -53,17 +53,9 @@
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase
   Function syntax check.
-- Hackathon brief and product coach instructions for the Mind the Product and
-  Novus.ai challenge.
 - Clean folder structure. Docs.
 
 ## Next
-- Install and verify Novus.ai tracking before submission.
-- Define the Novus event plan around activation and value: account created,
-  room created, person created, command sent, note saved, grid updated, network
-  updated, map completed.
-- Prepare a 2 to 3 minute demo video and written submission narrative for the
-  June 20, 2026 deadline. Internal target is June 18, 2026.
 - Live eval runs and model comparisons once the local prompt and command
   contract feel stable enough to spend credits deliberately.
 - Production trace review workflow. Surface privacy-safe trace metadata in the

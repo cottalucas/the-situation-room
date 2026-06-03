@@ -8,10 +8,8 @@ The encrypted local cache remains for fast load and session consistency.
 Claude chat is command-first through local Vite testing or an authenticated
 Firebase Function. `@note`, `@grid`, `@network`, and `@map` are the active
 surface while open play chat stays parked until mapping, trace capture, and
-evals are stronger. The product is now being sharpened for the Mind the Product
-and Novus.ai World Product Day challenge, with an internal delivery target of
-June 18, 2026. Next step is the privacy surface for export, delete, and clear
-data location.
+evals are stronger. Next step is the privacy surface for export, delete, and
+clear data location.
 
 ## Problem
 The tools a product or corporate operator has help with the artifact, not the
@@ -37,10 +35,6 @@ think this way. They lack a place to map it and a sharp second opinion.
 A user maps a real decision they are facing and gets a play they would actually
 act on. They come back for the next decision because the room remembers the
 people.
-
-For the hackathon, success also means a stranger can land on the public URL,
-understand the product quickly, map a real room, and create measurable product
-behavior through Novus.ai before the June 20, 2026 submission deadline.
 
 ## Constraints
 - Privacy and GDPR. The data is notes about real colleagues. It must feel

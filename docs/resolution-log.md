@@ -5,18 +5,22 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Production LLM path smoke tested
+
+The deployed product successfully ran live command calls through the Firebase
+Function backend. `@note` saved a person note and `@network` updated the
+network in the real product. This confirms the deployed flow is working:
+browser command to `/api/**`, Firebase Auth token, Hosting rewrite, Function
+auth and budget guard, Anthropic call, validated JSON update, Firestore write,
+and trace metadata.
+
 ## 2026-06-03 - Hackathon coach brief added
 
-Added `docs/hackathon.md` as the competition source of truth for the Mind the
-Product and Novus.ai World Product Day challenge. It captures the June 18
-internal delivery target, June 20 public submission deadline, Novus.ai
-requirement, prize context, submission artifacts, and judging criteria.
-
-Added `docs/product-coach-instructions.md` as a paste-ready prompt for a fresh
-product and technical coach chat. The prompt summarizes the product, current
-LLM state, cloud function setup, eval flywheel, local-only files, production
-files, constraints, and first review task. Root agent pointers and
-`docs/orchestration.md` now include `docs/hackathon.md` in the first-read set.
+Correction: the hackathon coach brief belongs in the separate Claude coach
+project, not in the implementation doc set. Removed `docs/hackathon.md` and
+`docs/product-coach-instructions.md`, and restored the root agent pointers plus
+`docs/orchestration.md` to the implementation-only read list. The implementation
+docs keep the product, architecture, LLM setup, eval harness, and roadmap state.
 
 ## 2026-06-03 - Production Claude backend and trace store prepared
 

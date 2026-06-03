@@ -9,8 +9,6 @@ them every session.
 
 1. Read first. Before touching code, read in this order:
    - `docs/brief.md` for what and why.
-   - `docs/hackathon.md` for the competition target, deadline, and judging
-     criteria.
    - `docs/architecture.md` for the data model, the store interface, the folder map.
    - `docs/design-system.md` for the visual language and the copy rules.
    - `docs/roadmap.md` for what is built, next, and out of scope.
