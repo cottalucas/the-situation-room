@@ -1,0 +1,120 @@
+import React, { useState } from "react";
+import { RegisterModal } from "../components/modals/RegisterModal.jsx";
+
+/** Public marketing page. Sign in enters the app; Register opens the modal. */
+export default function Landing({ onEnter }) {
+  const [register, setRegister] = useState(false);
+
+  return (
+    <div className="landing">
+      <header className="landing-nav">
+        <span className="company">Northwind</span>
+        <div className="landing-nav-actions">
+          <button className="landing-signin" onClick={onEnter}>
+            Sign in
+          </button>
+          <button className="landing-register" onClick={() => setRegister(true)}>
+            Register
+          </button>
+        </div>
+      </header>
+
+      <main className="landing-main">
+        <section className="landing-hero">
+          <span className="eyebrow">Stakeholder strategy for product leaders</span>
+          <h1 className="landing-title">The Situation Room</h1>
+          <p className="landing-prop">
+            Read the room before you walk into it. Map the people behind a decision,
+            understand what moves each of them, and walk in with the play already half won.
+          </p>
+          <div className="landing-cta-row">
+            <button className="landing-cta" onClick={() => setRegister(true)}>
+              Get started →
+            </button>
+            <button className="landing-cta-ghost" onClick={onEnter}>
+              Sign in
+            </button>
+          </div>
+        </section>
+
+        <section className="landing-how">
+          <span className="landing-how-label">How it works</span>
+          <div className="landing-steps">
+            <Step
+              n="01"
+              title="Describe your team"
+              body="Name who is in the room, who reports to whom, and where the friction sits. Plain language, no forms. The room remembers them for next time."
+              glyph="text"
+            />
+            <Step
+              n="02"
+              title="See the map"
+              body="People land on a Power and Interest grid and an influence network. You see who to spend energy on and who quietly moves whom."
+              glyph="map"
+            />
+            <Step
+              n="03"
+              title="Get the play"
+              body="Ask a real situation. Get a sequenced play, grounded in SCARF, Cialdini, and interest based negotiation. The exact order of conversations to have."
+              glyph="play"
+            />
+          </div>
+        </section>
+
+        <section className="landing-foot">
+          <p className="landing-frameworks">
+            Grounded in Power and Interest mapping, <strong>SCARF</strong>,{" "}
+            <strong>Thomas Kilmann</strong>, <strong>Cialdini</strong>, and interest based
+            negotiation. Not vibes.
+          </p>
+        </section>
+      </main>
+
+      {register && <RegisterModal onClose={() => setRegister(false)} onEnter={onEnter} />}
+    </div>
+  );
+}
+
+function Step({ n, title, body, glyph }) {
+  return (
+    <div className="landing-step">
+      <span className="landing-step-num">{n}</span>
+      <h3 className="landing-step-title">{title}</h3>
+      <p className="landing-step-body">{body}</p>
+      <Glyph kind={glyph} />
+    </div>
+  );
+}
+
+function Glyph({ kind }) {
+  if (kind === "text") {
+    return (
+      <svg className="glyph" viewBox="0 0 64 40" aria-hidden="true">
+        <line x1="8" y1="12" x2="52" y2="12" />
+        <line x1="8" y1="20" x2="44" y2="20" />
+        <line x1="8" y1="28" x2="48" y2="28" />
+      </svg>
+    );
+  }
+  if (kind === "map") {
+    return (
+      <svg className="glyph" viewBox="0 0 64 40" aria-hidden="true">
+        <rect x="6" y="6" width="52" height="28" rx="3" />
+        <line x1="32" y1="6" x2="32" y2="34" />
+        <line x1="6" y1="20" x2="58" y2="20" />
+        <circle cx="44" cy="13" r="3.2" className="glyph-dot" />
+        <circle cx="18" cy="27" r="3.2" className="glyph-dot" />
+        <circle cx="46" cy="26" r="3.2" className="glyph-dot" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="glyph" viewBox="0 0 64 40" aria-hidden="true">
+      <circle cx="12" cy="20" r="4" className="glyph-dot" />
+      <line x1="16" y1="20" x2="30" y2="20" />
+      <circle cx="34" cy="20" r="4" className="glyph-dot" />
+      <line x1="38" y1="20" x2="52" y2="20" />
+      <circle cx="56" cy="20" r="4" className="glyph-dot" />
+    </svg>
+  );
+}

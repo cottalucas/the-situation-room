@@ -1,0 +1,14 @@
+node_modules
+dist
+.DS_Store
+*.local
+
+# env and secrets (Firebase config arrives via env in the next pass)
+.env
+.env.*
+!.env.example
+
+# local key material, never commit
+*.pem
+*.key
+secrets/
