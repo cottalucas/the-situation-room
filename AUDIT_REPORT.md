@@ -11,7 +11,87 @@ separately so it can be reviewed or reverted on its own.
 
 ## EXECUTIVE SUMMARY
 
-_Filled at the end of the run. See per-phase sections below until then._
+Timestamp: 2026-06-03 (overnight run)
+
+The codebase came in healthy: clean layering, scoped Firestore rules, Haiku-only,
+no committed secrets, build green, 7/7 offline evals. The pass focused the energy
+on the stated main pain (extreme LLM interpretation) and the requested feature
+work, with surgical changes committed phase by phase. Offline evals went from 7 to
+15, all passing, no live credits spent.
+
+### What was wrong and what changed
+- **Interpretation over-committed to extremes (the core pain).** Fixed: the
+  `@energy`/`@grid` prompt now maps qualitative language to calibrated bands (very
+  low 10-20 ... very high 85-95) and reserves sub-10/over-95 for stated absolutes.
+  Added a `confidence` field per value and edge, a non-blocking soft-confirm for
+  low-confidence placements (the extreme-value hold stayed), and out-of-range
+  rejection in the validator (a stray 150 is dropped, not clamped to a fake max).
+- **@network fabricated edges from single org-chart lines.** Fixed: edges now
+  require explicit signal; one reporting line is one defers edge.
+- **@map looked like it might be a looser path.** Verified it shares the hardened
+  pipeline and tightened its rules to say so.
+- **Rendering.** Audited; the store-to-render mapping (grid quadrants, axes,
+  stance dots, edge color/direction) is correct. No change needed.
+- **"Grid" was an unintuitive label.** Renamed the lens and command to
+  **Energy** / `@energy`, with `@grid` kept as a hidden alias and no data
+  migration.
+- **Chat was ephemeral.** Now persists per decision in Firestore (encrypted free
+  text) and rehydrates on load, with a last-8-turn context window plus room
+  snapshot for anaphora on Haiku.
+- **No conversational reasoning.** Added a grounded strategist (`@ask`) that cites
+  only people in the room, declines off-topic requests, and never diagnoses or
+  assigns traits; additive to the deterministic commands.
+- **Observability.** Per-command token breakdown and a $50-ceiling budget readout
+  in `trace:summary`; a root `README.md` with the one-line eval runner and deploy
+  steps.
+- **Docs drift.** Fixed the folder map and several stale descriptions; documented
+  the hand-synced Function copies and the prompt-version sync check.
+
+### Left for your review (could not safely auto-fix overnight)
+1. **LLM contract duplication between `src/` and `functions/`.** The Function is a
+   separate package and cannot import from `src/`, so prompts/validators are
+   hand-copied. Kept in sync this pass via the prompt-version string (both bumped
+   together). The proper fix is a shared module or a CI version-match assertion;
+   it is a multi-file refactor that risks the deploy, so it is deliberate work.
+2. **Low-confidence dashed grid dot.** The `confidence` field exists in the
+   interpretation layer; rendering a dashed "needs-confirm" dot would add
+   `confidence` to the stored `placements` shape. Low-risk but a stored-shape
+   change, left for you.
+3. **Per-decision vs room-wide reporting lines.** Reporting edges are
+   decision-scoped today. Whether they should persist room-wide
+   (`person.relationships`) is a product/schema decision.
+4. **Stronger encryption.** Keys derive from the Firebase uid (encrypted at rest,
+   not zero-knowledge). A user-held passphrase is the next privacy step, already
+   on the roadmap.
+5. **Live eval pass.** Offline evals are golden-based. Running the gated live
+   suite once (deliberate credit spend) would confirm the new prompts behave on
+   real Haiku output, especially the banded calibration and strategist grounding.
+
+### Constraint confirmation
+- **Cost: Haiku only.** All call paths default to `claude-haiku-4-5-20251001`;
+  the strategist runs on Haiku with a 900 token cap. No Sonnet/Opus path.
+  Per-user daily request and cost limits enforced in the Function; `trace:summary`
+  watches local spend against a $50 ceiling.
+- **No raw production traces.** `LLM_STORE_RAW_TRACES=false` by default; raw is a
+  local-only debugging tool. Production stores privacy-safe metadata + usage under
+  the signed-in user.
+- **Encryption intact.** Personal free text, including the new chat messages, is
+  AES-GCM encrypted before Firestore writes.
+- **Rules scoped.** Every document is owner-scoped; the new `messages`
+  subcollection is authorized through the room owner; notes readable only by owner.
+- **All evals pass offline.** 15/15, no live API calls.
+
+### How to run evals + deploy
+`npm run eval` (offline, no credits). Live, gated: `EVAL_ALLOW_LIVE=true npm run
+eval:live`. Spend: `npm run trace:summary`. Deploy: set the
+`ANTHROPIC_API_KEY` Functions secret, `npm run build`, then
+`firebase deploy --only hosting,functions,firestore:rules`. Full detail in
+`README.md`.
+
+### Commits (revertable, one per phase)
+Phase 0 architecture, Phase 1 data model, Phase 2 calibration, Phase 3 @map,
+Phase 4 rendering, Phase 5 Energy rename, Phase 6 persistent chat, Phase 7
+strategist, Phase 8 evals/observability.
 
 ---
 
@@ -548,3 +628,48 @@ request and cost limits in the Function apply unchanged.
 - Harness gained `scoreStrategist`, a `BANNED_TRAIT_TERMS` diagnosis list applied
   to every strategist answer, and `requireCites` / `expectDecline` checks.
 - Offline suite now 14/14.
+
+---
+
+## PHASE 8 — Eval & observability maturity
+
+Timestamp: 2026-06-03
+
+### Offline evals are the default no-credit check — confirmed and extended.
+`npm run eval` (alias of `eval:offline`) runs `scripts/eval-v1.mjs` with mocked
+golden responses; it never calls Claude. Live runs stay gated behind both
+`--live` and `EVAL_ALLOW_LIVE=true`. Coverage now spans every command and the
+strategist (15 cases, all passing):
+- `@note` (note + framework), `@energy`/`@grid` (extreme hold, banded
+  calibration, low-confidence), `@network` (implicit edges, trace regression,
+  single-statement discipline), `@map` (mixed, calibrated mixed), `@create`
+  (people), the `@ask` strategist (grounded, off-topic decline), the parked play
+  generator (focus, ethical redirect), and the validator rejection case.
+
+### Trace posture — confirmed, not drifted.
+- Local: `src/lib/llm-trace.js` writes full raw traces (system prompt, full
+  prompt, request, raw model text, parsed JSON, normalized output, validation,
+  usage, latency, cost) to the gitignored `llm-traces/`. This is the prompt
+  debugging surface.
+- Production: `functions/index.js` writes privacy-safe metadata + usage to
+  `users/{uid}/llmTraces` and `users/{uid}/llmUsage/{day}`. Raw prompts and model
+  text are stored only when `LLM_STORE_RAW_TRACES=true`; the default is `false`.
+  Verified the default and the rules (client cannot write usage/traces).
+
+### Cost / usage log — added per-command tokens and a ceiling readout.
+`npm run trace:summary` now reports, in addition to totals and per-command cost
+and latency, per-command input/output tokens and average tokens per call, plus a
+`budget` block (ceiling, spent, remaining, percent used) against a configurable
+`LLM_SPEND_CEILING_USD` (default 50). That makes local spend legible against the
+~$50 Anthropic budget. Production daily spend lives in `users/{uid}/llmUsage` and
+is additionally capped by the Function's per-user daily request and cost limits.
+
+### One-line eval runner documented.
+Added a `README.md` at the repo root documenting how to run the app, the one-line
+offline eval (`npm run eval`), the gated live eval, `npm run trace:summary`, the
+privacy posture, and how to deploy (Functions secret + `firebase deploy`). Added
+the `eval` script alias to `package.json`.
+
+### Cost ceiling / Haiku — reconfirmed.
+All call paths default to `claude-haiku-4-5-20251001`; no Sonnet/Opus path exists.
+The strategist added in Phase 7 also runs on Haiku with a 900 token cap.

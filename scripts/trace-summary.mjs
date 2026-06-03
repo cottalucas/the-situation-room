@@ -25,12 +25,17 @@ const failures = rows.filter((r) => r.status !== "ok");
 
 const byCommand = rows.reduce((acc, r) => {
   const key = r.command || r.endpoint || "unknown";
-  acc[key] ||= { count: 0, cost: 0, latency: 0 };
+  acc[key] ||= { count: 0, cost: 0, latency: 0, inputTokens: 0, outputTokens: 0 };
   acc[key].count += 1;
   acc[key].cost += Number(r.estimatedCostUsd || 0);
   acc[key].latency += Number(r.latencyMs || 0);
+  acc[key].inputTokens += Number(r.usage?.input_tokens || 0);
+  acc[key].outputTokens += Number(r.usage?.output_tokens || 0);
   return acc;
 }, {});
+
+// Spend ceiling for the project. Override with LLM_SPEND_CEILING_USD.
+const ceiling = Number(process.env.LLM_SPEND_CEILING_USD || 50);
 
 console.log(JSON.stringify(
   {
@@ -39,6 +44,12 @@ console.log(JSON.stringify(
     totalInputTokens: totalInput,
     totalOutputTokens: totalOutput,
     avgLatencyMs: avgLatency,
+    budget: {
+      ceilingUsd: ceiling,
+      spentUsd: Number(totalCost.toFixed(6)),
+      remainingUsd: Number((ceiling - totalCost).toFixed(6)),
+      percentUsed: Number(((totalCost / ceiling) * 100).toFixed(2)),
+    },
     failures: failures.map((r) => ({ id: r.id, status: r.status, error: r.error, file: r.file })),
     byCommand: Object.fromEntries(
       Object.entries(byCommand).map(([key, value]) => [
@@ -46,6 +57,9 @@ console.log(JSON.stringify(
         {
           count: value.count,
           costUsd: Number(value.cost.toFixed(6)),
+          inputTokens: value.inputTokens,
+          outputTokens: value.outputTokens,
+          avgTokensPerCall: value.count ? Math.round((value.inputTokens + value.outputTokens) / value.count) : 0,
           avgLatencyMs: value.count ? Math.round(value.latency / value.count) : 0,
         },
       ])

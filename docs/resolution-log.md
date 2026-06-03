@@ -5,6 +5,18 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 8: evals and observability
+
+Confirmed offline evals are the default no-credit check and now cover every
+command plus the strategist (15 cases, all passing); added a `@create` fixture and
+an `eval` script alias. Confirmed the trace posture has not drifted: local raw
+traces for debugging, production metadata + usage only with raw off by default.
+Enhanced `trace:summary` with per-command input/output tokens and a budget block
+(spent, remaining, percent) against a configurable $50 ceiling. Added a root
+`README.md` with the one-line eval runner, live-eval gate, spend command, privacy
+posture, and deploy steps. Wrote the executive summary at the top of
+`AUDIT_REPORT.md`. This closes the overnight full-project pass.
+
 ## 2026-06-03 - Overnight audit Phase 7: grounded strategist
 
 Added `@ask` (alias `@coach`), a grounded stakeholder coach on `/api/strategist`.
