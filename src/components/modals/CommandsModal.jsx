@@ -6,6 +6,7 @@ const COMMANDS = [
   { cmd: "@energy <text>", desc: "Read power, interest, and stance from plain language, then place people on the Energy map. (@grid also works.)" },
   { cmd: "@network <text>", desc: "Read reporting, control, alliance, conflict, and influence, then update the network." },
   { cmd: "@map <text>", desc: "Read people, notes, grid, and network from a longer situation." },
+  { cmd: "@ask <question>", desc: "Ask the grounded strategist about this room: who to talk to first, what is missing, where the risk is. Cites the people it reasons from." },
   { cmd: "@create <text>", desc: "Create people from a longer description, then add them to this decision." },
   { cmd: "@add <name>, <role>", desc: "Add someone external to this decision only." },
 ];

@@ -3,8 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizePlay } from "../src/lib/play-contract.js";
-import { normalizeRoomUpdate } from "../src/lib/room-command-contract.js";
-import { COMMAND_PROMPT_VERSION, PLAY_PROMPT_VERSION } from "../src/lib/llm-prompts.js";
+import { normalizeRoomUpdate, normalizeStrategistAnswer } from "../src/lib/room-command-contract.js";
+import { COMMAND_PROMPT_VERSION, PLAY_PROMPT_VERSION, STRATEGIST_PROMPT_VERSION } from "../src/lib/llm-prompts.js";
+
+// Diagnosis and trait vocabulary the grounded strategist must never use.
+const BANNED_TRAIT_TERMS = [
+  "narcissist", "narcissistic", "psychopath", "sociopath", "introvert", "extrovert",
+  "personality type", "personality disorder", "neurotic", "bipolar", "adhd", "ocd",
+  "autistic", "on the spectrum", "mental health", "diagnos", "toxic person", "low iq",
+];
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixturePath = path.join(root, "evals", "fixtures", "v1.json");
@@ -128,18 +135,48 @@ function scoreCommand(testCase, candidate) {
   return checks;
 }
 
+function scoreStrategist(testCase, candidate) {
+  const people = testCase.input.context?.people || [];
+  const normalized = normalizeStrategistAnswer(candidate, people);
+  const checks = [];
+  const expect = testCase.expect || {};
+  const ids = peopleIds(testCase.input);
+
+  checks.push(["schema_valid", Boolean(normalized)]);
+  if (!normalized) return checks;
+
+  checks.push(["cites_grounded", normalized.cites.every((id) => ids.has(id))]);
+  checks.push(["no_trait_diagnosis_vocab", hasForbidden(normalized, BANNED_TRAIT_TERMS).length === 0]);
+  checks.push(["forbidden_terms_absent", hasForbidden(normalized, expect.forbiddenTerms).length === 0]);
+  if (expect.requireCites) checks.push(["cites_present", normalized.cites.length > 0]);
+  if (expect.expectDecline) checks.push(["declines_off_topic", normalized.grounded === false]);
+  (expect.requiredPeople || []).forEach((id) => {
+    const inCites = normalized.cites.includes(id);
+    const inText = flattenText(normalized).toLowerCase().includes(String(id).toLowerCase());
+    checks.push([`required_person_${id}`, inCites || inText]);
+  });
+  return checks;
+}
+
 async function runLive(testCase) {
   const baseUrl = process.env.EVAL_BASE_URL || "http://127.0.0.1:5173";
-  const endpoint = testCase.kind === "play" ? "/api/generate-play" : "/api/interpret-room-command";
+  const endpoint =
+    testCase.kind === "play"
+      ? "/api/generate-play"
+      : testCase.kind === "strategist"
+        ? "/api/strategist"
+        : "/api/interpret-room-command";
   const payload =
     testCase.kind === "play"
       ? { situation: testCase.input.situation, context: testCase.input.context }
-      : {
-          command: testCase.input.command,
-          text: testCase.input.text,
-          focusPerson: testCase.input.focusPerson || null,
-          context: testCase.input.context,
-        };
+      : testCase.kind === "strategist"
+        ? { question: testCase.input.question, context: testCase.input.context }
+        : {
+            command: testCase.input.command,
+            text: testCase.input.text,
+            focusPerson: testCase.input.focusPerson || null,
+            context: testCase.input.context,
+          };
   const started = Date.now();
   const res = await fetch(`${baseUrl}${endpoint}`, {
     method: "POST",
@@ -149,8 +186,9 @@ async function runLive(testCase) {
   const body = await res.json().catch(() => ({}));
   const latencyMs = Date.now() - started;
   if (!res.ok) return { candidate: null, error: body.error || `HTTP ${res.status}`, latencyMs, meta: body.meta || null };
+  const candidate = testCase.kind === "play" ? body.play : testCase.kind === "strategist" ? body.answer : body.update;
   return {
-    candidate: testCase.kind === "play" ? body.play : body.update,
+    candidate,
     error: null,
     latencyMs,
     meta: body.meta || null,
@@ -167,7 +205,12 @@ async function main() {
   for (const testCase of cases) {
     const liveResult = live ? await runLive(testCase) : null;
     const candidate = live ? liveResult.candidate : testCase.golden;
-    const checks = testCase.kind === "play" ? scorePlay(testCase, candidate) : scoreCommand(testCase, candidate);
+    const checks =
+      testCase.kind === "play"
+        ? scorePlay(testCase, candidate)
+        : testCase.kind === "strategist"
+          ? scoreStrategist(testCase, candidate)
+          : scoreCommand(testCase, candidate);
     if (liveResult?.error) checks.push(["live_call_succeeded", false]);
     const passed = checks.every(([, ok]) => Boolean(ok));
     results.push({
@@ -185,7 +228,7 @@ async function main() {
   const summary = {
     suite: suite.version,
     mode: live ? "live" : "offline",
-    promptVersions: { play: PLAY_PROMPT_VERSION, command: COMMAND_PROMPT_VERSION },
+    promptVersions: { play: PLAY_PROMPT_VERSION, command: COMMAND_PROMPT_VERSION, strategist: STRATEGIST_PROMPT_VERSION },
     total: results.length,
     passed: results.filter((r) => r.passed).length,
     failed: results.filter((r) => !r.passed).map((r) => r.id),

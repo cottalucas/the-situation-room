@@ -169,6 +169,8 @@ async function messageToFirestore(message) {
     personName: message.personName || "",
     command: message.command || "",
     questions: await Promise.all((message.questions || []).map((q) => encryptText(q || ""))),
+    cites: message.cites || [],
+    grounded: message.grounded !== false,
     ts: serverTimestamp(),
   };
 }
@@ -184,6 +186,8 @@ async function messageFromFirestore(id, data) {
     personName: data.personName || "",
     command: data.command || "",
     questions: await Promise.all((data.questions || []).map((q) => decryptText(q || ""))),
+    cites: data.cites || [],
+    grounded: data.grounded !== false,
     ts: data.ts || null,
   };
 }

@@ -80,6 +80,25 @@ function UpdatedMessage({ message, latest }) {
   );
 }
 
+function CoachMessage({ message, people, latest }) {
+  const names = (message.cites || [])
+    .map((id) => people.find((p) => p.id === id)?.name)
+    .filter(Boolean);
+  return (
+    <SimpleMessage label={message.grounded === false ? "Off topic" : "Strategist"} variant="chat-coach" latest={latest}>
+      <p>{message.body}</p>
+      {message.questions?.length > 0 && (
+        <ul className="chat-questions">
+          {message.questions.map((m) => (
+            <li key={m}>{m}</li>
+          ))}
+        </ul>
+      )}
+      {names.length > 0 && <p className="coach-cites">Grounded in {names.join(", ")}.</p>}
+    </SimpleMessage>
+  );
+}
+
 function UserMessage({ body, latest }) {
   return (
     <div className={`chat-msg chat-user ${latest ? "is-latest" : ""}`}>
@@ -188,6 +207,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
                 </SimpleMessage>
               );
             if (m.type === "updated") return <UpdatedMessage key={m.id} message={m} latest={latest} />;
+            if (m.type === "coach") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} />;
             if (m.type === "welcome") return null;
             return (
               <SimpleMessage key={m.id} label="No read" variant="chat-fallback" latest={latest}>

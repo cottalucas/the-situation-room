@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { useStore } from "../hooks/useStore.js";
-import { interpretRoomCommand } from "../lib/context.js";
+import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
 
 import { Rail } from "../components/Rail.jsx";
@@ -480,10 +480,42 @@ export default function Room({ onExit }) {
         }
         return;
       }
+      const ask = q.match(/^@(ask|coach)\s+([\s\S]+)$/i);
+      if (ask) {
+        const question = ask[2].trim();
+        setDraft("");
+        setIsGenerating(true);
+        try {
+          const resp = await askStrategist({
+            question,
+            room,
+            decision,
+            participants,
+            edges: store.getEdges(decision.id),
+            messages: priorMessages,
+          });
+          if (resp.kind === "coach") {
+            trackEvent("strategist_ask");
+            store.pushMessage(decision.id, {
+              type: "coach",
+              body: resp.answer.answer,
+              questions: resp.answer.moves,
+              cites: resp.answer.cites,
+              grounded: resp.answer.grounded,
+            });
+          } else {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+          }
+        } finally {
+          setIsGenerating(false);
+        }
+        return;
+      }
+
       setDraft("");
       store.pushMessage(decision.id, {
         type: "fallback",
-        body: "Use @note, @energy, @network, @map, @create, or @add. Open play chat is paused while mapping gets sharper.",
+        body: "Use @note, @energy, @network, @map, @create, @ask, or @add. Open play chat is paused while mapping gets sharper.",
       });
     },
     [applyRoomUpdate, decision, draft, findPersonRef, isGenerating, participants, room, store]

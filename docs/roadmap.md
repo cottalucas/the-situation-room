@@ -50,6 +50,11 @@
   framework updates, grid mapping, network mapping, implicit reporting and
   control edges, role-resolution regressions, ethical influence, and trace
   output. Offline evals do not call Claude.
+- Persistent chat per decision in Firestore with a last 8 turn context window for
+  anaphora, encrypted free text, under the signed-in owner.
+- Grounded strategist (@ask): a calm stakeholder coach that reasons only over the
+  room, cites the people it uses, declines off-topic requests, and never
+  diagnoses or assigns traits. Haiku only, additive to the commands.
 - Global person memory: observations and cross decision history.
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase

@@ -200,8 +200,9 @@ app. `.firebaserc` points the default project at `the-situation-room-708c6`.
 `functions/index.js` is the production Claude backend. It exposes one
 authenticated HTTPS function, `api`, with two same-origin endpoints:
 
-- `/api/interpret-room-command` for `@note`, `@grid`, `@network`, `@map`, and
-  `@create`.
+- `/api/interpret-room-command` for `@note`, `@energy` (alias `@grid`),
+  `@network`, `@map`, and `@create`.
+- `/api/strategist` for the grounded `@ask` stakeholder coach.
 - `/api/generate-play` for the parked play generator and future play evals.
 
 The browser sends the Firebase Auth id token in the `Authorization` header.
@@ -281,6 +282,17 @@ against `recentTurns` and the room people, and never to invent a person not in t
 room. This gives anaphora resolution through context on Haiku rather than a larger
 model. Token budget per call stays small: eight short turns plus the room snapshot
 is well under the per-command max tokens.
+
+Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
+stakeholder coach that reasons only over the room snapshot and `recentTurns`. It
+returns `{ answer, moves, cites, grounded }`. `normalizeStrategistAnswer` grounds
+`cites` to known participant ids and drops anything outside the room, so the
+coach cannot reference invented people. The system prompt forbids diagnosis,
+personality types, and traits, and declines off-topic or generic requests with
+`grounded: false`. It runs on Haiku with a 900 token cap. This is additive: the
+deterministic commands are unchanged. The eval harness scores strategist cases
+for grounded cites, a banned trait and diagnosis vocabulary list, and off-topic
+decline.
 
 Command application is scoped by command. `@note` may save notes and profile
 reads, `@grid` may update placement and stance, `@network` may update edges,

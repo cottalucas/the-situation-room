@@ -1,14 +1,17 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { normalizePlay } from "./src/lib/play-contract.js";
-import { normalizeRoomUpdate } from "./src/lib/room-command-contract.js";
+import { normalizeRoomUpdate, normalizeStrategistAnswer } from "./src/lib/room-command-contract.js";
 import {
   COMMAND_PROMPT_VERSION,
   COMMAND_SYSTEM_PROMPT,
   PLAY_PROMPT_VERSION,
   PLAY_SYSTEM_PROMPT,
+  STRATEGIST_PROMPT_VERSION,
+  STRATEGIST_SYSTEM_PROMPT,
   playPrompt,
   roomCommandPrompt,
+  strategistPrompt,
 } from "./src/lib/llm-prompts.js";
 import { estimateCostUsd, makeTraceId, writeLlmTrace } from "./src/lib/llm-trace.js";
 
@@ -198,6 +201,75 @@ function localAnthropicPlugin(env) {
             error: err?.message || "Local reasoning endpoint failed.",
           });
           return sendJson(res, err?.status || 500, { error: err?.message || "Local reasoning endpoint failed." });
+        }
+      });
+
+      server.middlewares.use("/api/strategist", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "POST only." });
+        if (!isLocalRequest(req)) return sendJson(res, 403, { error: "Local requests only." });
+        if (!liveEnabled) return sendJson(res, 404, { error: "Live local LLM is disabled." });
+        if (!apiKey) return sendJson(res, 500, { error: "ANTHROPIC_API_KEY is missing in .env.local." });
+
+        try {
+          const body = await readBody(req);
+          const payload = JSON.parse(body);
+          const question = String(payload?.question || "").trim().slice(0, 1200);
+          const context = payload?.context;
+          if (!question || !context?.decision || !Array.isArray(context?.people)) {
+            return sendJson(res, 400, { error: "Missing question or room context." });
+          }
+          const traceId = makeTraceId({ endpoint: "strategist", command: "strategist" });
+          const content = strategistPrompt({ question, context });
+          const started = Date.now();
+          const { parsed, rawText, rawResponse, usage, latencyMs } = await callAnthropicJson({
+            system: STRATEGIST_SYSTEM_PROMPT,
+            content,
+            maxTokens: 900,
+          });
+          const answer = normalizeStrategistAnswer(parsed, context.people);
+          const estimatedCostUsd = estimateCostUsd(usage, model);
+          const trace = writeLlmTrace({
+            id: traceId,
+            endpoint: "strategist",
+            command: "strategist",
+            status: answer ? "ok" : "invalid",
+            model,
+            maxTokens: 900,
+            latencyMs: Date.now() - started,
+            apiLatencyMs: latencyMs,
+            usage,
+            estimatedCostUsd,
+            promptVersions: { strategist: STRATEGIST_PROMPT_VERSION },
+            request: { question, context },
+            system: STRATEGIST_SYSTEM_PROMPT,
+            prompt: content,
+            rawText,
+            rawResponse,
+            parsed,
+            normalized: answer,
+            validation: answer ? "valid_strategist" : "invalid_strategist_shape",
+          });
+          if (!answer) {
+            return sendJson(res, 422, {
+              error: "Claude returned an invalid strategist shape.",
+              meta: { model, usage, latencyMs: Date.now() - started, estimatedCostUsd, traceId: trace.id, traceFile: trace.file },
+            });
+          }
+          return sendJson(res, 200, {
+            answer,
+            meta: { model, usage, latencyMs: Date.now() - started, estimatedCostUsd, traceId: trace.id, traceFile: trace.file },
+          });
+        } catch (err) {
+          writeLlmTrace({
+            endpoint: "strategist",
+            command: "strategist",
+            status: "error",
+            model,
+            latencyMs: err?.latencyMs || null,
+            rawResponse: err?.anthropicJson || null,
+            error: err?.message || "Local strategist endpoint failed.",
+          });
+          return sendJson(res, err?.status || 500, { error: err?.message || "Local strategist endpoint failed." });
         }
       });
 

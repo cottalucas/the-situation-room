@@ -11,7 +11,7 @@
 import { getResponse } from "./reasoning.js";
 import { auth } from "./firebase.js";
 import { compactContext, normalizePlay } from "./play-contract.js";
-import { compactRoomCommandContext, normalizeRoomUpdate } from "./room-command-contract.js";
+import { compactRoomCommandContext, normalizeRoomUpdate, normalizeStrategistAnswer } from "./room-command-contract.js";
 
 const RECENT_OBSERVATIONS = 5;
 
@@ -85,6 +85,37 @@ export async function generatePlay(situation, ctx) {
         err?.message ||
         "The live reasoning pass failed. The local prototype can still run with the canned play while the connection is fixed.",
     };
+  }
+}
+
+export async function askStrategist({ question, room, decision, participants, edges, messages }) {
+  const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
+  if (!liveEnabled) {
+    return {
+      kind: "fallback",
+      body: "Live local reasoning is off. Turn on VITE_ENABLE_LIVE_LLM to ask the strategist.",
+    };
+  }
+  try {
+    const res = await fetch("/api/strategist", {
+      method: "POST",
+      headers: await apiHeaders(),
+      body: JSON.stringify({
+        question,
+        context: compactRoomCommandContext({ room, decision, participants, edges, messages }),
+      }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      const trace = error?.meta?.traceId ? ` Trace: ${error.meta.traceId}.` : "";
+      throw new Error(`${error?.error || "The strategist is not ready."}${trace}`);
+    }
+    const data = await res.json();
+    const answer = normalizeStrategistAnswer(data?.answer, participants);
+    if (!answer) throw new Error("The strategist returned an incomplete answer.");
+    return { kind: "coach", answer };
+  } catch (err) {
+    return { kind: "fallback", body: err?.message || "The strategist pass failed." };
   }
 }
 

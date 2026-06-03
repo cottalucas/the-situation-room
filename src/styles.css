@@ -765,6 +765,11 @@ code {
   line-height: 1.45;
   color: var(--ink-soft);
 }
+.coach-cites {
+  margin-top: var(--s3);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
 .chat-play { border: 1px solid var(--line); background: var(--bg-raised); box-shadow: var(--shadow); padding: 18px 20px 20px; }
 .is-latest.chat-play { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink) 8%, transparent), var(--shadow); }
 .is-latest.chat-simple { border-color: var(--line-strong); }

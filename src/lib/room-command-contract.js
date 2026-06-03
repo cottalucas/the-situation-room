@@ -72,7 +72,7 @@ function cleanProfilePatch(patch) {
   return Object.keys(out).length ? out : null;
 }
 
-const TURN_TYPES = new Set(["user", "updated", "note", "added", "fallback"]);
+const TURN_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach"]);
 const RECENT_TURNS = 8;
 
 function recentTurnsFrom(messages = []) {
@@ -118,6 +118,26 @@ export function compactRoomCommandContext({ room, decision, participants, edges,
       type: EDGE_TYPES.has(e.type) ? e.type : "defers",
     })),
   };
+}
+
+/**
+ * Validate a strategist answer. Grounds cites to known participant ids and drops
+ * anything outside the room, so the coach cannot reference invented people.
+ */
+export function normalizeStrategistAnswer(raw, participants = []) {
+  if (!raw || typeof raw !== "object") return null;
+  const known = new Set((participants || []).map((p) => p.id));
+  const answer = cleanParagraph(raw.answer, 1400);
+  if (!answer) return null;
+  const moves = (Array.isArray(raw.moves) ? raw.moves : [])
+    .slice(0, 3)
+    .map((m) => cleanText(m, 300))
+    .filter(Boolean);
+  const cites = [...new Set((Array.isArray(raw.cites) ? raw.cites : []).map((c) => cleanText(c, 120)))]
+    .filter((id) => known.has(id))
+    .slice(0, 12);
+  const grounded = raw.grounded !== false;
+  return { kind: "coach", answer, moves, cites, grounded };
 }
 
 export function normalizeRoomUpdate(raw) {

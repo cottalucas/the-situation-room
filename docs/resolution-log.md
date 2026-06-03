@@ -5,6 +5,20 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 7: grounded strategist
+
+Added `@ask` (alias `@coach`), a grounded stakeholder coach on `/api/strategist`.
+It reasons only over the room snapshot and recentTurns, returns
+`{ answer, moves, cites, grounded }`, and `normalizeStrategistAnswer` drops any
+cite not in the room so it cannot reference invented people. The prompt forbids
+diagnosis and traits and declines off-topic requests with grounded false. Haiku
+only, 900 token cap, existing daily budget guard. Additive: deterministic
+commands unchanged. Endpoint mirrored in the Function and the Vite bridge; chat
+renders a Strategist card with cited names. Eval harness gained scoreStrategist, a
+banned trait/diagnosis vocabulary list, and grounded/decline checks; two strategist
+fixtures added. Offline suite 14/14. Strategist prompt version
+`strategist-v1-2026-06-03`.
+
 ## 2026-06-03 - Overnight audit Phase 6: persistent context-aware chat
 
 Chat now persists to `rooms/{roomId}/decisions/{decId}/messages` under the owning

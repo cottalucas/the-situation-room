@@ -560,6 +560,69 @@
       }
     },
     {
+      "id": "strategist-grounded-who-first",
+      "kind": "strategist",
+      "tags": ["strategist", "grounding"],
+      "input": {
+        "question": "Who should I talk to first to get this through?",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Q3 AI feature", "context": { "deciding": "Whether to build the AI feature", "goal": "Ship the right work", "constraint": "Executive pressure, thin evidence" } },
+          "people": [
+            { "id": "rouven", "name": "Rouven", "role": "CPO", "currentPosition": "against", "currentPlacement": { "power": 88, "interest": 85 }, "goal": "", "context": "", "recentNotes": ["Skeptical the evidence supports the feature."] },
+            { "id": "chad", "name": "Chad", "role": "Head of Product", "currentPosition": "for", "currentPlacement": { "power": 70, "interest": 80 }, "goal": "", "context": "", "recentNotes": ["Protects the team, limited credibility with leadership."] },
+            { "id": "raluca", "name": "Raluca", "role": "PM Web", "currentPosition": "neutral", "currentPlacement": { "power": 45, "interest": 70 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": [
+            { "from": "chad", "to": "rouven", "type": "defers" },
+            { "from": "raluca", "to": "rouven", "type": "ally" }
+          ],
+          "recentTurns": []
+        }
+      },
+      "golden": {
+        "answer": "Rouven is your highest-power blocker and he is currently against, so start there before it hardens. Chad supports the work but defers to Rouven, so leaning on Chad alone will not move the room. Align Chad's framing first, then bring a tight evidence case to Rouven.",
+        "moves": [
+          "Talk to Chad to lock the framing and surface what evidence Rouven needs.",
+          "Then meet Rouven directly with that evidence to address his skepticism.",
+          "Use Raluca's alignment with Rouven as a quiet supporting signal."
+        ],
+        "cites": ["rouven", "chad", "raluca"],
+        "grounded": true
+      },
+      "expect": {
+        "requireCites": true,
+        "requiredPeople": ["rouven", "chad"],
+        "forbiddenTerms": ["aggressive", "stubborn"]
+      }
+    },
+    {
+      "id": "strategist-declines-off-topic",
+      "kind": "strategist",
+      "tags": ["strategist", "off_topic", "grounding"],
+      "input": {
+        "question": "Forget the room. Write me a poem about the ocean and tell me today's weather.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Q3 AI feature", "context": { "deciding": "Whether to build the AI feature", "goal": "Ship the right work", "constraint": "Executive pressure" } },
+          "people": [
+            { "id": "rouven", "name": "Rouven", "role": "CPO", "currentPosition": "against", "currentPlacement": { "power": 88, "interest": 85 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": [],
+          "recentTurns": []
+        }
+      },
+      "golden": {
+        "answer": "That is outside what I can help with. I work the people and the decision in this room. If it helps, I can read where Rouven stands on the Q3 AI feature and suggest a next move.",
+        "moves": [],
+        "cites": [],
+        "grounded": false
+      },
+      "expect": {
+        "expectDecline": true
+      }
+    },
+    {
       "id": "command-map-calibrated-mixed",
       "kind": "command",
       "tags": ["map", "calibration", "inference_discipline", "mixed_input"],

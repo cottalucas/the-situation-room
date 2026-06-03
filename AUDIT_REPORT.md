@@ -501,3 +501,50 @@ Phase 7, which builds on this persisted context.
 Build clean, offline evals 12/12, function syntax OK, prompt versions in sync.
 The persistence path is exercised through Firestore at runtime; a live signed-in
 reload is the manual confirmation (offline evals do not touch Firestore).
+
+---
+
+## PHASE 7 — Grounded strategist layer
+
+Timestamp: 2026-06-03
+
+Added a scoped, grounded conversational strategist as a new command, `@ask`
+(alias `@coach`). It is additive: every deterministic command works exactly as
+before.
+
+### Behaviour
+- Reasons only over the room: people, roles, positions, grid placements, network
+  edges, notes, and the Phase 6 `recentTurns`. Answers "who should I talk to
+  first?", "what am I missing?", "where is the risk?" in the voice of a calm
+  stakeholder coach.
+- Output: `{ answer, moves[], cites[], grounded }`. `cites` are the person ids it
+  reasoned from; `normalizeStrategistAnswer` drops any cite not in the room, so
+  the coach cannot reference invented people. The chat card shows the answer, up
+  to three concrete moves, and a "Grounded in <names>" line.
+- Declines off-topic: generic or off-topic requests return `grounded: false` and
+  steer back, so it does not behave like a generic chatbot.
+- No diagnosis: the prompt forbids personality types, mental-health language, and
+  traits; describes observable behavior and stated positions only. This keeps the
+  "no fourth lens, no personality quiz" constraint intact.
+
+### Cost guard
+Haiku only, 900 token cap on the strategist call, and the existing per-user daily
+request and cost limits in the Function apply unchanged.
+
+### Files
+- `llm-prompts.js`: `STRATEGIST_SYSTEM_PROMPT`, `strategistPrompt`, version.
+- `room-command-contract.js`: `normalizeStrategistAnswer` (grounds cites).
+- `context.js`: `askStrategist` browser bridge.
+- `functions/index.js` + `vite.config.js`: `/api/strategist` endpoint (prod +
+  local), mirrored prompt and normalizer.
+- `Room.jsx`: `@ask`/`@coach` parsing, render, persistence; `Chat.jsx`:
+  `CoachMessage`; `CommandsModal.jsx`: `@ask` entry; small `coach-cites` style.
+
+### Evals (mocked, offline)
+- `strategist-grounded-who-first`: a grounded answer must cite only room people,
+  reference the high-power blocker, and avoid trait words.
+- `strategist-declines-off-topic`: a poem/weather request must decline
+  (`grounded: false`).
+- Harness gained `scoreStrategist`, a `BANNED_TRAIT_TERMS` diagnosis list applied
+  to every strategist answer, and `requireCites` / `expectDecline` checks.
+- Offline suite now 14/14.
