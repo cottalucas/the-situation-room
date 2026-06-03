@@ -1,5 +1,5 @@
 import React from "react";
-import { initialsOf } from "../lib/frameworks.js";
+import { shortNameOf } from "../lib/frameworks.js";
 
 /**
  * A person token used on the Grid and Network. Optional pointer handlers make
@@ -18,7 +18,7 @@ export function Chip({ person, position, selected, style, badge, onClick, pointe
       title={`${person.name}, ${person.role}`}
     >
       <span className={`chip-dot dot-${pos}`} />
-      <span className="chip-initials">{initialsOf(person.name)}</span>
+      <span className="chip-initials">{shortNameOf(person.name)}</span>
       {badge != null && <span className="chip-step">{badge}</span>}
       <span className="chip-name">
         {person.name}

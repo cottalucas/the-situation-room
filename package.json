@@ -6,9 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "eval:offline": "node scripts/eval-v1.mjs",
+    "eval:live": "EVAL_ALLOW_LIVE=true node scripts/eval-v1.mjs --live",
+    "functions:lint": "npm --prefix functions run lint",
+    "trace:summary": "node scripts/trace-summary.mjs"
   },
   "dependencies": {
+    "firebase": "^12.14.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

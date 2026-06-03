@@ -65,10 +65,41 @@ function SimpleMessage({ label, variant, latest, children }) {
   );
 }
 
+function UpdatedMessage({ message, latest }) {
+  return (
+    <SimpleMessage label={message.label || "Updated"} variant="chat-updated" latest={latest}>
+      <p>{message.body}</p>
+      {message.questions?.length > 0 && (
+        <ul className="chat-questions">
+          {message.questions.map((q) => (
+            <li key={q}>{q}</li>
+          ))}
+        </ul>
+      )}
+    </SimpleMessage>
+  );
+}
+
+function UserMessage({ body, latest }) {
+  return (
+    <div className={`chat-msg chat-user ${latest ? "is-latest" : ""}`}>
+      <p>{body}</p>
+    </div>
+  );
+}
+
+function LoadingMessage() {
+  return (
+    <SimpleMessage label="Reading the room" variant="chat-loading" latest>
+      <p>Updating the room from this command.</p>
+    </SimpleMessage>
+  );
+}
+
 /* The resting state: a framed card that reads the room at a glance. */
 function RestingCard({ participants, decision, onOpenProfile }) {
   const counts = participants.reduce((a, p) => {
-    const s = decision.positions[p.id] || "unknown";
+    const s = decision?.positions?.[p.id] || "unknown";
     a[s] = (a[s] || 0) + 1;
     return a;
   }, {});
@@ -93,7 +124,7 @@ function RestingCard({ participants, decision, onOpenProfile }) {
               <span className="resting-row-name">{p.name}</span>
               <span className="resting-row-role">{p.role}</span>
             </div>
-            <PositionBadge position={decision.positions[p.id] || "unknown"} size="xs" />
+            <PositionBadge position={decision?.positions?.[p.id] || "unknown"} size="xs" />
           </li>
         ))}
       </ul>
@@ -101,11 +132,23 @@ function RestingCard({ participants, decision, onOpenProfile }) {
   );
 }
 
+function EmptyConversation() {
+  return (
+    <div className="conversation-empty">
+      <span className="msg-label">Conversation</span>
+      <h3 className="resting-headline">The play lives here.</h3>
+      <p className="resting-sub">
+        Create or select a decision, then ask what to do before the next conversation.
+      </p>
+    </div>
+  );
+}
+
 /**
- * The conversation. Plays and command confirmations only. Person reads live in
- * the floating profile, never in this stream. The resting state is a framed card.
+ * The conversation. User prompts and assistant command confirmations alternate
+ * in the thread. Person reads live in the floating profile, never in this stream.
  */
-export function Chat({ messages, participants, decision, onShowNetwork, onOpenProfile, onOpenCommands, draft, setDraft, onSubmit }) {
+export function Chat({ messages, participants, decision, onShowNetwork, onOpenProfile, onOpenCommands, draft, setDraft, onSubmit, isGenerating }) {
   const endRef = useRef(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -113,15 +156,21 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
 
   const resting = messages.length <= 1 && messages[0]?.type === "welcome";
   const last = messages.length - 1;
+  const locked = !decision;
+  const trimmedDraft = draft.trim();
+  const commandReady = trimmedDraft.startsWith("@");
 
   return (
     <section className="chat">
       <div className="chat-thread">
-        {resting ? (
+        {locked ? (
+          <EmptyConversation />
+        ) : resting ? (
           <RestingCard participants={participants} decision={decision} onOpenProfile={onOpenProfile} />
         ) : (
           messages.map((m, i) => {
             const latest = i === last;
+            if (m.type === "user") return <UserMessage key={m.id} body={m.body} latest={latest} />;
             if (m.type === "play")
               return (
                 <PlayMessage key={m.id} response={m.response} people={participants} latest={latest} onShowNetwork={() => onShowNetwork(m.response)} />
@@ -138,6 +187,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
                   <p>{m.body}</p>
                 </SimpleMessage>
               );
+            if (m.type === "updated") return <UpdatedMessage key={m.id} message={m} latest={latest} />;
             if (m.type === "welcome") return null;
             return (
               <SimpleMessage key={m.id} label="No read" variant="chat-fallback" latest={latest}>
@@ -146,28 +196,35 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
             );
           })
         )}
+        {isGenerating && <LoadingMessage />}
         <div ref={endRef} />
       </div>
 
       <div className="chat-input-area">
         <div className="prompt-chips">
           {EXAMPLE_PROMPTS.map((p) => (
-            <button key={p} type="button" className="prompt-chip" onClick={() => setDraft(p)}>
+            <button key={p} type="button" className="prompt-chip" onClick={() => setDraft(p)} disabled={locked || isGenerating}>
               {p}
             </button>
           ))}
         </div>
         <form className="chat-form" onSubmit={onSubmit}>
-          <button type="button" className="chat-commands" onClick={onOpenCommands} title="Commands">
+          <button type="button" className="chat-commands" onClick={onOpenCommands} title="Commands" disabled={locked || isGenerating}>
             /
           </button>
-          <input className="chat-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ask a situation, or type / for commands" />
-          <button className="chat-send" type="submit">
-            Send
+          <input
+            className="chat-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={locked ? "Create a decision to start the conversation" : "Type @network, @grid, @map, @note, or /"}
+            disabled={locked || isGenerating}
+          />
+          <button className="chat-send" type="submit" disabled={locked || isGenerating || !commandReady}>
+            {isGenerating ? "Reading" : "Send"}
           </button>
         </form>
         <p className="chat-hint">
-          <code>@notes name text</code> attaches a note. <code>@add name, role</code> adds someone. Or ask a situation.
+          Only commands run here. <code>@note</code> saves memory. <code>@network</code>, <code>@grid</code>, and <code>@map</code> update the room.
         </p>
       </div>
     </section>

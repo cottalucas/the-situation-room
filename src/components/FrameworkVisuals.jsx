@@ -24,17 +24,19 @@ export function FrameworkVisuals({ person }) {
     return (
       <div className="fw-fresh">
         <p>First pass read. Sharpen it with notes as you learn how they operate.</p>
-        <code className="cmd-hint">@notes {person.name.split(" ")[0]} ...</code>
+        <code className="cmd-hint">@note {person.name.split(" ")[0]} ...</code>
       </div>
     );
   }
 
-  const dims = person.scarfDimensions || [];
-  const tkiColor = TKI_COLORS[person.tkiStyle] || "#8d8a82";
+  const read = person.baseRead || {};
+  const tags = person.visualTags || {};
+  const dims = tags.scarfDimensions || [];
+  const tkiColor = TKI_COLORS[tags.tkiStyle] || "#8d8a82";
 
   return (
     <div className="vfw-list">
-      <Row label="SCARF" body={person.scarf}>
+      <Row label="SCARF" body={read.scarf}>
         <span className="scarf-dims">
           {SCARF_ALL.map((d) => {
             const on = dims.includes(d);
@@ -52,15 +54,15 @@ export function FrameworkVisuals({ person }) {
         </span>
       </Row>
 
-      <Row label="Thomas-Kilmann" body={person.tki}>
+      <Row label="Thomas-Kilmann" body={read.tki}>
         <span className="tki-badge" style={{ background: tkiColor }}>
-          {person.tkiStyle || "Unknown"}
+          {tags.tkiStyle || "Unknown"}
         </span>
       </Row>
 
-      <Row label="Cialdini" body={person.cialdini}>
+      <Row label="Cialdini" body={read.cialdini}>
         <span className="cialdini-chips">
-          {(person.cialdiniLever || "").split("·").map((l) => (
+          {(tags.cialdiniLever || "").split("·").map((l) => (
             <span key={l} className="cialdini-chip">
               {l.trim()}
             </span>
@@ -68,8 +70,8 @@ export function FrameworkVisuals({ person }) {
         </span>
       </Row>
 
-      <Row label="Fisher & Ury" body={person.fisherUry}>
-        <span className="fu-teaser">{person.fuTeaser}</span>
+      <Row label="Fisher & Ury" body={read.fisherUry}>
+        <span className="fu-teaser">{tags.fuTeaser}</span>
       </Row>
     </div>
   );

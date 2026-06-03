@@ -52,8 +52,8 @@ Body base is 15px with 1.55 line height. Do not go below 13px for anything a
 user reads. Labels and meta sit at 11 to 12px.
 
 ```
-brand            clamp(26, 3vw, 38) serif 500
-landing title    clamp(48, 8vw, 88) serif 500
+brand            36 desktop / 30 mobile serif 500
+landing title    82 desktop / 56 mobile serif 500
 tab label        17 serif 600
 modal title      24 serif 600
 profile name     22 serif 600
@@ -72,9 +72,20 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
 ## Components
 
 - Floating profile uses `--shadow-float`. Cards use `--shadow`.
+- Modals use a stable rgba backdrop. Do not animate or color-mix the backdrop;
+  it can flicker during Firestore-driven rerenders.
 - Buttons: `.btn-primary` (ink), `.btn-secondary` (outline), `.btn-ghost`,
   `.btn-danger`. One primary per surface.
+- Chat threads alternate user prompts and assistant replies. User prompts are
+  right-aligned ink bubbles; assistant command results stay in raised cards
+  because they are also structured UI.
 - Position shown as a colored dot (chip) and a pill badge.
+- Network and grid chips show a three character first-name label such as Cha,
+  Cla, Rou, or Ral. Full name and role stay available through hover labels and
+  the profile surface.
+- The grid does not carry instructional text inside the plot area. Empty space
+  helps people read position; interaction hints belong outside the map or in
+  onboarding.
 - Frameworks render visual first: SCARF as colored dimension pills, Thomas
   Kilmann as a colored mode badge, Cialdini as lever chips, Fisher and Ury as a
   one line teaser. Full text expands on click.

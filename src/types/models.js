@@ -5,17 +5,16 @@
  *   Room        has a persistent roster of Person ids, and many Decisions.
  *   Decision    belongs to a Room. It pulls participants from the roster and
  *               may add externals (people scoped to this decision only).
- *               Positions live on the decision, so a person can be "against"
- *               on one decision and "for" on another.
+ *               Positions and placements live on the decision, so a person can
+ *               be "against" on one decision and "for" on another.
  *   Person      a global profile that compounds across decisions and rooms:
- *               read, goal, notes, history. One person, two scopes:
+ *               read, goal, observations, history. One person, two scopes:
  *               room roster (persistent) and decision participant (per decision).
  *   Edge        a typed relationship between two people on the network.
- *   Note        a free text observation attached to a person. Local only.
- *   HistoryEntry  how a person behaved on a past decision. The global memory.
+ *   Observation a free text memory item attached to a person.
  *
  * These are JSDoc typedefs, not runtime code. They document the shapes that
- * the store reads and writes, and that Firestore will hold later.
+ * the store reads and writes, and that Firestore holds in configured mode.
  */
 
 /**
@@ -43,6 +42,9 @@
  * @property {string[]} participantIds   Roster members in this decision.
  * @property {string[]} externalIds      People scoped to this decision only.
  * @property {Object.<string,Position>} positions  personId to stance.
+ * @property {Object.<string,Placement>} placements personId to grid placement.
+ * @property {DecisionNote[]} decisionNotes
+ * @property {string} derivedSummary
  */
 
 /**
@@ -54,22 +56,20 @@
  * @property {string} id
  * @property {string} name
  * @property {string} role
- * @property {number} power            0 to 100.
- * @property {number} interest         0 to 100.
  * @property {string} goal             The driver.
  * @property {string} context          One paragraph of background.
- * @property {string[]} scarfDimensions  Which SCARF dimensions are threatened.
- * @property {string} tkiStyle         Thomas Kilmann mode label.
- * @property {string} cialdiniLever    Cialdini lever labels.
- * @property {string} fuTeaser         One line Fisher and Ury teaser.
- * @property {string} scarf            Full SCARF read.
- * @property {string} tki              Full Thomas Kilmann read.
- * @property {string} cialdini         Full Cialdini read.
- * @property {string} fisherUry        Full Fisher and Ury read.
- * @property {Note[]} notes
- * @property {HistoryEntry[]} history
+ * @property {{scarf:string,tki:string,cialdini:string,fisherUry:string}} baseRead
+ * @property {{scarfDimensions:string[],tkiStyle:string,cialdiniLever:string,fuTeaser:string}} visualTags
+ * @property {{personId:string,type:string}[]} relationships
+ * @property {Observation[]} observations
  * @property {boolean} [fresh]         True for a just added person with little data.
  * @property {boolean} [external]      True if created as a decision external.
+ */
+
+/**
+ * @typedef {Object} Placement
+ * @property {number} power      0 to 100.
+ * @property {number} interest   0 to 100.
  */
 
 /**
@@ -81,21 +81,27 @@
  */
 
 /**
- * @typedef {string} Note   A plain string for now. Becomes {text, at} in Firestore.
+ * @typedef {Object} Observation
+ * @property {string} id
+ * @property {string} text
+ * @property {"note"|"chat"|"history"} source
+ * @property {string} [decisionId]
+ * @property {*} [ts]
  */
 
 /**
- * @typedef {Object} HistoryEntry
- * @property {string} decision   Title of the past decision.
- * @property {Position} stance   How they landed.
- * @property {string} note       What happened.
+ * @typedef {Object} DecisionNote
+ * @property {string} text
+ * @property {number|*} ts
  */
 
 /**
  * @typedef {Object} ChatMessage
  * @property {string} id
- * @property {"welcome"|"play"|"note"|"added"|"fallback"} type
+ * @property {"welcome"|"play"|"note"|"added"|"updated"|"fallback"} type
  * @property {string} [body]
+ * @property {string} [label]
+ * @property {string[]} [questions]
  * @property {Object} [response]   Present on play messages.
  */
 

@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function ownsPerson(personId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/people/$(personId)).data.ownerId == request.auth.uid;
+    }
+
+    function ownsRoom(roomId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/rooms/$(roomId)).data.ownerId == request.auth.uid;
+    }
+
+    function ownerFieldIsSelf() {
+      return signedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    function ownerFieldDoesNotChange() {
+      return request.resource.data.ownerId == resource.data.ownerId;
+    }
+
+    function validObservation() {
+      return request.resource.data.source in ['note', 'chat', 'history'];
+    }
+
+    function validEdge() {
+      return request.resource.data.type in ['ally', 'conflict', 'defers'];
+    }
+
+    function validStatus() {
+      return request.resource.data.status in ['active', 'archived'];
+    }
+
+    match /users/{uid} {
+      allow create: if isSelf(uid);
+      allow read, update, delete: if isSelf(uid);
+
+      match /llmUsage/{dayId} {
+        allow read: if isSelf(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /llmTraces/{traceId} {
+        allow read, delete: if isSelf(uid);
+        allow create, update: if false;
+      }
+    }
+
+    match /people/{personId} {
+      allow create: if ownerFieldIsSelf();
+      allow read, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && ownerFieldDoesNotChange();
+
+      match /observations/{obsId} {
+        allow read: if ownsPerson(personId);
+        allow create: if ownsPerson(personId) && validObservation();
+        allow delete: if ownsPerson(personId);
+        allow update: if false;
+      }
+    }
+
+    match /rooms/{roomId} {
+      allow create: if ownerFieldIsSelf();
+      allow read, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && ownerFieldDoesNotChange();
+
+      match /decisions/{decId} {
+        allow read, delete: if ownsRoom(roomId);
+        allow create, update: if ownsRoom(roomId) && validStatus();
+
+        match /edges/{edgeId} {
+          allow read, delete: if ownsRoom(roomId);
+          allow create, update: if ownsRoom(roomId) && validEdge();
+        }
+
+        match /plays/{playId} {
+          allow read, delete: if ownsRoom(roomId);
+          allow create: if ownsRoom(roomId);
+          allow update: if false;
+        }
+      }
+    }
+  }
+}

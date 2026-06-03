@@ -1,22 +1,20 @@
 import React, { useState } from "react";
-import { RegisterModal } from "../components/modals/RegisterModal.jsx";
+import { AuthModal } from "../components/modals/AuthModal.jsx";
 
-/** Public marketing page. Sign in enters the app; Register opens the modal. */
-export default function Landing({ onEnter }) {
-  const [register, setRegister] = useState(false);
+/**
+ * Public marketing page. Get started opens the combined auth modal. When
+ * Firebase is configured it creates or uses a real account. Local preview is
+ * available only when explicitly enabled by env.
+ */
+export default function Landing({ onLocalEnter, configured, localPreview = false }) {
+  const [authOpen, setAuthOpen] = useState(false);
 
   return (
     <div className="landing">
       <header className="landing-nav">
-        <span className="company">Northwind</span>
-        <div className="landing-nav-actions">
-          <button className="landing-signin" onClick={onEnter}>
-            Sign in
-          </button>
-          <button className="landing-register" onClick={() => setRegister(true)}>
-            Register
-          </button>
-        </div>
+        <button className="landing-register" onClick={() => setAuthOpen(true)}>
+          Get started
+        </button>
       </header>
 
       <main className="landing-main">
@@ -28,11 +26,8 @@ export default function Landing({ onEnter }) {
             understand what moves each of them, and walk in with the play already half won.
           </p>
           <div className="landing-cta-row">
-            <button className="landing-cta" onClick={() => setRegister(true)}>
+            <button className="landing-cta" onClick={() => setAuthOpen(true)}>
               Get started →
-            </button>
-            <button className="landing-cta-ghost" onClick={onEnter}>
-              Sign in
             </button>
           </div>
         </section>
@@ -40,25 +35,19 @@ export default function Landing({ onEnter }) {
         <section className="landing-how">
           <span className="landing-how-label">How it works</span>
           <div className="landing-steps">
-            <Step
-              n="01"
-              title="Describe your team"
-              body="Name who is in the room, who reports to whom, and where the friction sits. Plain language, no forms. The room remembers them for next time."
-              glyph="text"
-            />
-            <Step
-              n="02"
-              title="See the map"
-              body="People land on a Power and Interest grid and an influence network. You see who to spend energy on and who quietly moves whom."
-              glyph="map"
-            />
-            <Step
-              n="03"
-              title="Get the play"
-              body="Ask a real situation. Get a sequenced play, grounded in SCARF, Cialdini, and interest based negotiation. The exact order of conversations to have."
-              glyph="play"
-            />
+            <Step n="01" title="Describe your team" glyph="text" body="Name who is in the room, who reports to whom, and where the friction sits. Plain language, no forms. The room remembers them for next time." />
+            <Step n="02" title="See the map" glyph="map" body="People land on a Power and Interest grid and an influence network. You see who to spend energy on and who quietly moves whom." />
+            <Step n="03" title="Get the play" glyph="play" body="Ask a real situation. Get a sequenced play, grounded in SCARF, Cialdini, and interest based negotiation. The exact order of conversations to have." />
           </div>
+        </section>
+
+        <section className="landing-why">
+          <span className="landing-how-label">Why</span>
+          <h2 className="landing-why-title">Most product tools help you decide what to build. This helps you move the room.</h2>
+          <p className="landing-why-body">
+            Prioritization, strategy, and delivery frameworks make the work clearer. They rarely tell you who needs status, who needs certainty,
+            who can block the path, or which conversation has to happen first. The Situation Room turns that political work into a map and a play.
+          </p>
         </section>
 
         <section className="landing-foot">
@@ -70,7 +59,9 @@ export default function Landing({ onEnter }) {
         </section>
       </main>
 
-      {register && <RegisterModal onClose={() => setRegister(false)} onEnter={onEnter} />}
+      {authOpen && (
+        <AuthModal configured={configured} localPreview={localPreview} onLocalEnter={onLocalEnter} onClose={() => setAuthOpen(false)} />
+      )}
     </div>
   );
 }

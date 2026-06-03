@@ -3,8 +3,13 @@
 Source of truth for what we are building and why. Revise freely.
 
 ## Stage
-Working prototype. Local state only, no backend yet. Next step is a real
-foundation on Firebase (Auth and Firestore) plus the Claude API for reasoning.
+Working prototype with Firebase Auth and Firestore behind the store interface.
+The encrypted local cache remains for fast load and session consistency.
+Claude chat is command-first through local Vite testing or an authenticated
+Firebase Function. `@note`, `@grid`, `@network`, and `@map` are the active
+surface while open play chat stays parked until mapping, trace capture, and
+evals are stronger. Next step is the privacy surface for export, delete, and
+clear data location.
 
 ## Problem
 The tools a product or corporate operator has help with the artifact, not the
@@ -22,7 +27,8 @@ think this way. They lack a place to map it and a sharp second opinion.
 - Decisions pull participants from the roster and may add externals.
 - Three lenses per decision: People (who you are dealing with), Grid (who to
   spend energy on), Network (who moves whom).
-- A chat that returns a grounded, sequenced play for a situation.
+- A command-first chat that updates notes, grid, and network from prose. Open
+  play coaching comes back after the command layer is reliable.
 - Person profiles that compound across decisions: read, goal, notes, history.
 
 ## Success signal

@@ -12,3 +12,10 @@ dist
 *.pem
 *.key
 secrets/
+
+# Firebase CLI deploy cache
+.firebase/
+firebase-debug.log*
+
+# local LLM traces contain private prompts and raw model responses
+llm-traces/

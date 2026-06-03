@@ -95,6 +95,27 @@ const FALLBACK = {
     "This prototype runs one seeded scenario. Try asking how to get the legacy integration sunset through the leadership review.",
 };
 
+function firstName(person) {
+  return (person?.name || "").split(" ")[0].toLowerCase();
+}
+
+function matchingId(seedId, participants) {
+  const wanted = seedId.toLowerCase();
+  const match = participants.find((p) => {
+    const id = (p.id || "").toLowerCase();
+    return id === wanted || id.endsWith(`_${wanted}`) || firstName(p) === wanted;
+  });
+  return match?.id || seedId;
+}
+
+function scopedPlay(play, participants) {
+  return {
+    ...play,
+    steps: play.steps.map((step) => ({ ...step, person: matchingId(step.person, participants) })),
+    sequence: play.sequence.map((id) => matchingId(id, participants)),
+  };
+}
+
 /**
  * @param {string} question
  * @param {import("../types/models").Person[]} participants
@@ -105,10 +126,11 @@ export function getResponse(question, participants, context) {
   // TODO: send question, context, participants, and notes to the Claude API.
   const q = (question || "").toLowerCase();
   const matched = SCENARIO_KEYWORDS.some((kw) => q.includes(kw));
-  return matched ? CANNED_PLAY : FALLBACK;
+  return matched ? scopedPlay(CANNED_PLAY, participants || []) : FALLBACK;
 }
 
 export const EXAMPLE_PROMPTS = [
-  "How do I get the sunset approved at the review?",
-  "Who do I talk to first before the leadership review?",
+  "@network who moves whom",
+  "@grid power and interest",
+  "@note Chad protects PMs",
 ];

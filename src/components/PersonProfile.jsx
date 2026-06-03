@@ -50,7 +50,7 @@ function EditableField({ value, placeholder, editable, onSave, multiline }) {
  *   variant="compact"  the quick read from Grid or Network.
  *   variant="full"     the rich, editable view from the People tab.
  */
-export function PersonProfile({ person, position, variant = "compact", onClose, onSave }) {
+export function PersonProfile({ person, position, placement, variant = "compact", onClose, onSave, onDelete }) {
   const full = variant === "full";
   const ref = useRef(null);
   const drag = useRef(null);
@@ -84,7 +84,11 @@ export function PersonProfile({ person, position, variant = "compact", onClose, 
 
   if (!pos) return null;
   const stance = position || "unknown";
-  const quad = quadrantFor(person.power, person.interest);
+  const pi = placement || { power: 50, interest: 55 };
+  const quad = quadrantFor(pi.power, pi.interest);
+  const observations = person.observations || [];
+  const notes = observations.filter((o) => o.source !== "history");
+  const history = observations.filter((o) => o.source === "history");
 
   return (
     <div
@@ -119,7 +123,7 @@ export function PersonProfile({ person, position, variant = "compact", onClose, 
         <div className="profile-meta">
           <QuadChip quad={quad} />
           <span className="muted-text">
-            Power {person.power}, Interest {person.interest}
+            Power {pi.power}, Interest {pi.interest}
           </span>
         </div>
 
@@ -145,19 +149,19 @@ export function PersonProfile({ person, position, variant = "compact", onClose, 
 
         <div className="profile-block">
           <span className="section-label">
-            Notes <span className="privacy-tag">On device</span>
+            Notes <span className="privacy-tag">Encrypted</span>
           </span>
-          {person.notes?.length ? (
+          {notes.length ? (
             <ul className="notes-list">
-              {person.notes.map((n, i) => (
+              {notes.map((o, i) => (
                 <li key={i} className="note-item">
-                  {n}
+                  {o.text}
                 </li>
               ))}
             </ul>
           ) : (
             <p className="muted-text small">
-              None yet. Add one from the chat: <code>@notes {person.name.split(" ")[0]} ...</code>
+              None yet. Add one from the chat: <code>@note {person.name.split(" ")[0]} ...</code>
             </p>
           )}
         </div>
@@ -165,14 +169,13 @@ export function PersonProfile({ person, position, variant = "compact", onClose, 
         {full && (
           <div className="profile-block">
             <span className="section-label">History across decisions</span>
-            {person.history?.length ? (
+            {history.length ? (
               <ul className="history-list">
-                {person.history.map((h, i) => (
+                {history.map((o, i) => (
                   <li key={i} className="history-item">
-                    <span className={`history-dot dot-${h.stance}`} />
+                    <span className="history-dot dot-neutral" />
                     <div>
-                      <span className="history-decision">{h.decision}</span>
-                      <span className="history-note">{h.note}</span>
+                      <span className="history-note">{o.text}</span>
                     </div>
                   </li>
                 ))}
@@ -180,6 +183,14 @@ export function PersonProfile({ person, position, variant = "compact", onClose, 
             ) : (
               <p className="muted-text small">No past decisions recorded yet.</p>
             )}
+          </div>
+        )}
+
+        {full && onDelete && (
+          <div className="profile-danger">
+            <button className="btn-danger" onClick={() => onDelete(person.id)}>
+              Remove from roster
+            </button>
           </div>
         )}
       </div>

@@ -6,7 +6,7 @@ import { Chip } from "../Chip.jsx";
  * Power and Interest grid. People are draggable to adjust their placement; a
  * plain click without a drag opens the compact profile.
  */
-export function GridTab({ participants, decision, selectedId, onOpenProfile, onMove, mapNonce }) {
+export function GridTab({ participants, decision, selectedId, onOpenProfile, onMove }) {
   const plotRef = useRef(null);
   const drag = useRef(null);
 
@@ -54,21 +54,23 @@ export function GridTab({ participants, decision, selectedId, onOpenProfile, onM
             <div className="quad quad-monitor"><span className="quad-label">Monitor</span></div>
             <div className="quad quad-informed"><span className="quad-label">Keep informed</span></div>
           </div>
-          {participants.map((p, i) => (
-            <Chip
-              key={`${p.id}-${mapNonce}`}
-              person={p}
-              position={decision.positions[p.id]}
-              selected={p.id === selectedId}
-              pointer={makePointer(p.id)}
-              style={{
-                left: `${p.interest}%`,
-                bottom: `${p.power}%`,
-                animationDelay: `${0.1 * i + 0.12}s`,
-              }}
-            />
-          ))}
-          <span className="grid-hint">drag to adjust, click to inspect</span>
+          {participants.map((p, i) => {
+            const pl = decision.placements?.[p.id] || { power: 50, interest: 55 };
+            return (
+              <Chip
+                key={p.id}
+                person={p}
+                position={decision.positions[p.id]}
+                selected={p.id === selectedId}
+                pointer={makePointer(p.id)}
+                style={{
+                  left: `${pl.interest}%`,
+                  bottom: `${pl.power}%`,
+                  animationDelay: `${0.1 * i + 0.12}s`,
+                }}
+              />
+            );
+          })}
         </div>
         <div className="axis axis-x">
           <span className="axis-lohi axis-lohi-left">low</span>

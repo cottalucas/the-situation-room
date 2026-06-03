@@ -27,6 +27,15 @@ export function initialsOf(name) {
     .toUpperCase();
 }
 
+export function shortNameOf(name) {
+  const first = String(name || "")
+    .trim()
+    .split(/\s+/)[0]
+    ?.replace(/[^a-z0-9]/gi, "");
+  if (!first) return "?";
+  return `${first[0].toUpperCase()}${first.slice(1, 3).toLowerCase()}`;
+}
+
 export const POSITION_META = {
   for: { label: "For", cls: "pos-for" },
   against: { label: "Against", cls: "pos-against" },

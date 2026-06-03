@@ -1,96 +1,170 @@
 /**
  * Data access layer.
  *
- * The seam between the UI and where data lives. Today: an in memory store
- * seeded from data/seed.js, fronted by an encrypted IndexedDB cache (lib/cache.js)
- * for fast load and session consistency. Firebase becomes the store of record at
- * the auth pass; it slots in behind these same functions.
+ * Keeps a synchronous in memory mirror so components read without awaiting.
+ * In local mode the mirror comes from seed plus the encrypted cache. In
+ * Firestore mode connect(uid) loads the account into the mirror, writes go to
+ * Firestore (fire and forget) with optimistic mirror updates, and the encrypted
+ * cache stays in front for fast load.
  *
- * - subscribe()      mirrors a Firestore onSnapshot.
- * - query funcs      become getDoc / getDocs.
- * - mutation funcs   become setDoc / updateDoc / addDoc.
- *
- * TODO: replace the in memory implementation with Firestore. See lib/firebase.js.
+ * Per docs/architecture.md the situational overlay (positions, placements,
+ * edges) lives on the decision; stable traits and observations live on the
+ * person. getEdges, removeEdge, and setPlacement carry a decisionId for that
+ * reason; every other signature is unchanged.
  */
 
-import { peopleBase, histories, seedRooms, seedDecisions, networkEdges } from "../data/seed.js";
+import { peopleBase, seedObservations, seedRooms, seedDecisions, DEFAULT_PLACEMENT } from "../data/seed.js";
 import { saveCache, loadCache, clearCache } from "./cache.js";
+import { isConfigured } from "./firebase.js";
+import * as repo from "./firestore-repo.js";
 
-export const WELCOME =
-  "Select a participant to open their profile, or ask below for a play.";
+export const WELCOME = "Select a participant to open their profile, or ask below for a play.";
 
 let _seq = 0;
 const mid = () => `m${++_seq}`;
 
-function buildPeople() {
-  const map = {};
-  peopleBase.forEach((p) => {
-    map[p.id] = { ...p, notes: [], history: histories[p.id] || [] };
-  });
-  return map;
-}
+let mode = "local"; // "local" | "firestore"
+let uid = null;
+let remoteUnsubscribe = null;
+let connectionToken = 0;
+let connectingUid = null;
 
-function initialState() {
+/* ------------------------------------------------------------------ */
+/* Initial mirror (seed)                                               */
+/* ------------------------------------------------------------------ */
+
+function buildLocalState() {
+  const people = {};
+  peopleBase.forEach((p) => {
+    people[p.id] = { ...p, observations: (seedObservations[p.id] || []).map((o) => ({ ...o })) };
+  });
   const chats = {};
-  seedDecisions
-    .filter((d) => d.status === "active")
-    .forEach((d) => (chats[d.id] = [{ id: mid(), type: "welcome", body: WELCOME }]));
+  seedDecisions.filter((d) => d.status === "active").forEach((d) => (chats[d.id] = [{ id: mid(), type: "welcome", body: WELCOME }]));
   return {
-    people: buildPeople(),
+    people,
     rooms: seedRooms.map((r) => ({ ...r, rosterIds: [...r.rosterIds] })),
     decisions: seedDecisions.map((d) => ({
       ...d,
       participantIds: [...d.participantIds],
       externalIds: [...d.externalIds],
       positions: { ...d.positions },
+      placements: JSON.parse(JSON.stringify(d.placements)),
+      decisionNotes: [...d.decisionNotes],
+      edges: d.edges.map((e) => ({ ...e })),
     })),
-    edges: networkEdges.map((e) => ({ ...e })),
     chats,
     prefs: { railCollapsed: false },
   };
 }
 
-let state = initialState();
+let state = buildLocalState();
 const listeners = new Set();
+
+function emptyState(prefs = { railCollapsed: false }) {
+  return { people: {}, rooms: [], decisions: [], chats: {}, prefs };
+}
 
 let persistTimer = null;
 function schedulePersist() {
   clearTimeout(persistTimer);
   persistTimer = setTimeout(() => saveCache(state), 250);
 }
-
 function commit(next) {
   state = next;
   schedulePersist();
   listeners.forEach((fn) => fn());
 }
 
-/** Subscribe to any change. Returns an unsubscribe function. */
+function chatsFor(decisions) {
+  const chats = {};
+  decisions.forEach((d) => {
+    chats[d.id] = state.chats[d.id] || [{ id: mid(), type: "welcome", body: WELCOME }];
+  });
+  return chats;
+}
+
+function makeId(prefix) {
+  const rand = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
+  return `${prefix}-${Date.now()}-${rand}`;
+}
+
 export function subscribe(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
-
-/** Snapshot for useSyncExternalStore. Identity changes on every commit. */
 export function getSnapshot() {
   return state;
 }
 
-/** Load the encrypted cache and replace state if present. Call once on mount. */
+/* ------------------------------------------------------------------ */
+/* Connection lifecycle                                                */
+/* ------------------------------------------------------------------ */
+
+/** Local mode: hydrate from the encrypted cache if present. */
 export async function hydrate() {
+  if (mode === "firestore") return;
   const cached = await loadCache();
-  if (cached && cached.rooms && cached.people) {
-    commit({ ...initialState(), ...cached });
+  if (cached?.rooms && cached?.people) commit({ ...buildLocalState(), ...cached });
+}
+
+/** Firestore mode: load the account into the mirror. New accounts start empty. */
+export async function connect(authedUid) {
+  if (!isConfigured) return;
+  if (mode === "firestore" && uid === authedUid && (connectingUid === authedUid || remoteUnsubscribe)) return;
+  const token = ++connectionToken;
+  remoteUnsubscribe?.();
+  remoteUnsubscribe = null;
+  mode = "firestore";
+  uid = authedUid;
+  connectingUid = authedUid;
+  const prefs = state.prefs || { railCollapsed: false };
+  const cached = await loadCache();
+  if (token !== connectionToken) return;
+  commit(cached?.rooms && cached?.people ? { ...emptyState(prefs), ...cached, prefs: cached.prefs || prefs } : emptyState(prefs));
+  try {
+    remoteUnsubscribe = repo.watchAll(
+      uid,
+      (loaded) => {
+        if (token !== connectionToken) return;
+        commit({ ...loaded, chats: chatsFor(loaded.decisions), prefs: state.prefs || prefs });
+      },
+      (e) => console.error("[store] listen failed", e)
+    );
+  } catch (e) {
+    console.error("[store] connect failed", e);
+  } finally {
+    if (token === connectionToken) connectingUid = null;
   }
 }
 
-/** Wipe the cache and reset to seed. Used on sign out. */
-export async function reset() {
+/** Sign out: drop Firestore data from memory, clear cache, back to seed. */
+export async function disconnect() {
+  connectionToken++;
+  remoteUnsubscribe?.();
+  remoteUnsubscribe = null;
+  connectingUid = null;
+  mode = "local";
+  uid = null;
   await clearCache();
-  commit(initialState());
+  commit(buildLocalState());
 }
 
-/* ---------------- queries ---------------- */
+export async function reset() {
+  connectionToken++;
+  remoteUnsubscribe?.();
+  remoteUnsubscribe = null;
+  connectingUid = null;
+  mode = "local";
+  uid = null;
+  await clearCache();
+  commit(buildLocalState());
+}
+
+const fs = () => mode === "firestore";
+
+/* ------------------------------------------------------------------ */
+/* Queries                                                             */
+/* ------------------------------------------------------------------ */
 
 export function getRooms() {
   return state.rooms;
@@ -110,8 +184,8 @@ export function getPerson(id) {
 export function getAllPeople() {
   return state.people;
 }
-export function getEdges() {
-  return state.edges;
+export function getEdges(decisionId) {
+  return getDecision(decisionId)?.edges || [];
 }
 export function getChat(decisionId) {
   return state.chats[decisionId] || [];
@@ -121,44 +195,111 @@ export function getParticipants(decisionId) {
   if (!d) return [];
   return [...d.participantIds, ...d.externalIds].map((id) => state.people[id]).filter(Boolean);
 }
+export function getPlacement(decisionId, personId) {
+  return getDecision(decisionId)?.placements?.[personId] || DEFAULT_PLACEMENT;
+}
 export function getPref(key) {
   return state.prefs?.[key];
 }
 
-/* ---------------- preferences ---------------- */
+/* ------------------------------------------------------------------ */
+/* Preferences                                                         */
+/* ------------------------------------------------------------------ */
 
 export function setPref(key, value) {
   commit({ ...state, prefs: { ...state.prefs, [key]: value } });
 }
 
-/* ---------------- people ---------------- */
+/* ------------------------------------------------------------------ */
+/* People                                                              */
+/* ------------------------------------------------------------------ */
 
 export function savePerson(person) {
   commit({ ...state, people: { ...state.people, [person.id]: { ...person } } });
+  if (fs()) repo.putPerson(uid, person);
+}
+export function createPerson({ name, role = "", goal = "", context = "" } = {}) {
+  const id = makeId(fs() && uid ? `${uid}_person` : "person");
+  const person = {
+    id,
+    name: name || "Unnamed person",
+    role,
+    goal,
+    context,
+    fresh: true,
+    external: false,
+    baseRead: { scarf: "", tki: "", cialdini: "", fisherUry: "" },
+    visualTags: { scarfDimensions: [], tkiStyle: "", cialdiniLever: "", fuTeaser: "" },
+    relationships: [],
+    observations: [],
+  };
+  savePerson(person);
+  return id;
 }
 export function updatePerson(id, patch) {
   const p = state.people[id];
   if (!p) return;
-  commit({ ...state, people: { ...state.people, [id]: { ...p, ...patch } } });
+  const next = { ...p, ...patch };
+  commit({ ...state, people: { ...state.people, [id]: next } });
+  if (fs()) repo.putPerson(uid, next);
 }
-export function movePerson(id, power, interest) {
-  updatePerson(id, { power, interest });
-}
-export function addNote(id, text) {
-  const p = state.people[id];
+export function addObservation(personId, { text, source = "note", decisionId } = {}) {
+  const p = state.people[personId];
   if (!p) return;
-  updatePerson(id, { notes: [...(p.notes || []), text] });
+  const obs = { id: mid(), text, source, decisionId };
+  commit({ ...state, people: { ...state.people, [personId]: { ...p, observations: [...(p.observations || []), obs] } } });
+  if (fs()) repo.addObservation(personId, { text, source, decisionId });
+}
+/** Kept for the chat command path. A note is an observation. */
+export function addNote(id, text) {
+  addObservation(id, { text, source: "note" });
+}
+function referencedPeopleAfter({ excludedRoomId = null } = {}) {
+  const refs = new Set();
+  state.rooms.forEach((room) => {
+    if (room.id === excludedRoomId) return;
+    (room.rosterIds || []).forEach((id) => refs.add(id));
+  });
+  state.decisions.forEach((decision) => {
+    if (decision.roomId === excludedRoomId) return;
+    [...(decision.participantIds || []), ...(decision.externalIds || [])].forEach((id) => refs.add(id));
+    (decision.edges || []).forEach((edge) => {
+      refs.add(edge.from);
+      refs.add(edge.to);
+    });
+  });
+  return refs;
 }
 
-/* ---------------- rooms ---------------- */
+function peopleWithout(idsToDelete) {
+  const ids = new Set(idsToDelete);
+  const people = {};
+  const changedRelations = [];
+  Object.entries(state.people).forEach(([id, person]) => {
+    if (ids.has(id)) return;
+    const relationships = (person.relationships || []).filter((rel) => !ids.has(rel.personId));
+    const next = relationships.length === (person.relationships || []).length ? person : { ...person, relationships };
+    people[id] = next;
+    if (next !== person) changedRelations.push(next);
+  });
+  return { people, changedRelations };
+}
+
+/* ------------------------------------------------------------------ */
+/* Rooms                                                               */
+/* ------------------------------------------------------------------ */
 
 export function createRoom(name = "New room") {
-  const id = `room-${Date.now()}`;
-  commit({ ...state, rooms: [...state.rooms, { id, name, rosterIds: [] }] });
+  const id = makeId(fs() && uid ? `${uid}_room` : "room");
+  const room = { id, name, rosterIds: [] };
+  commit({ ...state, rooms: [...state.rooms, room] });
+  if (fs()) repo.putRoom(uid, room);
   return id;
 }
 export function updateRoom(id, patch) {
-  commit({ ...state, rooms: state.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+  const r = getRoom(id);
+  commit({ ...state, rooms: state.rooms.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
+  if (fs() && r) repo.putRoom(uid, { ...r, ...patch });
 }
 export function addToRoster(roomId, personId) {
   const r = getRoom(roomId);
@@ -170,134 +311,197 @@ export function removeFromRoster(roomId, personId) {
   if (!r) return;
   updateRoom(roomId, { rosterIds: r.rosterIds.filter((x) => x !== personId) });
 }
-
-/** Delete a room and its decisions, edges scope, and chats. Person profiles
- *  stay in the global directory. */
 export function deleteRoom(roomId) {
-  const decisionIds = state.decisions.filter((d) => d.roomId === roomId).map((d) => d.id);
+  const room = getRoom(roomId);
+  if (!room) return;
+  const roomDecisions = state.decisions.filter((d) => d.roomId === roomId);
+  const decisionIds = roomDecisions.map((d) => d.id);
+  const roomPeople = new Set(room.rosterIds || []);
+  roomDecisions.forEach((d) => {
+    [...(d.participantIds || []), ...(d.externalIds || [])].forEach((id) => roomPeople.add(id));
+    (d.edges || []).forEach((edge) => {
+      roomPeople.add(edge.from);
+      roomPeople.add(edge.to);
+    });
+  });
+  const stillReferenced = referencedPeopleAfter({ excludedRoomId: roomId });
+  const peopleToDelete = [...roomPeople].filter((id) => !stillReferenced.has(id));
+  const { people, changedRelations } = peopleWithout(peopleToDelete);
   const chats = { ...state.chats };
   decisionIds.forEach((id) => delete chats[id]);
   commit({
     ...state,
+    people,
     rooms: state.rooms.filter((r) => r.id !== roomId),
     decisions: state.decisions.filter((d) => d.roomId !== roomId),
     chats,
   });
+  if (fs()) {
+    repo.deleteRoom(roomId, peopleToDelete);
+    changedRelations.forEach((person) => repo.putPerson(uid, person));
+  }
 }
 
-/* ---------------- decisions ---------------- */
+export function deletePerson(personId, roomId) {
+  const touchedRooms = state.rooms
+    .filter((room) => (!roomId || room.id === roomId) && (room.rosterIds || []).includes(personId))
+    .map((room) => ({ ...room, rosterIds: room.rosterIds.filter((id) => id !== personId) }));
+  if (!touchedRooms.length) return;
+  const byId = Object.fromEntries(touchedRooms.map((room) => [room.id, room]));
+  const rooms = state.rooms.map((room) => byId[room.id] || room);
+  commit({ ...state, rooms });
+  if (fs()) touchedRooms.forEach((room) => repo.putRoom(uid, room));
+}
 
-/** Create a decision. Participants default to the whole room roster. */
+/* ------------------------------------------------------------------ */
+/* Decisions                                                           */
+/* ------------------------------------------------------------------ */
+
 export function createDecision(roomId, { title, context, participants }) {
   const room = getRoom(roomId);
   const ids = participants && participants.length ? participants : [...(room?.rosterIds || [])];
-  const id = `deci-${Date.now()}`;
+  const id = makeId(fs() && uid ? `${uid}_deci` : "deci");
   const positions = {};
-  ids.forEach((pid) => (positions[pid] = "unknown"));
-  const decision = {
-    id,
-    roomId,
-    title,
-    context: context || { deciding: "", goal: "", constraint: "" },
-    deadline: "",
-    status: "active",
-    participantIds: [...ids],
-    externalIds: [],
-    positions,
-  };
-  commit({
-    ...state,
-    decisions: [...state.decisions, decision],
-    chats: { ...state.chats, [id]: [{ id: mid(), type: "welcome", body: WELCOME }] },
+  const placements = {};
+  ids.forEach((pid) => {
+    positions[pid] = "unknown";
+    placements[pid] = { ...DEFAULT_PLACEMENT };
   });
+  const decision = {
+    id, roomId, title,
+    context: context || { deciding: "", goal: "", constraint: "" },
+    decisionNotes: [], derivedSummary: "", deadline: "", status: "active",
+    participantIds: [...ids], externalIds: [], positions, placements, edges: [],
+  };
+  commit({ ...state, decisions: [...state.decisions, decision], chats: { ...state.chats, [id]: [{ id: mid(), type: "welcome", body: WELCOME }] } });
+  if (fs()) repo.putDecision(roomId, decision);
   return id;
 }
 export function updateDecision(id, patch) {
-  commit({ ...state, decisions: state.decisions.map((d) => (d.id === id ? { ...d, ...patch } : d)) });
+  const d = getDecision(id);
+  if (!d) return;
+  const next = { ...d, ...patch };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === id ? next : x)) });
+  if (fs()) repo.putDecision(d.roomId, next);
 }
 export function archiveDecision(id) {
-  updateDecision(id, { status: "archived" });
+  const d = getDecision(id);
+  if (!d) return;
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === id ? { ...x, status: "archived" } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, id, { status: "archived" });
 }
 export function deleteDecision(id) {
+  const d = getDecision(id);
   const chats = { ...state.chats };
   delete chats[id];
-  commit({ ...state, decisions: state.decisions.filter((d) => d.id !== id), chats });
+  commit({ ...state, decisions: state.decisions.filter((x) => x.id !== id), chats });
+  if (fs() && d) repo.deleteDecision(d.roomId, id);
+}
+export function addDecisionNote(decisionId, text) {
+  const d = getDecision(decisionId);
+  if (!d) return;
+  const notes = [...(d.decisionNotes || []), { text, ts: Date.now() }];
+  updateDecision(decisionId, { decisionNotes: notes });
 }
 export function setPosition(decisionId, personId, position) {
   const d = getDecision(decisionId);
   if (!d) return;
-  updateDecision(decisionId, { positions: { ...d.positions, [personId]: position } });
+  const positions = { ...d.positions, [personId]: position };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, positions } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { positions });
+}
+export function setPlacement(decisionId, personId, power, interest) {
+  const d = getDecision(decisionId);
+  if (!d) return;
+  const placements = { ...d.placements, [personId]: { power, interest } };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, placements } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { placements });
+}
+export function movePerson(decisionId, personId, power, interest) {
+  setPlacement(decisionId, personId, power, interest);
 }
 export function addParticipant(decisionId, personId) {
   const d = getDecision(decisionId);
   if (!d || d.participantIds.includes(personId)) return;
-  updateDecision(decisionId, {
-    participantIds: [...d.participantIds, personId],
-    positions: { ...d.positions, [personId]: "unknown" },
-  });
+  const participantIds = [...d.participantIds, personId];
+  const positions = { ...d.positions, [personId]: "unknown" };
+  const placements = { ...d.placements, [personId]: { ...DEFAULT_PLACEMENT } };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, participantIds, positions, placements } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds, positions, placements });
 }
 export function removeParticipant(decisionId, personId) {
   const d = getDecision(decisionId);
   if (!d) return;
   const positions = { ...d.positions };
+  const placements = { ...d.placements };
   delete positions[personId];
-  updateDecision(decisionId, {
+  delete placements[personId];
+  const next = {
+    ...d,
     participantIds: d.participantIds.filter((x) => x !== personId),
     externalIds: d.externalIds.filter((x) => x !== personId),
-    positions,
-  });
+    positions, placements,
+  };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? next : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds: next.participantIds, externalIds: next.externalIds, positions, placements });
 }
 
-/** Create a decision scoped external person and attach them. Returns id. */
+/** Create a decision scoped external and attach them. Returns id. */
 export function addExternal(decisionId, { name, role }) {
   const d = getDecision(decisionId);
   if (!d) return null;
-  const participants = getParticipants(decisionId);
-  const base = participants.length
-    ? {
-        power: Math.round(participants.reduce((a, p) => a + p.power, 0) / participants.length),
-        interest: Math.round(participants.reduce((a, p) => a + p.interest, 0) / participants.length),
-      }
-    : { power: 50, interest: 60 };
-  const id = `ext-${Date.now()}`;
+  const id = makeId(fs() && uid ? `${uid}_ext` : "ext");
   const person = {
-    id,
-    name,
-    role: role || "External",
-    power: Math.max(15, Math.min(85, base.power - 10)),
-    interest: Math.max(15, Math.min(90, base.interest + 8)),
-    goal: "",
-    context: "",
-    fresh: true,
-    external: true,
-    scarfDimensions: [],
-    tkiStyle: "",
-    cialdiniLever: "",
-    fuTeaser: "",
-    scarf: "",
-    tki: "",
-    cialdini: "",
-    fisherUry: "",
-    notes: [],
-    history: [],
+    id, name, role: role || "External", goal: "", context: "", fresh: true, external: true,
+    baseRead: { scarf: "", tki: "", cialdini: "", fisherUry: "" },
+    visualTags: { scarfDimensions: [], tkiStyle: "", cialdiniLever: "", fuTeaser: "" },
+    relationships: [], observations: [],
   };
+  const positions = { ...d.positions, [id]: "unknown" };
+  const placements = { ...d.placements, [id]: { ...DEFAULT_PLACEMENT } };
+  const externalIds = [...d.externalIds, id];
   commit({
     ...state,
     people: { ...state.people, [id]: person },
-    decisions: state.decisions.map((dd) =>
-      dd.id === decisionId
-        ? { ...dd, externalIds: [...dd.externalIds, id], positions: { ...dd.positions, [id]: "unknown" } }
-        : dd
-    ),
+    decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, externalIds, positions, placements } : x)),
   });
+  if (fs()) {
+    repo.putPerson(uid, person);
+    repo.updateDecisionFields(d.roomId, decisionId, { externalIds, positions, placements });
+  }
   return id;
 }
 
-/* ---------------- network and chat ---------------- */
+/* ------------------------------------------------------------------ */
+/* Network edges                                                       */
+/* ------------------------------------------------------------------ */
 
-export function removeEdge(index) {
-  commit({ ...state, edges: state.edges.filter((_, i) => i !== index) });
+export function addEdge(decisionId, { from, to, type = "defers" }) {
+  const d = getDecision(decisionId);
+  if (!d || !from || !to || from === to) return null;
+  const safeType = ["ally", "conflict", "defers"].includes(type) ? type : "defers";
+  const exists = (d.edges || []).some((edge) => edge.from === from && edge.to === to && edge.type === safeType);
+  if (exists) return null;
+  const edge = { id: mid(), from, to, type: safeType };
+  const edges = [...(d.edges || []), edge];
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, edges } : x)) });
+  if (fs()) repo.addEdge(d.roomId, decisionId, { from, to, type: safeType });
+  return edge.id;
 }
+
+export function removeEdge(decisionId, index) {
+  const d = getDecision(decisionId);
+  if (!d) return;
+  const edge = d.edges[index];
+  const edges = d.edges.filter((_, i) => i !== index);
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, edges } : x)) });
+  if (fs() && edge?.id) repo.removeEdgeDoc(d.roomId, decisionId, edge.id);
+}
+
+/* ------------------------------------------------------------------ */
+/* Chat (transient) and plays (durable)                                */
+/* ------------------------------------------------------------------ */
+
 export function pushMessage(decisionId, message) {
   const list = state.chats[decisionId] || [];
   commit({ ...state, chats: { ...state.chats, [decisionId]: [...list, { id: mid(), ...message }] } });
@@ -305,4 +509,9 @@ export function pushMessage(decisionId, message) {
 export function ensureChat(decisionId) {
   if (state.chats[decisionId]) return;
   commit({ ...state, chats: { ...state.chats, [decisionId]: [{ id: mid(), type: "welcome", body: WELCOME }] } });
+}
+/** Persist a generated play. Durable record, separate from the chat stream. */
+export function savePlay(decisionId, { situation, output }) {
+  const d = getDecision(decisionId);
+  if (fs() && d) repo.addPlay(d.roomId, decisionId, { situation, output });
 }
