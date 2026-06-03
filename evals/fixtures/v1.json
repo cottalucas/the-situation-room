@@ -558,6 +558,39 @@
         "noGrid": true,
         "maxEdges": 0
       }
+    },
+    {
+      "id": "command-map-calibrated-mixed",
+      "kind": "command",
+      "tags": ["map", "calibration", "inference_discipline", "mixed_input"],
+      "input": {
+        "command": "map",
+        "text": "Nadia is Head of Design. She has very low interest in this launch but a lot of power over it. She reports to Omar.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "nadia", "name": "Nadia", "role": "", "currentPosition": "unknown", "currentPlacement": { "power": 50, "interest": 55 }, "goal": "", "context": "", "recentNotes": [] },
+            { "id": "omar", "name": "Omar", "role": "VP Design", "currentPosition": "unknown", "currentPlacement": { "power": 75, "interest": 60 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Mapped Nadia: role, grid, and one reporting line.",
+        "people": [{ "id": "nadia", "role": "Head of Design", "note": "Holds significant power over the launch but little personal interest in it.", "power": 82, "interest": 15, "confidence": "high" }],
+        "edges": [{ "from": "nadia", "to": "omar", "type": "defers", "confidence": "high" }],
+        "openQuestions": []
+      },
+      "expect": {
+        "requiredPeople": ["nadia"],
+        "requireNote": true,
+        "requireGrid": true,
+        "requireConfidence": true,
+        "gridBands": { "nadia": { "power": [70, 95], "interest": [10, 20] } },
+        "maxEdges": 1,
+        "requiredEdges": [{ "from": "nadia", "to": "omar", "type": "defers" }]
+      }
     }
   ]
 }

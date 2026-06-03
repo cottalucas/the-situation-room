@@ -85,8 +85,9 @@ function commandRules(command) {
     return [
       `Command rules for @${command}:`,
       "- This is the broad intake command. It may create people, save concise notes, set grid values, set position, and add network edges.",
-      "- Extract explicit and strongly implied reporting, control, micromanagement, close ties, influence, alliance, and conflict into edges.",
-      "- Keep the confirmation short. Ask one open question only if it would materially improve the next mapping pass.",
+      "- Use the grid calibration bands and include a confidence for each grid value and each edge, exactly like the @grid and @network commands. There is no looser path here.",
+      "- Apply the same edge discipline: only relationships the user states or strongly implies, and a single reporting line is one defers edge and nothing more.",
+      "- Keep the confirmation short and grouped by destination: people, notes, grid, network. Ask one open question only if it would materially improve the next mapping pass.",
     ].join("\n");
   }
   return "";

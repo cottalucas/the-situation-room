@@ -5,6 +5,16 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 3: @map reuses the hardened path
+
+Confirmed `@map` and `@create` are not a separate or looser code path: they share
+`interpretRoomCommand`, the single command system prompt, `normalizeRoomUpdate`,
+and `applyRoomUpdate` with `@grid` and `@network`, so all Phase 2 calibration,
+confidence, and validation applies automatically. Tightened the map/create
+command rules in both `src/` and `functions/` to say so explicitly (bands,
+confidence, single-statement edge discipline, per-destination confirmation).
+Added the `command-map-calibrated-mixed` offline fixture; suite now 12/12.
+
 ## 2026-06-03 - Overnight audit Phase 2: calibrated interpretation
 
 Fixed the main pain: the model over-committed to extreme grid values and

@@ -338,3 +338,41 @@ interpretation-layer confidence (the substantive fix) is complete.
 ### Left for your review
 - Optional: persist `confidence` onto `decision.placements[id]` and render a
   dashed dot for low-confidence reads. Cheap but touches stored shape.
+
+---
+
+## PHASE 3 — @map command behavior
+
+Timestamp: 2026-06-03
+
+### Finding: @map already shares the hardened path — confirmed, then tightened.
+
+`@map` (and `@create`) are not a separate code path. They flow through the same
+`interpretRoomCommand` -> `roomCommandPrompt` -> `normalizeRoomUpdate` ->
+`applyRoomUpdate` pipeline as `@grid` and `@network`, and they share the single
+`COMMAND_SYSTEM_PROMPT`. That means the Phase 2 calibration bands, the
+`confidence` field, the out-of-range rejection, the extreme-value hold, and the
+low-confidence soft confirm all apply to `@map` automatically. In `applyRoomUpdate`
+the `@map` capability set enables notes + profile + grid + edges, and the grid
+extreme/low-confidence logic runs inside the shared people loop, so there is no
+weaker grid path.
+
+Decomposition and dispatch: the model returns a single structured update with
+`people[]` (notes, grid, position, profile), `edges[]`, and `decisionNote`, and
+`applyRoomUpdate` routes each piece to the right store mutation
+(`addObservation`, `setPlacement`, `setPosition`, `addEdge`, `addDecisionNote`).
+Per-destination summary already exists: the confirmation is built from counts of
+people / notes / reads / grid / network.
+
+### Change applied
+Tightened the `@map` and `@create` command rules (both `src/` and `functions/`)
+to state explicitly that they use the grid calibration bands, include a
+confidence per value and edge, apply the same single-statement edge discipline,
+and group the confirmation by destination. This removes any ambiguity that the
+broad intake command is a looser path.
+
+### Eval
+Added `command-map-calibrated-mixed`: a mixed `@map` input ("very low interest
+but a lot of power. She reports to Omar.") that must produce a banded grid value
+(power 70-95, interest 10-20), exactly one defers edge, a note, and a confidence.
+Offline suite now 12/12.
