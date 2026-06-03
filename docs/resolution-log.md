@@ -5,6 +5,19 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Hackathon coach brief added
+
+Added `docs/hackathon.md` as the competition source of truth for the Mind the
+Product and Novus.ai World Product Day challenge. It captures the June 18
+internal delivery target, June 20 public submission deadline, Novus.ai
+requirement, prize context, submission artifacts, and judging criteria.
+
+Added `docs/product-coach-instructions.md` as a paste-ready prompt for a fresh
+product and technical coach chat. The prompt summarizes the product, current
+LLM state, cloud function setup, eval flywheel, local-only files, production
+files, constraints, and first review task. Root agent pointers and
+`docs/orchestration.md` now include `docs/hackathon.md` in the first-read set.
+
 ## 2026-06-03 - Production Claude backend and trace store prepared
 
 The local Claude bridge now has a production counterpart in Firebase
