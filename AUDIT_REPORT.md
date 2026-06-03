@@ -128,5 +128,105 @@ limit ($2). No Sonnet/Opus call path exists.
 - The LLM contract duplication between `src/` and `functions/` (finding 2). A
   shared module or a CI version-match assertion is the proper fix and is safer to
   do deliberately than overnight.
-</content>
-</invoke>
+
+---
+
+## PHASE 1 — Data modeling review
+
+Timestamp: 2026-06-03
+
+### Current model (as built)
+
+```
+people/{personId}                      GLOBAL, compounds across rooms/decisions
+  ownerId            stable owner uid (also the id prefix)
+  name, role         plaintext  (queryable, renderable)
+  goal, context      ENCRYPTED
+  baseRead{}         ENCRYPTED framework text (scarf/tki/cialdini/fisherUry)
+  visualTags{}       scarfDimensions[], tkiStyle, cialdiniLever, fuTeaser(enc)
+  relationships[]    GLOBAL structural ties {personId, type}
+  fresh, external, createdAt
+  observations/{obsId}   text(ENC), source(note|chat|history), decisionId?, ts
+                         append-only person memory
+
+rooms/{roomId}                         a standing group
+  ownerId, name, rosterIds[]  -> people ids (stable)
+  decisions/{decId}
+    title, context{deciding,goal,constraint}(ENC), decisionNotes[](ENC),
+    derivedSummary(ENC), deadline, status(active|archived),
+    participantIds[]  -> people ids
+    externalIds[]     -> people ids
+    positions { personId: stance }            SITUATIONAL  (for|against|neutral|unknown)
+    placements { personId: {power,interest} } SITUATIONAL  (0..100 each)
+    edges/{edgeId}  { from, to, type }         SITUATIONAL  (ally|conflict|defers)
+    plays/{playId}  { situation(ENC), output(ENC), ts }
+```
+
+Relationship in one line: a room holds a roster and decisions; a decision draws
+participants from the roster plus externals; a person carries memory that spans
+every decision they appear in. Power/interest/stance and network edges are
+per-decision, so a person can be high-interest and "for" on one decision and
+low-interest and "against" on another.
+
+### Findings
+
+**1. Normalization — OK.**
+People are a single global collection; everything else references them by stable
+id. Grid values live in `decision.placements[personId] = {power, interest}` and
+stance in `decision.positions[personId]`, both maps keyed by person id, so a
+render reads them in O(1) per person and plots deterministically (GridTab maps
+`interest -> left%`, `power -> bottom%`). Network edges are a subcollection of
+`{from, to, type}` documents, which makes per-edge add/delete clean and keeps
+direction explicit in `from -> to`. No denormalized duplication of person fields
+into decisions.
+
+**2. IDs are used consistently everywhere LLM output is written — OK.**
+The LLM returns `id` and/or `name`, but `Room.jsx#findPersonRef` resolves every
+reference to a stable person id (by id, normalized name, first name, or unique
+role match) before any write. New people are created through
+`store.createPerson` which mints a uid-prefixed id. Names are never used as
+storage keys. Edge `from`/`to`, position keys, and placement keys are all stable
+ids. This is the correct discipline and it is enforced in one place.
+
+**3. RAW vs INTERPRETATION vs STORED separation — PARTIAL (sets up Phase 2).**
+- RAW user input: the command text, kept as a transient `user` chat message (not
+  persisted in production; chat is transient UI state today — Phase 6 changes
+  this).
+- INTERPRETATION: the normalized LLM update (`resp.update`), ephemeral; captured
+  in the local raw trace and, in production, as privacy-safe trace metadata.
+- STORED VALUE: what `applyRoomUpdate` commits — the polished observation text
+  (encrypted), the placement, the position, the edge.
+
+The separation is real but lossy in one place that matters for Phase 2: stored
+placements and positions carry no provenance or confidence. There is no field
+that says "this 0 was the model's confident read" versus "this was a hedge."
+That is exactly the signal Phase 2 needs to surface low-confidence items
+differently. Addressed in Phase 2 by adding a `confidence` field to the
+interpretation output; storing it is treated as a low-risk additive change and
+decided there.
+
+**4. `defers` naming vs the brief's `defers_to` — OK (cosmetic, do not migrate).**
+The brief refers to `defers_to`; the code, rules, validators, and stored data
+all use `defers`. Direction is carried by `from -> to` (the arrow points to the
+influencer, the `to`). Renaming the stored value would force a data migration
+for zero behavioral gain, so it stays `defers`. Noted so the two vocabularies
+are not mistaken for a bug.
+
+**5. Two relationship layers (global `person.relationships` vs decision `edges`)
+— FLAGGED (design note, no change).**
+`person.relationships[]` is a global structural layer; decision `edges` are the
+situational network. The `@network` command writes decision edges only, never
+`person.relationships`. That means an org-chart "reports to" line is stored
+per-decision and does not automatically carry to the next decision in the room.
+This is a deliberate product choice (a decision is the unit of analysis), but if
+you want reporting lines to persist room-wide, that is a schema/behaviour change
+worth deciding explicitly rather than overnight.
+
+### Schema fixes applied
+None. The model is sound and low-risk changes would be cosmetic. The one real
+gap (no confidence/provenance on stored situational values) is handled in
+Phase 2 where the surrounding prompt and validator work lives.
+
+### Left for your review
+- Whether reporting lines / structural ties should persist room-wide
+  (`person.relationships`) instead of per-decision edges (finding 5).

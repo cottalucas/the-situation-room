@@ -5,6 +5,21 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-03 - Overnight audit Phase 1: data model review
+
+Audited the People/Grid/Network/Notes/Rooms/Decisions model. Verdict: sound and
+sensibly normalized. People are global and referenced by stable uid-prefixed ids
+everywhere, including every LLM write path (`findPersonRef` resolves refs to ids
+before any commit). Grid values live in `decision.placements[id]={power,interest}`
+and stance in `decision.positions[id]`, both render deterministically. Edges are
+`{from,to,type}` subcollection docs with direction in `from->to`.
+
+Two items flagged for review, no schema change made: (1) stored situational
+values carry no confidence/provenance, which Phase 2 addresses by adding a
+confidence field to the interpretation output; (2) reporting lines are stored as
+per-decision edges, not room-wide `person.relationships`, which is a deliberate
+product choice worth confirming. Diagram and findings in `AUDIT_REPORT.md`.
+
 ## 2026-06-03 - Overnight audit Phase 0: architecture coherence
 
 Full-project audit pass. Confirmed the layering is production-standard: UI never
