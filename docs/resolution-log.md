@@ -5,6 +5,16 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 3 Step 1: docs consolidated, LLM pipeline documented
+
+Retired the audit-report pattern. Consolidated the two passes into a single concise
+`AUDIT_REPORT.md` (what happened, what changed, current state) and deleted
+`AUDIT_REPORT_2.md`; the running record is this log and the `docs/` set. Added
+`docs/llm-pipeline.md` as the definitive AI reference: the two model surfaces, the
+end-to-end request path, prompts/contracts, the src-vs-functions sync rule, and
+MLOps (offline-first evals, local vs production traces, the $50 cost ceiling,
+deploy). Added it to the CLAUDE.md read list and pointed architecture.md at it.
+
 ## 2026-06-04 - Pass 2 FINAL: deployed live
 
 Deployed Firestore rules, hosting, and functions to `the-situation-room-708c6`.

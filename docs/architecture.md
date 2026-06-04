@@ -197,6 +197,9 @@ app. `.firebaserc` points the default project at `the-situation-room-708c6`.
 
 ## Firebase Functions LLM backend
 
+See `docs/llm-pipeline.md` for the end-to-end AI pipeline and MLOps (prompts,
+contracts, evals, traces, cost, deploy). This section covers the backend wiring.
+
 `functions/index.js` is the production Claude backend. It exposes one
 authenticated HTTPS function, `api`, with two same-origin endpoints:
 
