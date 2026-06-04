@@ -88,4 +88,33 @@ section to `verify:onboarding` (question wording, skippable step, grounded
 one-sentence reflection, naming confirm, specific closing, no em dashes). Checks:
 onboarding verify 43/43, offline eval 19/19, build clean. Visual confirmation is
 auth-gated (Firebase), so a signed-in screenshot is recommended.
+
+## 2026-06-04 17:05 CEST — Phase C: first-run trigger and panel choreography
+
+- TRIGGER. On first login with no usable room, Guided Setup opens by default
+  (existing `shouldAutoStartOnboarding` guard on a pending one-shot marker, an
+  unprompted state, and `hasUsableRoom === false`). The auto-start now also
+  collapses the left rooms rail (`railCollapsed = true`) so the conversation owns
+  the screen. The collapse fires only on the auto (first-run) path; the manual
+  "Start guided setup" button does not collapse, since the user is already in the
+  workspace.
+- HANDOFF. "Open room" expands the rail again (`railCollapsed = false`) and lands
+  in the now-populated room. The decision is already selected (set during the
+  build), and the existing "Room ready, run @read / @ask" card is in the thread.
+  Skip also restores the rail so a first-run collapse never sticks.
+- ROBUST DETECTION. A user with real content never sees first-run: `hasUsableRoom`
+  requires an active decision with at least one person, so an empty seeded room
+  (active decision, no roster) or an archived-only room still counts as first run,
+  while any real roster blocks it. The one-shot marker is consumed on arrival and
+  `onboardingPrompted` is set at start, so it never repeats.
+- INSTRUMENTATION. `onboarding_started` (now with `mode`), `onboarding_completed`
+  (with people + edge counts), `onboarding_skipped`, and `onboarding_room_created`
+  (with `reused`). The room-created event keeps the `onboarding_` namespace for
+  consistency with the others.
+
+Layout: with the rail collapsed to a 36px strip, the onboarding panel
+(`grid-column: 2 / -1`) fills the rest, so the collapsed-rail state renders
+cleanly. Eval: added a Phase C robustness section to `verify:onboarding`
+(empty-seeded-room, archived-only, real-content, no-marker). Checks: onboarding
+verify 48/48, offline eval 19/19, build clean.
 </content>

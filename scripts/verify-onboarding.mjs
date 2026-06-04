@@ -127,6 +127,20 @@ const closing = buildClosingSummary({ names: ["Robert", "Head of Engineering", "
 check("closing names the people", closing.startsWith("Mapped Robert, Head of Engineering, Head of UX, and Susan"));
 check("closing names Energy and relationships", /set initial Energy/.test(closing) && /drew the relationships/.test(closing) && noDash(closing));
 
+console.log("\n[7] Phase C: robust first-run detection");
+// A seeded-but-empty room (active decision, no people) is not usable, so a
+// genuine first run still triggers.
+const seededEmpty = [{ id: "seed", rosterIds: [] }];
+const seededEmptyDecisions = () => [{ id: "d0", status: "active", participantIds: [], externalIds: [] }];
+check("empty seeded room is not usable", hasUsableRoom(seededEmpty, seededEmptyDecisions) === false);
+check("first run with only an empty room triggers", shouldAutoStartOnboarding({ pending: true, prompted: false, usableRoom: hasUsableRoom(seededEmpty, seededEmptyDecisions) }) === true);
+// A room whose only decision is archived is not usable.
+const archivedOnly = () => [{ id: "d1", status: "archived", participantIds: ["maya"], externalIds: [] }];
+check("archived-only room is not usable", hasUsableRoom([{ id: "r", rosterIds: ["maya"] }], archivedOnly) === false);
+// A user with real content never sees first-run, even if the marker is pending.
+check("real content never auto-starts", shouldAutoStartOnboarding({ pending: true, prompted: false, usableRoom: true }) === false);
+check("no pending marker never auto-starts", shouldAutoStartOnboarding({ pending: false, prompted: false, usableRoom: false }) === false);
+
 console.log(`\nOnboarding verification: ${passed} passed, ${failed} failed`);
 if (failed) {
   console.log("Failed:", failures.join("; "));
