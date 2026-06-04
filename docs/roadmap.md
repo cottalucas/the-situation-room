@@ -61,6 +61,11 @@
   is not regenerated on every landing; below threshold it returns basic insights
   and asks for more information with no model call.
 - Global person memory: observations and cross decision history.
+- First-run guided onboarding for new accounts. A three-question conversation
+  collects the decision, the people, and the key relationships, then creates the
+  room and decision through the existing @create, @energy, and @network command
+  pipeline. Existing users do not see it on every arrival, and empty states keep
+  a manual Start guided setup path.
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase
   Function syntax check.
@@ -82,8 +87,6 @@
   relationships should become reliable enough to pass live trace-derived evals.
 - Re-open plain chat only after command mapping, trace capture, and eval scores
   are good enough to prevent vague, expensive coaching responses.
-- Prose to map onboarding. Describe the team in plain language, watch it become
-  a populated map. It should reuse the local `@map` command contract.
 - Privacy surface: export, delete, and a clear statement of where data lives.
 - Stronger zero knowledge encryption option based on a user held secret, if the
   product needs protection from server side key derivation.

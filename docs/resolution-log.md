@@ -5,6 +5,22 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - First-run guided onboarding, local only
+
+Added a first-run onboarding conversation for new accounts. Email registration
+and first Google sign-in set a one-shot local marker; existing users do not see
+onboarding on every arrival. Empty states keep a manual Start guided setup path.
+The onboarding asks three deterministic questions (decision and outcome, 2 to 4
+people, relationships), creates the room and decision, then routes answers
+through the existing `@create`, `@energy` (`grid` internally), and `@network`
+pipeline. There is no second interpreter and no new calibration logic. Added
+`OnboardingChat`, `lib/onboarding.js`, `npm run verify:onboarding`, and mocked
+onboarding fixtures. Checks: onboarding 19/19, persistence 24/24, offline eval
+19/19, function syntax OK, build clean. Deployed Firebase Hosting to
+`https://the-situation-room-708c6.web.app`; the live URL returns HTTP 200.
+Note: the Firebase CLI released Hosting but exited 2 afterward because local
+Firebase credentials need reauth and the CLI update-check config is not writable.
+
 ## 2026-06-04 - Fix: strategist response quality (concise, hint when thin)
 
 From the live screenshot and local traces the strategist read was too extensive,

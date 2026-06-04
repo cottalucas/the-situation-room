@@ -1,0 +1,39 @@
+{
+  "version": "onboarding-v1-2026-06-04",
+  "answers": {
+    "decision": "I need to get the Q3 AI feature approved, but I want a narrower launch with clear evidence first.",
+    "people": "Maya, PM for web, supports it but needs evidence. Sam, engineering director, has high power and is neutral. Dana, sales lead, is against it because she worries customers will be confused.",
+    "relationships": "Maya reports to Sam. Dana has friction with Maya."
+  },
+  "mockUpdates": {
+    "create": {
+      "summary": "Created Maya, Sam, and Dana.",
+      "people": [
+        { "name": "Maya", "role": "PM for web", "create": true },
+        { "name": "Sam", "role": "Engineering director", "create": true },
+        { "name": "Dana", "role": "Sales lead", "create": true }
+      ],
+      "edges": [],
+      "openQuestions": []
+    },
+    "grid": {
+      "summary": "Placed the first three people.",
+      "people": [
+        { "name": "Maya", "position": "for", "power": 55, "interest": 75, "confidence": "medium" },
+        { "name": "Sam", "position": "neutral", "power": 75, "interest": 55, "confidence": "medium" },
+        { "name": "Dana", "position": "against", "power": 70, "interest": 75, "confidence": "medium" }
+      ],
+      "edges": [],
+      "openQuestions": []
+    },
+    "network": {
+      "summary": "Mapped the stated reporting line and friction.",
+      "people": [],
+      "edges": [
+        { "from": "Maya", "to": "Sam", "type": "defers", "confidence": "high" },
+        { "from": "Dana", "to": "Maya", "type": "conflict", "confidence": "high" }
+      ],
+      "openQuestions": []
+    }
+  }
+}

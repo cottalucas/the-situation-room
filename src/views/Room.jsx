@@ -2,9 +2,18 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
 import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
+import { consumeOnboardingPending } from "../lib/auth.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 import { screenOpenMessage } from "../lib/chat-guard.js";
+import {
+  ONBOARDING_INTRO,
+  ONBOARDING_QUESTIONS,
+  buildOnboardingCommandPlan,
+  deriveDecisionSeed,
+  hasUsableRoom,
+  shouldAutoStartOnboarding,
+} from "../lib/onboarding.js";
 
 const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 // Open (non-command) chat is experimental and routes to the grounded strategist
@@ -13,6 +22,7 @@ const OPEN_CHAT = LIVE_LLM;
 
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
+import { OnboardingChat } from "../components/OnboardingChat.jsx";
 import { PersonProfile } from "../components/PersonProfile.jsx";
 import { PeopleTab } from "../components/tabs/PeopleTab.jsx";
 import { GridTab } from "../components/tabs/GridTab.jsx";
@@ -81,7 +91,7 @@ function mergePersonPatch(person, profilePatch) {
   return { ...next, fresh: false };
 }
 
-export default function Room({ onExit }) {
+export default function Room({ onExit, userId }) {
   const store = useStore();
 
   const [activeRoomId, setActiveRoomId] = useState("mobile");
@@ -92,12 +102,24 @@ export default function Room({ onExit }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPath, setShowPath] = useState(false);
   const [modal, setModal] = useState(null); // { type, id }
+  const [pendingOnboarding, setPendingOnboarding] = useState(false);
+  const [onboarding, setOnboarding] = useState({
+    active: false,
+    step: 0,
+    answers: {},
+    draft: "",
+    messages: [],
+    busy: false,
+    done: false,
+    error: "",
+  });
 
   const rooms = store.getRooms();
   const collapsed = !!store.getPref("railCollapsed");
   const room = store.getRoom(activeRoomId);
   const decisions = store.getDecisions(activeRoomId);
   const decision = store.getDecision(activeDecisionId);
+  const usableRoom = hasUsableRoom(rooms, (roomId) => store.getDecisions(roomId));
   const participants = activeDecisionId ? store.getParticipants(activeDecisionId) : [];
   const messages = activeDecisionId ? store.getChat(activeDecisionId) : [];
   const lastPlay = [...messages].reverse().find((m) => m.type === "play");
@@ -178,6 +200,55 @@ export default function Room({ onExit }) {
     [store, generateRead]
   );
 
+  const startOnboarding = useCallback(
+    ({ auto = false } = {}) => {
+      store.setPref("onboardingPrompted", true);
+      setOnboarding({
+        active: true,
+        step: 0,
+        answers: {},
+        draft: "",
+        messages: [
+          { role: "assistant", body: ONBOARDING_INTRO },
+          { role: "assistant", body: ONBOARDING_QUESTIONS[0].prompt },
+        ],
+        busy: false,
+        done: false,
+        error: "",
+      });
+      trackEvent("onboarding_started", { auto });
+    },
+    [store]
+  );
+
+  useEffect(() => {
+    if (!userId) return;
+    setPendingOnboarding(consumeOnboardingPending(userId));
+  }, [userId]);
+
+  useEffect(() => {
+    if (
+      shouldAutoStartOnboarding({
+        pending: pendingOnboarding,
+        prompted: Boolean(store.getPref("onboardingPrompted")),
+        usableRoom,
+      })
+    ) {
+      setPendingOnboarding(false);
+      startOnboarding({ auto: true });
+    }
+  }, [pendingOnboarding, startOnboarding, store, usableRoom]);
+
+  const skipOnboarding = useCallback(() => {
+    store.setPref("onboardingPrompted", true);
+    setOnboarding((current) => ({ ...current, active: false, busy: false, done: false, error: "" }));
+    trackEvent("onboarding_skipped");
+  }, [store]);
+
+  const openOnboardingRoom = useCallback(() => {
+    setOnboarding((current) => ({ ...current, active: false, busy: false }));
+  }, []);
+
   /* navigation */
   const selectRoom = useCallback(
     (id) => {
@@ -241,7 +312,6 @@ export default function Room({ onExit }) {
     setProfile(null);
     setActiveTab("people");
     setModal({ type: "roomSettings", id });
-    // TODO: prose to map onboarding. Replace with a describe your team flow.
   }, [store]);
   const newDecision = useCallback(() => {
     if (!room?.rosterIds?.length) {
@@ -322,29 +392,34 @@ export default function Room({ onExit }) {
   );
 
   const ensurePersonForUpdate = useCallback(
-    (item, currentDecision) => {
-      const existing = findPersonRef(item.id || item.name);
+    (item, currentRoom, currentDecision, currentParticipants = participants) => {
+      const existing = findPersonRef(item.id || item.name, currentParticipants);
       if (existing) {
-        if (room && !room.rosterIds.includes(existing.id)) store.addToRoster(room.id, existing.id);
+        if (currentRoom && !currentRoom.rosterIds.includes(existing.id)) store.addToRoster(currentRoom.id, existing.id);
         if (currentDecision && ![...currentDecision.participantIds, ...currentDecision.externalIds].includes(existing.id)) {
           store.addParticipant(currentDecision.id, existing.id);
         }
         return existing.id;
       }
-      if (!item.create || !item.name || !room) return null;
+      if (!item.create || !item.name || !currentRoom) return null;
       const id = store.createPerson({ name: item.name, role: item.role || "" });
-      store.addToRoster(room.id, id);
+      store.addToRoster(currentRoom.id, id);
       if (currentDecision) store.addParticipant(currentDecision.id, id);
       trackEvent("person_create", { source: "chat_map" });
       return id;
     },
-    [findPersonRef, room, store]
+    [findPersonRef, participants, store]
   );
 
   const applyRoomUpdate = useCallback(
-    (update, sourceCommand) => {
-      if (!decision || !update) return null;
-      let currentDecision = store.getDecision(decision.id);
+    (update, sourceCommand, target = {}) => {
+      const targetDecisionId = target.decisionId || decision?.id;
+      const targetRoomId = target.roomId || room?.id;
+      if (!targetDecisionId || !targetRoomId || !update) return null;
+      let currentDecision = store.getDecision(targetDecisionId);
+      const currentRoom = store.getRoom(targetRoomId);
+      if (!currentDecision || !currentRoom) return null;
+      let currentParticipants = store.getParticipants(targetDecisionId);
       let notes = 0;
       let profiles = 0;
       let placements = 0;
@@ -356,14 +431,14 @@ export default function Room({ onExit }) {
       const caps = commandCapabilities(sourceCommand);
 
       update.people.forEach((item) => {
-        const existed = Boolean(findPersonRef(item.id || item.name));
-        const id = ensurePersonForUpdate(item, currentDecision);
+        const existed = Boolean(findPersonRef(item.id || item.name, currentParticipants));
+        const id = ensurePersonForUpdate(item, currentRoom, currentDecision, currentParticipants);
         if (!id) return;
         if (!existed && item.create) created += 1;
         const person = store.getPerson(id);
         if (item.role && person && !person.role) store.updatePerson(id, { role: item.role });
         if (caps.notes && item.note) {
-          store.addObservation(id, { text: item.note, source: "chat", decisionId: decision.id });
+          store.addObservation(id, { text: item.note, source: "chat", decisionId: targetDecisionId });
           notes += 1;
         }
         const patch = person ? mergePersonPatch(person, item.profilePatch) : null;
@@ -372,7 +447,7 @@ export default function Room({ onExit }) {
           profiles += 1;
         }
         if (caps.grid && item.position && item.position !== currentDecision?.positions?.[id]) {
-          store.setPosition(decision.id, id, item.position);
+          store.setPosition(targetDecisionId, id, item.position);
           positions += 1;
         }
         if (caps.grid && item.power != null && item.interest != null) {
@@ -382,29 +457,32 @@ export default function Room({ onExit }) {
           if (extremePower || extremeInterest) {
             const axis = extremePower ? "power" : "interest";
             clarificationQuestions.push(gridClarification(store.getPerson(id) || item, axis, extremePower ? item.power : item.interest));
-            currentDecision = store.getDecision(decision.id);
+            currentDecision = store.getDecision(targetDecisionId);
+            currentParticipants = store.getParticipants(targetDecisionId);
             return;
           }
-          store.setPlacement(decision.id, id, item.power, item.interest, item.confidence);
+          store.setPlacement(targetDecisionId, id, item.power, item.interest, item.confidence);
           placements += 1;
           if (item.confidence === "low" && !confirmQuestions.length) {
             confirmQuestions.push(softGridConfirm(store.getPerson(id) || item, item.power, item.interest));
           }
         }
-        currentDecision = store.getDecision(decision.id);
+        currentDecision = store.getDecision(targetDecisionId);
+        currentParticipants = store.getParticipants(targetDecisionId);
       });
 
       if (caps.edges) update.edges.forEach((edge) => {
-        const from = ensurePersonForUpdate({ id: edge.from, name: edge.from, create: sourceCommand !== "grid" }, currentDecision);
-        const to = ensurePersonForUpdate({ id: edge.to, name: edge.to, create: sourceCommand !== "grid" }, currentDecision);
+        const from = ensurePersonForUpdate({ id: edge.from, name: edge.from, create: sourceCommand !== "grid" }, currentRoom, currentDecision, currentParticipants);
+        const to = ensurePersonForUpdate({ id: edge.to, name: edge.to, create: sourceCommand !== "grid" }, currentRoom, currentDecision, currentParticipants);
         if (!from || !to || from === to) return;
-        const id = store.addEdge(decision.id, { from, to, type: edge.type });
+        const id = store.addEdge(targetDecisionId, { from, to, type: edge.type });
         if (id) edges += 1;
-        if (edge.note) store.addDecisionNote(decision.id, edge.note);
-        currentDecision = store.getDecision(decision.id);
+        if (edge.note) store.addDecisionNote(targetDecisionId, edge.note);
+        currentDecision = store.getDecision(targetDecisionId);
+        currentParticipants = store.getParticipants(targetDecisionId);
       });
 
-      if (update.decisionNote) store.addDecisionNote(decision.id, update.decisionNote);
+      if (update.decisionNote) store.addDecisionNote(targetDecisionId, update.decisionNote);
       if (edges) setActiveTab("network");
       else if (placements || positions) setActiveTab("grid");
 
@@ -428,7 +506,118 @@ export default function Room({ onExit }) {
         questions: [...clarificationQuestions, ...confirmQuestions, ...modelQuestions].slice(0, 2),
       };
     },
-    [decision, ensurePersonForUpdate, findPersonRef, store]
+    [decision, ensurePersonForUpdate, findPersonRef, room, store]
+  );
+
+  const completeOnboarding = useCallback(
+    async (answers) => {
+      if (!LIVE_LLM) {
+        throw new Error("Guided setup needs live local reasoning. Turn on VITE_ENABLE_LIVE_LLM, then try again.");
+      }
+
+      const seed = deriveDecisionSeed(answers.decision);
+      const emptyRoom = rooms.find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
+      const roomId = emptyRoom?.id || store.createRoom(seed.roomName);
+      if (emptyRoom) store.updateRoom(roomId, { name: seed.roomName });
+      trackEvent("onboarding_room_created", { reused: Boolean(emptyRoom) });
+
+      const decisionId = store.createDecision(roomId, {
+        title: seed.title,
+        context: seed.context,
+        participants: [],
+      });
+      store.ensureChat(decisionId);
+      setActiveRoomId(roomId);
+      setActiveDecisionId(decisionId);
+      setActiveTab("people");
+      setProfile(null);
+      setShowPath(false);
+
+      const plan = buildOnboardingCommandPlan(answers);
+      for (const item of plan) {
+        const currentDecision = store.getDecision(decisionId);
+        const currentRoom = store.getRoom(roomId);
+        const resp = await interpretRoomCommand({
+          command: item.command,
+          text: item.text,
+          room: currentRoom,
+          decision: currentDecision,
+          participants: store.getParticipants(decisionId),
+          edges: store.getEdges(decisionId),
+          messages: [],
+        });
+        if (resp.kind !== "update") throw new Error(resp.body || "The mapping pass failed.");
+        applyRoomUpdate(resp.update, item.command, { roomId, decisionId });
+      }
+
+      const mappedPeople = store.getParticipants(decisionId).length;
+      if (!mappedPeople) throw new Error("I could not map any people from that answer. Try names with short roles.");
+      setActiveTab("people");
+
+      store.pushMessage(decisionId, {
+        type: "updated",
+        label: "Room ready",
+        body: "Your first map is ready. Run @read for the first room read, or ask @ask who to talk to first.",
+      });
+      trackEvent("onboarding_completed", { people: mappedPeople });
+    },
+    [applyRoomUpdate, rooms, store]
+  );
+
+  const submitOnboarding = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (onboarding.busy || onboarding.done) return;
+      const answer = onboarding.draft.trim();
+      if (!answer) return;
+      const question = ONBOARDING_QUESTIONS[onboarding.step];
+      const answers = { ...onboarding.answers, [question.id]: answer };
+      const messages = [...onboarding.messages, { role: "user", body: answer }];
+
+      if (onboarding.step < ONBOARDING_QUESTIONS.length - 1) {
+        const nextStep = onboarding.step + 1;
+        setOnboarding({
+          ...onboarding,
+          step: nextStep,
+          answers,
+          draft: "",
+          messages: [...messages, { role: "assistant", body: ONBOARDING_QUESTIONS[nextStep].prompt }],
+          error: "",
+        });
+        return;
+      }
+
+      setOnboarding({
+        ...onboarding,
+        answers,
+        draft: "",
+        messages: [...messages, { role: "assistant", body: "I have enough. I am building the room now." }],
+        busy: true,
+        error: "",
+      });
+      try {
+        await completeOnboarding(answers);
+        setOnboarding((current) => ({
+          ...current,
+          busy: false,
+          done: true,
+          messages: [
+            ...current.messages,
+            {
+              role: "assistant",
+              body: "Done. I mapped the first people, their initial Energy, and the relationships you named.",
+            },
+          ],
+        }));
+      } catch (err) {
+        setOnboarding((current) => ({
+          ...current,
+          busy: false,
+          error: err?.message || "Guided setup failed. You can try again or set up the room yourself.",
+        }));
+      }
+    },
+    [completeOnboarding, onboarding]
   );
 
   /* chat */
@@ -654,33 +843,65 @@ export default function Room({ onExit }) {
           onDeleteDecision={(id) => setModal({ type: "deleteDecision", id })}
         />
 
+        {onboarding.active ? (
+          <main className="onboarding-panel">
+            <OnboardingChat
+              messages={onboarding.messages}
+              step={onboarding.step}
+              draft={onboarding.draft}
+              setDraft={(value) => setOnboarding((current) => ({ ...current, draft: value }))}
+              busy={onboarding.busy}
+              done={onboarding.done}
+              error={onboarding.error}
+              onSubmit={submitOnboarding}
+              onSkip={skipOnboarding}
+              onOpenRoom={openOnboardingRoom}
+            />
+          </main>
+        ) : (
+          <>
         <main className="workspace">
           {!room ? (
             <div className="empty-state">
               <div className="empty-icon">◦</div>
               <p className="empty-title">No room selected</p>
               <p className="empty-sub">Create a room to begin.</p>
-              <button className="btn-primary" onClick={newRoom}>
-                + New room
-              </button>
+              <div className="empty-actions">
+                <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
+                  Start guided setup
+                </button>
+                <button className="btn-secondary" onClick={newRoom}>
+                  New room
+                </button>
+              </div>
             </div>
           ) : !roomHasPeople ? (
             <div className="empty-state">
               <div className="empty-icon">◦</div>
               <p className="empty-title">No one in this room yet</p>
               <p className="empty-sub">Add your team to the roster. They become available across every decision in this room.</p>
-              <button className="btn-primary" onClick={() => setModal({ type: "roomSettings", id: activeRoomId })}>
-                Add people
-              </button>
+              <div className="empty-actions">
+                <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
+                  Start guided setup
+                </button>
+                <button className="btn-secondary" onClick={() => setModal({ type: "roomSettings", id: activeRoomId })}>
+                  Add people
+                </button>
+              </div>
             </div>
           ) : !decision ? (
             <div className="empty-state">
               <div className="empty-icon">○</div>
               <p className="empty-title">No decision selected</p>
               <p className="empty-sub">Start a decision. The whole roster joins by default, and you map positions and the play from there.</p>
-              <button className="btn-primary" onClick={newDecision}>
-                + New decision
-              </button>
+              <div className="empty-actions">
+                <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
+                  Start guided setup
+                </button>
+                <button className="btn-secondary" onClick={newDecision}>
+                  New decision
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -745,6 +966,8 @@ export default function Room({ onExit }) {
           isGenerating={isGenerating}
           openChat={OPEN_CHAT}
         />
+          </>
+        )}
       </div>
 
       {profilePerson && (

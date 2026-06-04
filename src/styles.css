@@ -603,6 +603,127 @@ code {
 .empty-sub { font-size: 15px; line-height: 1.6; color: var(--ink-soft); max-width: 42ch; margin-bottom: var(--s5); }
 .empty-actions { display: flex; gap: var(--s3); }
 
+/* first-run onboarding */
+.onboarding-panel {
+  grid-column: 2 / -1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  padding-bottom: var(--s5);
+}
+.onboarding-chat {
+  width: min(760px, 100%);
+  min-height: min(680px, calc(100vh - 150px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.onboarding-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s2) var(--s4);
+  align-items: start;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.onboarding-head .msg-label { grid-column: 1 / -1; margin-bottom: 0; }
+.onboarding-head h2 {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+  margin: 0;
+}
+.onboarding-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: 22px 24px;
+}
+.onboarding-msg {
+  max-width: 82%;
+  border-radius: 16px;
+  padding: 12px 15px;
+}
+.onboarding-msg p {
+  font-size: 14.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.onboarding-assistant {
+  align-self: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+.onboarding-user {
+  align-self: flex-end;
+  background: var(--ink);
+  color: var(--bg-raised);
+  border-radius: 16px 16px 4px 16px;
+}
+.onboarding-error {
+  align-self: stretch;
+  border: 1px solid color-mix(in srgb, var(--against) 26%, var(--line));
+  background: color-mix(in srgb, var(--against) 6%, var(--bg-raised));
+  color: var(--against);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.onboarding-form {
+  border-top: 1px solid var(--line);
+  padding: 18px 24px 22px;
+  background: var(--bg-raised);
+}
+.onboarding-progress {
+  display: block;
+  margin-bottom: var(--s2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.onboarding-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 112px;
+  max-height: 220px;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  padding: 14px 16px;
+  outline: none;
+}
+.onboarding-input:focus {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s3);
+  padding: 0 24px 22px;
+}
+.onboarding-form .onboarding-actions {
+  padding: var(--s3) 0 0;
+}
+
 .fw-pill { font-weight: 600; font-size: 0.94em; border-bottom: 1.5px solid color-mix(in srgb, var(--manage) 45%, var(--line)); }
 
 /* ================================================================== */
@@ -1063,6 +1184,7 @@ code {
   .app { height: auto; min-height: 100%; }
   .body { grid-template-columns: 200px minmax(0, 1fr); }
   .chat { grid-column: 1 / -1; border-left: none; border-top: 1px solid var(--line); padding-left: 0; padding-top: var(--s5); margin-top: var(--s2); }
+  .onboarding-panel { grid-column: 1 / -1; }
   .tab-body { min-height: 56vh; }
 }
 
@@ -1546,6 +1668,9 @@ code {
     padding: 0;
     margin-top: var(--s4);
   }
+  .onboarding-panel {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1562,6 +1687,27 @@ code {
   }
   .rail {
     max-height: 36vh;
+  }
+  .onboarding-chat {
+    min-height: 620px;
+  }
+  .onboarding-head {
+    grid-template-columns: 1fr;
+    padding: 20px 18px 16px;
+  }
+  .onboarding-thread,
+  .onboarding-form {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .onboarding-msg {
+    max-width: 94%;
+  }
+  .onboarding-actions,
+  .onboarding-form .onboarding-actions,
+  .empty-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
   .field-grid-two,
   .landing-steps {

@@ -302,6 +302,17 @@ strategist prompt is `strategist-v2`. Venting that carries real room content is
 allowed through and neutralized by the model. Analytics: `open_chat`,
 `open_chat_blocked {reason}`.
 
+First-run onboarding. New account creation marks a one-shot local onboarding
+flag. If the account has no usable room, Room opens a guided three-question
+conversation once: decision and desired outcome, 2 to 4 key people, and the
+relationships that matter. Users can skip at any point, and empty states keep a
+manual Start guided setup button for users who missed it. The onboarding
+orchestrator is not a second interpreter. It creates the room and decision, then
+routes the collected answers through `interpretRoomCommand` with the existing
+`@create`, `@energy` (`grid` internally), and `@network` contracts, validators,
+and `applyRoomUpdate` write path. No new model path or calibration logic exists
+for onboarding.
+
 Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
 stakeholder coach that reasons only over the room snapshot and `recentTurns`. It
 returns `{ answer, moves, cites, grounded }`. `normalizeStrategistAnswer` grounds
@@ -389,6 +400,11 @@ never calls Claude. Live evals require both `--live` and `EVAL_ALLOW_LIVE=true`
 so credit-spending runs are deliberate. Eval traces write to
 `evals/runs/latest.json`, which is ignored by git.
 
+Onboarding has its own mocked fixture at `evals/fixtures/onboarding.json` and a
+deterministic verifier, `npm run verify:onboarding`. It checks the fixed
+question flow, one-shot trigger guard, command plan, skip path, and normalized
+mock outputs without calling a live model.
+
 ## Folder structure
 
 ```
@@ -408,6 +424,7 @@ src/
     frameworks.js         quadrant logic, framework constants, helpers
     llm-prompts.js        play and command system prompts, prompt versions
     llm-trace.js          local raw trace writer and cost estimator
+    onboarding.js         first-run questions, trigger helpers, command plan
     play-contract.js      compact LLM context and validate returned plays
     room-command-contract.js compact and validate LLM command updates
     reasoning.js          canned play engine, Claude API later
@@ -429,6 +446,7 @@ src/
     highlight.jsx         framework name highlighting in play text
     Chip.jsx              person token for grid and network
     OverflowMenu.jsx      hover overflow menu for rail edit and delete
+    OnboardingChat.jsx    first-run guided setup conversation
     FrameworkVisuals.jsx  visual first framework display
     PersonProfile.jsx     floating profile, variant compact | full
     Rail.jsx              rooms and decisions navigation

@@ -43,7 +43,7 @@ export default function App() {
       );
     }
     if (status === "out") return <Landing configured onLocalEnter={() => {}} />;
-    return <Room onExit={signOut} />;
+    return <Room onExit={signOut} userId={user?.uid} />;
   }
 
   if (!localPreview) {

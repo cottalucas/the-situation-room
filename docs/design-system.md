@@ -79,6 +79,10 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
 - Chat threads alternate user prompts and assistant replies. User prompts are
   right-aligned ink bubbles; assistant command results stay in raised cards
   because they are also structured UI.
+- First-run onboarding uses a chat-like panel, not a modal. Assistant prompts
+  sit in raised bubbles, user answers sit in ink bubbles, and the form uses one
+  primary action. The panel asks three fixed questions and keeps skip as the
+  secondary action.
 - Position shown as a colored dot (chip) and a pill badge.
 - Network and grid chips show a three character first-name label such as Cha,
   Cla, Rou, or Ral. Full name and role stay available through hover labels and

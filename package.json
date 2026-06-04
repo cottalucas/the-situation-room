@@ -14,6 +14,7 @@
     "verify:confidence": "node scripts/verify-phase-c.mjs",
     "verify:resolution": "node scripts/verify-resolution.mjs",
     "verify:guard": "node scripts/verify-guard.mjs",
+    "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:emulator": "firebase emulators:exec --only firestore 'node tests/emulator/persistence.emulator.test.mjs'",
     "eval:live": "EVAL_ALLOW_LIVE=true node scripts/eval-v1.mjs --live",
     "functions:lint": "npm --prefix functions run lint",

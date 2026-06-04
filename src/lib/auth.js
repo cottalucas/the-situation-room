@@ -20,6 +20,24 @@ import { auth, db, isConfigured, setAnalyticsUser, trackEvent } from "./firebase
 import { setUserKey, clearUserKey } from "./crypto.js";
 
 let persistencePromise = null;
+const ONBOARDING_PENDING_PREFIX = "tsr:onboarding:pending:";
+
+function onboardingKey(uid) {
+  return `${ONBOARDING_PENDING_PREFIX}${uid}`;
+}
+
+export function markOnboardingPending(uid) {
+  if (!uid || typeof localStorage === "undefined") return;
+  localStorage.setItem(onboardingKey(uid), "1");
+}
+
+export function consumeOnboardingPending(uid) {
+  if (!uid || typeof localStorage === "undefined") return false;
+  const key = onboardingKey(uid);
+  const pending = localStorage.getItem(key) === "1";
+  if (pending) localStorage.removeItem(key);
+  return pending;
+}
 
 function ensureAuthPersistence() {
   if (!isConfigured || !auth) return Promise.resolve();
@@ -49,13 +67,15 @@ async function ensureUserDoc(user, name) {
   if (!db) return;
   const ref = doc(db, "users", user.uid);
   const snap = await getDoc(ref);
+  const isNew = !snap.exists();
   const data = {
     name: name || user.displayName || "",
     email: user.email || "",
   };
-  if (!snap.exists()) data.createdAt = serverTimestamp();
-  if (!snap.exists()) data.settings = {};
+  if (isNew) data.createdAt = serverTimestamp();
+  if (isNew) data.settings = {};
   await setDoc(ref, data, { merge: true });
+  return isNew;
 }
 
 export async function registerEmail({ name, email, password }) {
@@ -64,6 +84,7 @@ export async function registerEmail({ name, email, password }) {
   if (name) await updateProfile(cred.user, { displayName: name });
   setUserKey(cred.user.uid);
   await ensureUserDoc(cred.user, name);
+  markOnboardingPending(cred.user.uid);
   trackEvent("sign_up", { method: "password" });
   return cred.user;
 }
@@ -81,7 +102,8 @@ export async function signInGoogle() {
   await ensureAuthPersistence();
   const cred = await signInWithPopup(auth, new GoogleAuthProvider());
   setUserKey(cred.user.uid);
-  await ensureUserDoc(cred.user);
+  const isNew = await ensureUserDoc(cred.user);
+  if (isNew) markOnboardingPending(cred.user.uid);
   trackEvent("login", { method: "google" });
   return cred.user;
 }
