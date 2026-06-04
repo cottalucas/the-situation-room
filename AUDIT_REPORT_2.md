@@ -181,3 +181,40 @@ as confident, and only `"low"` needs confirm.
 Haiku untouched (no model change), encryption intact (placements stay plaintext,
 as they must to render and query — the encrypted fields are unchanged), rules
 unchanged. Build clean; offline suite 16/16; A/B/C verify 24/10/9.
+
+---
+
+## PHASE D — Prove it live (gated, real Haiku)
+
+Timestamp: 2026-06-04
+
+Ran the gated live suite once against real Haiku through the local Vite endpoints
+(`EVAL_ALLOW_LIVE=true`, bounded with `EVAL_CASE_IDS` to the requested cases to
+keep spend minimal). Setup note: an empty `ANTHROPIC_API_KEY` in the shell env was
+shadowing the `.env.local` value (Vite `loadEnv` prefers `process.env`); sourcing
+`.env.local` into the dev server's environment fixed it. No code change.
+
+### Result: 5/5 passed. Actual Haiku output vs golden expectations:
+| Case | Expected | Actual Haiku output | Verdict |
+|---|---|---|---|
+| Banded calibration ("very low interest, very high power") | interest in 10-20 (not 0), power in 85-95 | `power=90, interest=15` | PASS — banded, no extreme |
+| Single statement -> one edge ("Maya reports to Sam") | exactly 1 defers edge | `1 edge: maya>sam:defers` | PASS — no fabrication |
+| @ask grounding ("who first") | cites only room people, has moves | `grounded=true, cites=[rouven,chad,raluca], 3 moves` | PASS |
+| @ask off-topic (poem + weather) | decline, grounded=false | `grounded=false` (steered back to Rouven) | PASS |
+| Auto-Read (fixed internal Q) | cites only room people, has moves | `grounded=true, cites=[john,alberto,rouven,chad], 3 moves` | PASS |
+
+### Flagged misbehavior
+None. The calibration produced 15 (not 0) for "very low", the single statement
+produced exactly one edge, and the strategist grounded its cites to room people
+and declined the off-topic request. No eval was loosened.
+
+### Spend
+`npm run trace:summary`: total local trace cost **$0.0519** across 15 traces
+(0.1% of the $50 ceiling; remaining ~$49.95). Per-command averages: grid ~2.7k
+tokens/call, network ~2.7k, strategist ~1.1k. Live raw traces are local only and
+gitignored; production posture (metadata-only, raw off) is unchanged.
+
+### Constraint check
+Model used: `claude-haiku-4-5-20251001` (Haiku only). No raw production traces
+written (this was the local bridge, traces gitignored). Encryption, rules
+untouched. Spend logged and far under ceiling.

@@ -5,6 +5,18 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 2 Phase D: gated live eval on real Haiku
+
+Ran the gated live suite once (EVAL_ALLOW_LIVE=true, bounded by EVAL_CASE_IDS) for
+banded calibration, single-statement->one edge, @ask grounding, off-topic decline,
+and the Auto-Read: 5/5 pass on real Haiku. Actual outputs: "very low interest"
+-> interest 15 (banded, not 0); "Maya reports to Sam" -> exactly one defers edge;
+strategist cited only room people and declined the off-topic request
+(grounded=false). No prompt misbehavior; no eval loosened. Spend $0.0519 total
+(0.1% of the $50 ceiling). Fixed a setup gotcha: an empty ANTHROPIC_API_KEY in the
+shell env shadowed .env.local (Vite loadEnv prefers process.env); sourcing
+.env.local into the dev server fixed it (no code change).
+
 ## 2026-06-04 - Pass 2 Phase C: low-confidence visual honesty
 
 Persisted the interpretation-layer `confidence` onto `decision.placements[id]`
