@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "eval": "node scripts/eval-v1.mjs",
     "eval:offline": "node scripts/eval-v1.mjs",
+    "verify:persistence": "node scripts/verify-phase-a.mjs",
+    "verify:emulator": "firebase emulators:exec --only firestore 'node tests/emulator/persistence.emulator.test.mjs'",
     "eval:live": "EVAL_ALLOW_LIVE=true node scripts/eval-v1.mjs --live",
     "functions:lint": "npm --prefix functions run lint",
     "trace:summary": "node scripts/trace-summary.mjs"

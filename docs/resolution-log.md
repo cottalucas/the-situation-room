@@ -5,6 +5,26 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 2 Phase A: persistence + anaphora verified
+
+Verified the prior pass's persistent chat, context window, and `@ask` before
+building on them. Extracted the pure reference resolver from `Room.jsx` into
+`src/lib/person-ref.js` (`resolvePersonRef`) so anaphora is unit-testable; no
+behavior change. Added `scripts/verify-phase-a.mjs` (`npm run verify:persistence`)
+which drives the real `crypto.js`, the real `firestore-repo` message converters,
+the snapshot sort, the resolver, and `compactRoomCommandContext`: 24/24 pass.
+Result: free text encrypts and decrypts back, the thread rehydrates in order,
+"Maya"/ids resolve to the existing person (no duplicate), a bare pronoun does not
+resolve in the write layer (the model must bind it via recentTurns, which carry
+the prior turn), and the room snapshot holds the people needed.
+
+Transport-level proof (`tests/emulator/persistence.emulator.test.mjs`,
+`npm run verify:emulator`, firebase.json emulators block) is written but BLOCKED
+in this environment: the Firestore emulator needs Java, which is not installed
+(`java -version` exits 1). Runnable where Java is present. No bugs found; the only
+gap was that it was untested, now closed at the logic level. Details in
+`AUDIT_REPORT_2.md`.
+
 ## 2026-06-03 - Overnight audit Phase 8: evals and observability
 
 Confirmed offline evals are the default no-credit check and now cover every

@@ -159,7 +159,7 @@ async function decisionFromFirestore(id, roomId, data, edges = []) {
  * label, personName, command, and ts stay plaintext so the thread can render and
  * sort without decrypting structure. Welcome, loading, and play cards are not
  * persisted (see store.pushMessage). */
-async function messageToFirestore(message) {
+export async function messageToFirestore(message) {
   return {
     role: message.role || (message.type === "user" ? "user" : "assistant"),
     type: message.type || "updated",
@@ -175,7 +175,7 @@ async function messageToFirestore(message) {
   };
 }
 
-async function messageFromFirestore(id, data) {
+export async function messageFromFirestore(id, data) {
   return {
     id,
     role: data.role || "assistant",
@@ -198,7 +198,7 @@ function tsToMs(ts) {
   return Number(ts) || Number.MAX_SAFE_INTEGER;
 }
 
-async function messagesFromSnap(snap) {
+export async function messagesFromSnap(snap) {
   const messages = await Promise.all(snap.docs.map((m) => messageFromFirestore(m.id, m.data())));
   return messages.sort((a, b) => tsToMs(a.ts) - tsToMs(b.ts));
 }

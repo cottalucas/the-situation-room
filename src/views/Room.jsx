@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import { useStore } from "../hooks/useStore.js";
 import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
+import { resolvePersonRef } from "../lib/person-ref.js";
 
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
@@ -21,35 +22,6 @@ const TABS = [
   { id: "grid", label: "Energy", hint: "Who to spend energy on" },
   { id: "network", label: "Network", hint: "Who moves whom" },
 ];
-
-function firstName(name) {
-  return String(name || "").split(/\s+/)[0]?.toLowerCase() || "";
-}
-
-function normalizeRef(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/^(the|a|an)\s+/, "")
-    .trim();
-}
-
-function roleAliases(role) {
-  const clean = normalizeRef(role);
-  const aliases = new Set([clean]);
-  if (clean.includes("chief executive") || clean === "ceo") aliases.add("ceo");
-  if (clean.includes("chief product") || clean === "cpo") aliases.add("cpo");
-  if (clean.includes("head of product")) aliases.add("head of product");
-  if (clean.includes("head of sales")) aliases.add("head of sales");
-  if (clean.includes("web")) aliases.add("pm of web");
-  if (clean.includes("professional sellers")) aliases.add("pm of professionals");
-  return aliases;
-}
-
-function findUniquePerson(list, predicate) {
-  const matches = list.filter(predicate);
-  return matches.length === 1 ? matches[0] : null;
-}
 
 function gridValueIsExtreme(value) {
   return value != null && (value <= 10 || value >= 90);
@@ -255,27 +227,8 @@ export default function Room({ onExit }) {
 
   const findPersonRef = useCallback(
     (ref, currentParticipants = participants) => {
-      const rawToken = String(ref || "").toLowerCase().trim();
-      const token = normalizeRef(ref);
-      if (!token) return null;
       const allPeople = store.getAllPeople();
-      const pools = [currentParticipants, Object.values(allPeople)];
-      for (const pool of pools) {
-        const exact =
-          findUniquePerson(
-            pool,
-            (p) => p.id.toLowerCase() === rawToken || normalizeRef(p.id) === token || normalizeRef(p.name) === token || firstName(p.name) === token
-          ) || null;
-        if (exact) return exact;
-        const roleExact = findUniquePerson(pool, (p) => roleAliases(p.role).has(token));
-        if (roleExact) return roleExact;
-        const roleFuzzy = findUniquePerson(pool, (p) => {
-          const role = normalizeRef(p.role);
-          return token.length >= 6 && role && (role.includes(token) || token.includes(role));
-        });
-        if (roleFuzzy) return roleFuzzy;
-      }
-      return null;
+      return resolvePersonRef(ref, [currentParticipants, Object.values(allPeople)]);
     },
     [participants, store]
   );
