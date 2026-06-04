@@ -88,7 +88,11 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   onboarding.
 - Frameworks render visual first: SCARF as colored dimension pills, Thomas
   Kilmann as a colored mode badge, Cialdini as lever chips, Fisher and Ury as a
-  one line teaser. Full text expands on click.
+  one line teaser. Full text expands on click. All four are always present, even
+  before there is a read, so the user can see what is coming; an unmapped
+  framework shows a muted "Not mapped" state and, when expanded, a concise
+  "what it is and how to use it" note. Each row carries a small info tooltip with
+  the same one line explanation.
 
 ## Tooling
 

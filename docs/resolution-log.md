@@ -5,6 +5,15 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 3 Step 5: frameworks always present with tooltips
+
+`FrameworkVisuals` no longer hides the frameworks for a fresh person. All four
+(SCARF, Thomas-Kilmann, Cialdini, Fisher & Ury) are always rendered so the user
+sees what is coming. Each row has a small info tooltip with a concise "what it is
+and how to use it" line, and an unmapped framework shows a muted "Not mapped"
+state plus that guidance when expanded. A top hint appears when a person has no
+read at all, pointing to @note. Presentational only; deployed to hosting.
+
 ## 2026-06-04 - Pass 3 Step 4: command purpose clarified
 
 Reworked the commands reference into two clearly separated groups, "Build the

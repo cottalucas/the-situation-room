@@ -713,6 +713,30 @@ code {
 .cialdini-chip { font-size: 11.5px; font-weight: 500; color: var(--ink); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px 11px; }
 .fu-teaser { font-size: 13px; color: var(--ink-soft); font-style: italic; }
 
+/* Framework info tooltip + empty states (frameworks are always present) */
+.vfw-label { display: inline-flex; align-items: center; gap: 6px; }
+.vfw-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-faint);
+  font-size: 9px;
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: help;
+}
+.vfw-info:hover { color: var(--ink); border-color: var(--ink-faint); }
+.vfw-empty .vfw-tag { opacity: 0.9; }
+.tki-empty { background: var(--line-strong) !important; color: var(--ink-faint) !important; }
+.cialdini-empty, .fu-empty { color: var(--ink-faint); font-style: normal; }
+.fw-empty-top { font-size: 13px; color: var(--ink-soft); line-height: 1.55; margin-bottom: var(--s3); }
+
 .fw-fresh { padding: 14px 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
 .fw-fresh p { font-size: 14px; color: var(--ink-soft); line-height: 1.55; }
 .cmd-hint { display: inline-block; margin-top: 8px; font-size: 12.5px; color: var(--ink-faint); }
