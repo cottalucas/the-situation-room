@@ -5,6 +5,16 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Fix: The Read fires only on explicit decision selection
+
+The passive arrival effect could fire a strategist call during load churn, when a
+decision was briefly auto-selected, even though the workspace showed "No decision
+selected". Removed that effect. The read now fires only from an explicit
+`selectDecision` / `selectRoom` (the user opening a decision) via `maybeAutoRead`,
+or from the `@read` command. `generateRead` takes an explicit `decisionId`, so it
+never runs against a stale or unselected decision. No call is ever made without a
+selected decision. Client-only; deployed to hosting.
+
 ## 2026-06-04 - Pass 3 Step 6: guarded open (non-deterministic) chat
 
 First cut of open chat for testing, with heavy harness. Plain non-command text now

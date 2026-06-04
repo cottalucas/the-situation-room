@@ -107,6 +107,77 @@ export default function Room({ onExit }) {
   const profilePosition = decision?.positions?.[profile?.personId] || "unknown";
   const profilePlacement = decision && profile ? store.getPlacement(decision.id, profile.personId) : null;
 
+  /* The Read: a grounded read of the room. It fires ONLY when the user opens a
+     decision (selectDecision / selectRoom) or runs @read, never on bare landing
+     or during load churn, so we never spend a call without a selected decision. */
+  const readAttempted = useRef(new Set());
+
+  const generateRead = useCallback(
+    async ({ decisionId, auto } = {}) => {
+      const id = decisionId || activeDecisionId;
+      const d = store.getDecision(id);
+      if (!d) return;
+      const people = store.getParticipants(id);
+      const edges = store.getEdges(id);
+      if (!autoReadEligible(people.length, edges.length)) {
+        if (!auto) {
+          store.pushMessage(id, {
+            type: "fallback",
+            body: "Basic insights only for now. I need a few more people and at least a couple of relationships before I can read the room. Map them with @energy and @network, then run @read.",
+          });
+        }
+        return;
+      }
+      if (!LIVE_LLM) {
+        if (!auto) store.pushMessage(id, { type: "fallback", body: "Live reasoning is off, so I cannot read the room right now." });
+        return;
+      }
+      setIsGenerating(true);
+      trackEvent("read_generated", { auto: !!auto });
+      try {
+        const resp = await askStrategist({
+          question: AUTO_READ_QUESTION,
+          room: store.getRoom(d.roomId),
+          decision: d,
+          participants: people,
+          edges,
+          messages: [],
+        });
+        if (resp.kind === "coach") {
+          trackEvent("read_shown");
+          store.pushMessage(id, {
+            type: "read",
+            body: resp.answer.answer,
+            questions: resp.answer.moves,
+            cites: resp.answer.cites,
+            grounded: resp.answer.grounded,
+          });
+        } else if (!auto) {
+          store.pushMessage(id, { type: "fallback", body: resp.body });
+        }
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [activeDecisionId, store]
+  );
+
+  // Auto-read fires on an explicit decision selection only, once per decision,
+  // when the room is rich enough and no read is already in the thread.
+  const maybeAutoRead = useCallback(
+    (decisionId) => {
+      if (!decisionId || !LIVE_LLM) return;
+      const d = store.getDecision(decisionId);
+      if (!d) return;
+      if (!autoReadEligible(store.getParticipants(decisionId).length, store.getEdges(decisionId).length)) return;
+      if (store.getChat(decisionId).some((m) => m.type === "read")) return;
+      if (readAttempted.current.has(decisionId)) return;
+      readAttempted.current.add(decisionId);
+      generateRead({ decisionId, auto: true });
+    },
+    [store, generateRead]
+  );
+
   /* navigation */
   const selectRoom = useCallback(
     (id) => {
@@ -115,12 +186,13 @@ export default function Room({ onExit }) {
       if (first) {
         store.ensureChat(first.id);
         setActiveDecisionId(first.id);
+        maybeAutoRead(first.id);
       } else setActiveDecisionId(null);
       setProfile(null);
       setShowPath(false);
       setActiveTab("people");
     },
-    [store]
+    [store, maybeAutoRead]
   );
   const selectDecision = useCallback(
     (id) => {
@@ -129,8 +201,9 @@ export default function Room({ onExit }) {
       setProfile(null);
       setShowPath(false);
       setActiveTab("people");
+      maybeAutoRead(id);
     },
-    [store]
+    [store, maybeAutoRead]
   );
 
   useEffect(() => {
@@ -232,14 +305,6 @@ export default function Room({ onExit }) {
   const openCompact = useCallback((id) => setProfile({ personId: id, variant: "compact" }), []);
   const openFull = useCallback((id) => setProfile({ personId: id, variant: "full" }), []);
 
-  /* The Read: a grounded read of the room, generated into the chat on arrival
-     (once per decision) and refreshed on demand with @read. It is a persisted
-     chat message, so it is not regenerated on every landing, only when the user
-     asks or the room is new. */
-  const readEdges = activeDecisionId ? store.getEdges(activeDecisionId) : [];
-  const readEligible = autoReadEligible(participants.length, readEdges.length);
-  const readAttempted = useRef(new Set());
-
   const openReadChip = useCallback(
     (id) => {
       trackEvent("read_chip_clicked", { personId: id });
@@ -247,60 +312,6 @@ export default function Room({ onExit }) {
     },
     [openCompact]
   );
-
-  const generateRead = useCallback(
-    async ({ auto } = {}) => {
-      const d = store.getDecision(activeDecisionId);
-      if (!d) return;
-      const people = store.getParticipants(d.id);
-      const edges = store.getEdges(d.id);
-      if (!autoReadEligible(people.length, edges.length)) {
-        if (!auto) {
-          store.pushMessage(d.id, {
-            type: "fallback",
-            body: "Basic insights only for now. I need a few more people and at least a couple of relationships before I can read the room. Map them with @energy and @network, then run @read.",
-          });
-        }
-        return;
-      }
-      if (!LIVE_LLM) {
-        if (!auto) store.pushMessage(d.id, { type: "fallback", body: "Live reasoning is off, so I cannot read the room right now." });
-        return;
-      }
-      setIsGenerating(true);
-      trackEvent("read_generated", { auto: !!auto });
-      try {
-        const resp = await askStrategist({ question: AUTO_READ_QUESTION, room, decision: d, participants: people, edges, messages: [] });
-        if (resp.kind === "coach") {
-          trackEvent("read_shown");
-          store.pushMessage(d.id, {
-            type: "read",
-            body: resp.answer.answer,
-            questions: resp.answer.moves,
-            cites: resp.answer.cites,
-            grounded: resp.answer.grounded,
-          });
-        } else if (!auto) {
-          store.pushMessage(d.id, { type: "fallback", body: resp.body });
-        }
-      } finally {
-        setIsGenerating(false);
-      }
-    },
-    [activeDecisionId, room, store]
-  );
-
-  // Arrival read: generate once per decision when the room is rich enough and no
-  // read is already in the persisted thread.
-  useEffect(() => {
-    if (!decision || !LIVE_LLM || !readEligible) return;
-    const chat = store.getChat(decision.id);
-    if (chat.some((m) => m.type === "read")) return;
-    if (readAttempted.current.has(decision.id)) return;
-    readAttempted.current.add(decision.id);
-    generateRead({ auto: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [decision?.id, readEligible]);
 
   const findPersonRef = useCallback(
     (ref, currentParticipants = participants) => {
