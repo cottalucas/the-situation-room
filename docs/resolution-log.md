@@ -5,6 +5,17 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 2 FINAL: deployed live
+
+Deployed Firestore rules, hosting, and functions to `the-situation-room-708c6`.
+Live smoke confirms the strategist endpoint is live and secured: the app returns
+200 and `POST /api/strategist` returns 401 "Sign in required" (not 404). The
+`messages` subcollection rule and the calibrated/strategist function code are now
+in production. Wrote the executive summary at the top of `AUDIT_REPORT_2.md`.
+Flagged for the user: the Node 20 functions runtime is deprecated (decommission
+2026-10-31, bump engines before then) and a benign build-image cleanup warning.
+This closes the second overnight pass.
+
 ## 2026-06-04 - Pass 2 Phase D: gated live eval on real Haiku
 
 Ran the gated live suite once (EVAL_ALLOW_LIVE=true, bounded by EVAL_CASE_IDS) for

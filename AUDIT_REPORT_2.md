@@ -26,7 +26,82 @@ BLOCKED with the exact blocker and a runnable command.
 
 ## EXECUTIVE SUMMARY
 
-_Filled at the end of the run._
+Timestamp: 2026-06-04 (overnight run, deployed live)
+
+Verified the previous pass, then made the grounded strategist the product's spine,
+proved it on real Haiku, and deployed everything live. Committed per phase,
+revertable.
+
+### What was verified
+- **Persistence + anaphora (Phase A): no bugs found.** The real crypto, the real
+  `firestore-repo` message converters, the snapshot sort, the extracted anaphora
+  resolver, and the context assembly pass 24/24 in Node
+  (`npm run verify:persistence`). Free text encrypts and decrypts back, the thread
+  rehydrates in order, names/ids resolve to the existing person (no duplicate), and
+  a bare pronoun is left for the model to bind via `recentTurns` (which carry the
+  prior turn). The one real gap was that it was untested; that is now closed.
+
+### What changed
+- **Strategist auto-surfaced (Phase B):** first-class `@ask` prompt chips and an
+  always-on "The Read" card at the top of the room. It reuses the existing
+  strategist endpoint with a fixed question once a decision has >= 4 people and
+  >= 2 edges, shows a read + up to 3 moves + clickable "Grounded in" person chips,
+  and caches by a grid/positions/edges signature so a call fires only when the
+  strategic inputs change. Analytics: `read_generated`, `read_shown`,
+  `read_chip_clicked`. No new model path; Phase-7 grounding and banned-trait guard
+  reused.
+- **Low-confidence visual honesty (Phase C):** `confidence` is now persisted on
+  `placements[id]` (additive, defaults high, no migration) and the Energy lens
+  renders a dashed needs-confirm ring on low-confidence chips.
+
+### What was proven live (Phase D)
+5/5 on real Haiku: "very low interest" -> 15 (banded, not 0), "Maya reports to
+Sam" -> exactly one defers edge, `@ask` grounded to room people, off-topic
+declined (`grounded=false`), Auto-Read grounded. No prompt misbehavior; no eval
+loosened. Spend **$0.0519** total (0.1% of the $50 ceiling).
+
+### Deployed live
+`firebase deploy` of Firestore rules, hosting, and functions to
+`the-situation-room-708c6`. Live smoke: `https://the-situation-room-708c6.web.app`
+returns 200; `POST /api/strategist` returns 401 "Sign in required" (not 404),
+confirming the new strategist endpoint is live, routed, and auth-secured.
+
+### What I could NOT safely auto-fix / flagged
+1. **Firestore emulator transport test — BLOCKED (no Java here).** The harness is
+   written and wired (`npm run verify:emulator`); run it where Java is installed
+   for the network-level reload proof. The logic it covers already passes.
+2. **Browser smoke of The Read not run here.** The app gates on real Firebase Auth
+   and there is no interactive sign-in in this environment. The live function is
+   smoke-verified (401) and the card logic is unit-tested; a manual signed-in
+   visual check of the card and the dashed dot is the remaining confirmation.
+3. **Functions runtime Node 20 is deprecated** (decommission 2026-10-31). Deploy
+   still works; bump `functions/package.json` engines before then.
+4. **Build-image cleanup warning** during functions deploy (small possible GCR
+   bill). Redeploy or delete the images in the console to clear it.
+5. **Local dev gotcha (fixed in-run, no code change):** an empty
+   `ANTHROPIC_API_KEY` exported in the shell shadowed `.env.local` because Vite
+   `loadEnv` prefers `process.env`. Source `.env.local` (or unset the empty var)
+   when running the dev server for live calls.
+
+### Constraint confirmation
+- **Haiku only:** `claude-haiku-4-5-20251001` everywhere, including the strategist
+  and Auto-Read. No Sonnet/Opus path.
+- **No raw production traces:** `LLM_STORE_RAW_TRACES=false` default; the live
+  traces this run were the local bridge only (gitignored).
+- **Encryption intact:** verified by test; chat free text and the existing
+  encrypted fields are unchanged; placements stay plaintext as required to render.
+- **Rules scoped:** owner-scoped throughout; the `messages` subcollection rule is
+  deployed.
+- **Offline evals pass:** 16/16; plus `verify:persistence` 24/24,
+  `verify:autoread` 10/10, `verify:confidence` 9/9.
+
+### How to run / deploy
+`npm run eval` (offline). `npm run verify:persistence` / `verify:autoread` /
+`verify:confidence`. `npm run verify:emulator` (needs Java). Live eval (gated):
+source `.env.local`, `npm run dev`, then
+`EVAL_ALLOW_LIVE=true EVAL_BASE_URL=http://localhost:5173 npm run eval:live`.
+Spend: `npm run trace:summary`. Deploy:
+`firebase deploy --only firestore:rules,hosting,functions`.
 
 ---
 
