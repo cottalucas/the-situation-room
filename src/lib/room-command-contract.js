@@ -72,7 +72,7 @@ function cleanProfilePatch(patch) {
   return Object.keys(out).length ? out : null;
 }
 
-const TURN_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach"]);
+const TURN_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach", "read"]);
 const RECENT_TURNS = 8;
 
 function recentTurnsFrom(messages = []) {

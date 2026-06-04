@@ -80,12 +80,13 @@ function UpdatedMessage({ message, latest }) {
   );
 }
 
-function CoachMessage({ message, people, latest }) {
-  const names = (message.cites || [])
-    .map((id) => people.find((p) => p.id === id)?.name)
+function CoachMessage({ message, people, latest, isRead, onCiteClick }) {
+  const cited = (message.cites || [])
+    .map((id) => people.find((p) => p.id === id))
     .filter(Boolean);
+  const label = isRead ? "The Read" : message.grounded === false ? "Off topic" : "Strategist";
   return (
-    <SimpleMessage label={message.grounded === false ? "Off topic" : "Strategist"} variant="chat-coach" latest={latest}>
+    <SimpleMessage label={label} variant={isRead ? "chat-read" : "chat-coach"} latest={latest}>
       <p>{message.body}</p>
       {message.questions?.length > 0 && (
         <ul className="chat-questions">
@@ -94,7 +95,23 @@ function CoachMessage({ message, people, latest }) {
           ))}
         </ul>
       )}
-      {names.length > 0 && <p className="coach-cites">Grounded in {names.join(", ")}.</p>}
+      {cited.length > 0 && (
+        <p className="coach-cites">
+          Grounded in{" "}
+          {cited.map((p, i) => (
+            <React.Fragment key={p.id}>
+              {onCiteClick ? (
+                <button type="button" className="read-chip" onClick={() => onCiteClick(p.id)}>
+                  {p.name}
+                </button>
+              ) : (
+                p.name
+              )}
+              {i < cited.length - 1 ? " " : ""}
+            </React.Fragment>
+          ))}
+        </p>
+      )}
     </SimpleMessage>
   );
 }
@@ -167,7 +184,7 @@ function EmptyConversation() {
  * The conversation. User prompts and assistant command confirmations alternate
  * in the thread. Person reads live in the floating profile, never in this stream.
  */
-export function Chat({ messages, participants, decision, onShowNetwork, onOpenProfile, onOpenCommands, draft, setDraft, onSubmit, isGenerating }) {
+export function Chat({ messages, participants, decision, onShowNetwork, onOpenProfile, onCiteClick, onOpenCommands, draft, setDraft, onSubmit, isGenerating }) {
   const endRef = useRef(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -207,7 +224,8 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
                 </SimpleMessage>
               );
             if (m.type === "updated") return <UpdatedMessage key={m.id} message={m} latest={latest} />;
-            if (m.type === "coach") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} />;
+            if (m.type === "coach") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} onCiteClick={onCiteClick} />;
+            if (m.type === "read") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} isRead onCiteClick={onCiteClick} />;
             if (m.type === "welcome") return null;
             return (
               <SimpleMessage key={m.id} label="No read" variant="chat-fallback" latest={latest}>

@@ -301,14 +301,17 @@ deterministic commands are unchanged. The eval harness scores strategist cases
 for grounded cites, a banned trait and diagnosis vocabulary list, and off-topic
 decline.
 
-The Read (Auto-Read). `components/TheRead.jsx` renders an always-on strategic read
-at the top of the room. `lib/auto-read.js` holds the pure logic: `autoReadEligible`
-(needs >= 4 participants and >= 2 edges) and `autoReadSignature` (a cache key over
-grid placements, positions, and edges). `Room.jsx` calls the existing strategist
-endpoint with the fixed `AUTO_READ_QUESTION`, caches the result by signature, and
-only regenerates when the strategic inputs change, so cost stays near zero. Below
-threshold it shows a calm prompt, never a blank card. It reuses the strategist
-grounding and banned-trait guard, no new model path. Analytics events:
+The Read. A grounded read of the room lives inside the chat thread, not as a
+separate card, so the lenses (People, Energy, Network) stay the primary view.
+`lib/auto-read.js` holds `autoReadEligible` (needs >= 4 participants and >= 2
+edges) and the fixed `AUTO_READ_QUESTION`. `Room.jsx` generates the read once per
+decision on arrival (only when eligible and no read is already in the persisted
+thread) and pushes it as a `read` message, which persists like any chat message.
+It is not regenerated on every landing; the user refreshes with the `@read`
+command, which always regenerates. Below threshold `@read` returns a short "basic
+insights, need more information" message with no model call, so cost stays near
+zero. The read reuses the strategist endpoint, grounding, and banned-trait guard
+(no new model path), renders with clickable "Grounded in" person chips, and emits
 `read_generated`, `read_shown`, `read_chip_clicked`.
 
 Command application is scoped by command. `@note` may save notes and profile

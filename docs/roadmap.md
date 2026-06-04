@@ -55,9 +55,11 @@
 - Grounded strategist (@ask): a calm stakeholder coach that reasons only over the
   room, cites the people it uses, declines off-topic requests, and never
   diagnoses or assigns traits. Haiku only, additive to the commands. First-class
-  prompt chips, and an always-on "The Read" card at the top of the room that runs
-  the strategist automatically once a room has >= 4 people and >= 2 edges, cached
-  so it regenerates only when grid/positions/edges change.
+  prompt chips, and "The Read": a grounded read of the room rendered inside the
+  chat, generated once per decision on arrival (>= 4 people and >= 2 edges) and
+  refreshed on demand with the @read command. It persists as a chat message, so it
+  is not regenerated on every landing; below threshold it returns basic insights
+  and asks for more information with no model call.
 - Global person memory: observations and cross decision history.
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase

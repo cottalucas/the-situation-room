@@ -3,9 +3,7 @@ import { useStore } from "../hooks/useStore.js";
 import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
-import { autoReadEligible, autoReadSignature, AUTO_READ_QUESTION } from "../lib/auto-read.js";
-
-import { TheRead } from "../components/TheRead.jsx";
+import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 
 const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 
@@ -230,14 +228,13 @@ export default function Room({ onExit }) {
   const openCompact = useCallback((id) => setProfile({ personId: id, variant: "compact" }), []);
   const openFull = useCallback((id) => setProfile({ personId: id, variant: "full" }), []);
 
-  /* Auto-Read: the always-on strategic read at the top of the room. Reuses the
-     existing strategist endpoint, cached by a grid/positions/edges signature so a
-     model call happens only when the strategic inputs change. */
+  /* The Read: a grounded read of the room, generated into the chat on arrival
+     (once per decision) and refreshed on demand with @read. It is a persisted
+     chat message, so it is not regenerated on every landing, only when the user
+     asks or the room is new. */
   const readEdges = activeDecisionId ? store.getEdges(activeDecisionId) : [];
   const readEligible = autoReadEligible(participants.length, readEdges.length);
-  const readSignature = autoReadSignature(decision, readEdges);
-  const readCacheRef = useRef({});
-  const [autoRead, setAutoRead] = useState({ key: null, status: "idle", result: null });
+  const readAttempted = useRef(new Set());
 
   const openReadChip = useCallback(
     (id) => {
@@ -247,44 +244,59 @@ export default function Room({ onExit }) {
     [openCompact]
   );
 
-  useEffect(() => {
-    if (!decision || !readEligible || !LIVE_LLM) return;
-    const key = readSignature;
-    const cached = readCacheRef.current[key];
-    if (cached) {
-      setAutoRead({ key, status: "ready", result: cached });
-      return;
-    }
-    let cancelled = false;
-    setAutoRead({ key, status: "loading", result: null });
-    trackEvent("read_generated");
-    (async () => {
-      const resp = await askStrategist({
-        question: AUTO_READ_QUESTION,
-        room,
-        decision,
-        participants,
-        edges: readEdges,
-        messages: [],
-      });
-      if (cancelled) return;
-      if (resp.kind === "coach") {
-        readCacheRef.current[key] = resp.answer;
-        setAutoRead({ key, status: "ready", result: resp.answer });
-      } else {
-        setAutoRead({ key, status: "error", result: null });
+  const generateRead = useCallback(
+    async ({ auto } = {}) => {
+      const d = store.getDecision(activeDecisionId);
+      if (!d) return;
+      const people = store.getParticipants(d.id);
+      const edges = store.getEdges(d.id);
+      if (!autoReadEligible(people.length, edges.length)) {
+        if (!auto) {
+          store.pushMessage(d.id, {
+            type: "fallback",
+            body: "Basic insights only for now. I need a few more people and at least a couple of relationships before I can read the room. Map them with @energy and @network, then run @read.",
+          });
+        }
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readSignature, readEligible, decision?.id]);
+      if (!LIVE_LLM) {
+        if (!auto) store.pushMessage(d.id, { type: "fallback", body: "Live reasoning is off, so I cannot read the room right now." });
+        return;
+      }
+      setIsGenerating(true);
+      trackEvent("read_generated", { auto: !!auto });
+      try {
+        const resp = await askStrategist({ question: AUTO_READ_QUESTION, room, decision: d, participants: people, edges, messages: [] });
+        if (resp.kind === "coach") {
+          trackEvent("read_shown");
+          store.pushMessage(d.id, {
+            type: "read",
+            body: resp.answer.answer,
+            questions: resp.answer.moves,
+            cites: resp.answer.cites,
+            grounded: resp.answer.grounded,
+          });
+        } else if (!auto) {
+          store.pushMessage(d.id, { type: "fallback", body: resp.body });
+        }
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [activeDecisionId, room, store]
+  );
 
+  // Arrival read: generate once per decision when the room is rich enough and no
+  // read is already in the persisted thread.
   useEffect(() => {
-    if (autoRead.status === "ready" && autoRead.result) trackEvent("read_shown");
+    if (!decision || !LIVE_LLM || !readEligible) return;
+    const chat = store.getChat(decision.id);
+    if (chat.some((m) => m.type === "read")) return;
+    if (readAttempted.current.has(decision.id)) return;
+    readAttempted.current.add(decision.id);
+    generateRead({ auto: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRead.status, autoRead.key]);
+  }, [decision?.id, readEligible]);
 
   const findPersonRef = useCallback(
     (ref, currentParticipants = participants) => {
@@ -537,13 +549,19 @@ export default function Room({ onExit }) {
         return;
       }
 
+      if (/^@read\b/i.test(q)) {
+        setDraft("");
+        await generateRead({ auto: false });
+        return;
+      }
+
       setDraft("");
       store.pushMessage(decision.id, {
         type: "fallback",
-        body: "Use @note, @energy, @network, @map, @create, @ask, or @add. Open play chat is paused while mapping gets sharper.",
+        body: "Use @note, @energy, @network, @map, @create, @ask, @read, or @add. Open play chat is paused while mapping gets sharper.",
       });
     },
-    [applyRoomUpdate, decision, draft, findPersonRef, isGenerating, participants, room, store]
+    [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, participants, room, store]
   );
   const showOnNetwork = useCallback(() => {
     setShowPath(true);
@@ -614,13 +632,6 @@ export default function Room({ onExit }) {
             </div>
           ) : (
             <>
-              <TheRead
-                eligible={readEligible}
-                status={autoRead.key === readSignature ? autoRead.status : "idle"}
-                result={autoRead.key === readSignature ? autoRead.result : null}
-                participants={participants}
-                onOpenProfile={openReadChip}
-              />
               <div className="tabs">
                 {TABS.map((t) => (
                   <button key={t.id} className={`tab ${activeTab === t.id ? "tab-active" : ""}`} onClick={() => setActiveTab(t.id)}>
@@ -674,6 +685,7 @@ export default function Room({ onExit }) {
           decision={decision}
           onShowNetwork={showOnNetwork}
           onOpenProfile={openFull}
+          onCiteClick={openReadChip}
           onOpenCommands={() => setModal({ type: "commands" })}
           draft={draft}
           setDraft={setDraft}

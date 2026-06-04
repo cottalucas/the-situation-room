@@ -5,6 +5,19 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 3 Step 3: The Read moved into the chat, on-arrival + @read
+
+Removed the always-on top-of-room read card (and `TheRead.jsx`); the lenses are
+the primary view again. The read now lives inside the chat as a persisted `read`
+message: generated once per decision on arrival (eligible rooms only, and only if
+no read is already in the thread) and refreshed on demand with the new `@read`
+command. This stops regenerating the read on every landing, so token use does not
+explode. Below threshold `@read` returns "basic insights, need more information"
+with no model call. Reuses the strategist endpoint/grounding (no new model path).
+The read renders with clickable Grounded-in person chips (CoachMessage now takes
+`onCiteClick`). Client-only; deployed to hosting. Build OK, offline 16/16, all
+verifies green.
+
 ## 2026-06-04 - Pass 3 Step 2: robust person resolution
 
 Fixed the @note bug where "@note the head of sales is..." matched only the first

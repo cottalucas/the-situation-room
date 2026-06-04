@@ -784,50 +784,15 @@ code {
 }
 .chat-play { border: 1px solid var(--line); background: var(--bg-raised); box-shadow: var(--shadow); padding: 18px 20px 20px; }
 
-/* The Read: always-on strategic read at the top of the room */
-.the-read {
-  border: 1px solid var(--line-strong);
-  background: var(--bg-raised);
-  box-shadow: var(--shadow);
-  border-radius: var(--radius);
-  padding: 18px 20px;
-  margin-bottom: var(--s4);
+/* The Read: a grounded read of the room, rendered inside the chat thread. */
+.chat-read {
+  border-left: 2px solid var(--ink);
 }
-.the-read-empty {
-  border-style: dashed;
-  box-shadow: none;
-  background: transparent;
-}
-.the-read-answer {
+.chat-read > p:first-of-type {
   font-family: var(--serif);
-  font-size: 19px;
-  font-weight: 500;
-  line-height: 1.4;
+  font-size: 16px;
+  line-height: 1.45;
   color: var(--ink);
-  margin-top: var(--s2);
-}
-.the-read-sub {
-  font-size: 14px;
-  color: var(--ink-soft);
-  margin-top: var(--s2);
-}
-.the-read-moves {
-  margin: var(--s3) 0 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  list-style: decimal;
-}
-.the-read-moves li {
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--ink-soft);
-}
-.the-read-cites {
-  margin-top: var(--s3);
-  font-size: 12px;
-  color: var(--ink-faint);
 }
 .read-chip {
   border: 1px solid var(--line-strong);

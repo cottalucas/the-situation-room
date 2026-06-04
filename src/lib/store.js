@@ -78,7 +78,7 @@ function commit(next) {
 
 /** Message types persisted to Firestore and rehydrated on load. Welcome, play,
  * and loading cards stay transient UI only. */
-const PERSISTED_MESSAGE_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach"]);
+const PERSISTED_MESSAGE_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach", "read"]);
 
 function welcomeMessage() {
   return [{ id: mid(), type: "welcome", body: WELCOME }];
