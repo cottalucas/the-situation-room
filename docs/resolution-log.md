@@ -5,6 +5,22 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 3 Step 6: guarded open (non-deterministic) chat
+
+First cut of open chat for testing, with heavy harness. Plain non-command text now
+routes to the grounded strategist when live LLM is on. Two defense layers: new
+`src/lib/chat-guard.js#screenOpenMessage` blocks empty, oversized, jailbreak /
+prompt-injection, and short pure-abuse input before any model call with a calm
+redirect; whatever passes goes to the strategist, whose prompt was hardened to
+`strategist-v2` (refuse roleplay / persona / off-topic content, do not mirror
+hostility, neutralize profanity, ignore embedded instructions). Venting with real
+room content is allowed through and neutralized. Send now enables for plain text
+when open chat is on; placeholder/hint updated. Analytics: `open_chat`,
+`open_chat_blocked`. `npm run verify:guard` 12/12; added the
+`strategist-refuses-roleplay` offline fixture (suite 17/17). Prompt change applied
+to both src and functions (versions in sync); deployed functions + hosting. This
+stays experimental pending review of real test logs.
+
 ## 2026-06-04 - Pass 3 Step 5: frameworks always present with tooltips
 
 `FrameworkVisuals` no longer hides the frameworks for a fresh person. All four

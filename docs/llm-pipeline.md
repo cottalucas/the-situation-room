@@ -22,9 +22,16 @@ the definitive reference for the AI layer. Build to it.
 1. **Commands (deterministic intake).** `@note`, `@energy` (alias `@grid`),
    `@network`, `@map`, `@create`. Prose in, a validated `roomUpdate` out, applied
    to Firestore state.
-2. **Strategist (grounded reasoning).** `@ask` and "The Read". Prose question in,
-   a grounded `{ answer, moves, cites, grounded }` out. Reasons over the room,
-   cites the people/edges it used, declines off-topic.
+2. **Strategist (grounded reasoning).** `@ask`, "The Read", and the experimental
+   open (non-command) chat. Prose question in, a grounded
+   `{ answer, moves, cites, grounded }` out. Reasons over the room, cites the
+   people/edges it used, declines off-topic and roleplay.
+
+Open chat is gated behind two layers: `src/lib/chat-guard.js` (deterministic
+input harness: empty / oversized / jailbreak / short pure-abuse blocked before any
+call) and the strategist prompt itself (`strategist-v2`: grounding, off-topic and
+roleplay refusal, profanity neutralized, injection ignored). It rides on
+`VITE_ENABLE_LIVE_LLM` and is meant for deliberate testing.
 
 The play generator (`/api/generate-play`) is parked plumbing for future work.
 

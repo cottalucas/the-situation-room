@@ -67,6 +67,11 @@
 - Clean folder structure. Docs.
 
 ## Next
+- Open (non-deterministic) chat is in experimental testing: plain text routes to
+  the grounded strategist behind a deterministic input guard (jailbreak / abuse /
+  oversized blocked pre-call) and the strategist-v2 harness (off-topic and
+  roleplay refusal, profanity neutralized). Harden further from real test logs
+  before making it the default surface.
 - Live eval runs and model comparisons once the local prompt and command
   contract feel stable enough to spend credits deliberately.
 - Production trace review workflow. Surface privacy-safe trace metadata in the

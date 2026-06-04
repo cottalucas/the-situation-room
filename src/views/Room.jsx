@@ -4,8 +4,12 @@ import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
+import { screenOpenMessage } from "../lib/chat-guard.js";
 
 const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
+// Open (non-command) chat is experimental and routes to the grounded strategist
+// behind the input guard. It rides on the live LLM flag.
+const OPEN_CHAT = LIVE_LLM;
 
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
@@ -555,11 +559,48 @@ export default function Room({ onExit }) {
         return;
       }
 
+      // Open chat (experimental): plain text routes to the grounded strategist
+      // behind the input guard. Anything off-topic is declined by the strategist.
+      if (!OPEN_CHAT) {
+        setDraft("");
+        store.pushMessage(decision.id, {
+          type: "fallback",
+          body: "Use @note, @energy, @network, @map, @create, @ask, @read, or @add to work the room.",
+        });
+        return;
+      }
       setDraft("");
-      store.pushMessage(decision.id, {
-        type: "fallback",
-        body: "Use @note, @energy, @network, @map, @create, @ask, @read, or @add. Open play chat is paused while mapping gets sharper.",
-      });
+      const screen = screenOpenMessage(q);
+      if (screen.blocked) {
+        trackEvent("open_chat_blocked", { reason: screen.reason });
+        store.pushMessage(decision.id, { type: "fallback", body: screen.reply });
+        return;
+      }
+      setIsGenerating(true);
+      try {
+        const resp = await askStrategist({
+          question: q,
+          room,
+          decision,
+          participants,
+          edges: store.getEdges(decision.id),
+          messages: priorMessages,
+        });
+        if (resp.kind === "coach") {
+          trackEvent("open_chat");
+          store.pushMessage(decision.id, {
+            type: "coach",
+            body: resp.answer.answer,
+            questions: resp.answer.moves,
+            cites: resp.answer.cites,
+            grounded: resp.answer.grounded,
+          });
+        } else {
+          store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+        }
+      } finally {
+        setIsGenerating(false);
+      }
     },
     [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, participants, room, store]
   );
@@ -691,6 +732,7 @@ export default function Room({ onExit }) {
           setDraft={setDraft}
           onSubmit={onSubmit}
           isGenerating={isGenerating}
+          openChat={OPEN_CHAT}
         />
       </div>
 

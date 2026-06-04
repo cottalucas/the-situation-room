@@ -290,6 +290,18 @@ room. This gives anaphora resolution through context on Haiku rather than a larg
 model. Token budget per call stays small: eight short turns plus the room snapshot
 is well under the per-command max tokens.
 
+Open chat (experimental). When `VITE_ENABLE_LIVE_LLM` is on, plain text that is
+not a command routes to the grounded strategist through `/api/strategist`, so the
+chat can hold an open conversation without becoming a generic chatbot. Two layers
+of defense: `src/lib/chat-guard.js#screenOpenMessage` runs first and blocks empty,
+oversized, jailbreak/prompt-injection, and short pure-abuse input with a calm
+redirect and no model call; whatever passes goes to the strategist, which stays on
+the room, declines off-topic and roleplay (`grounded: false`), converts profanity
+to professional behavior, never diagnoses, and ignores embedded instructions. The
+strategist prompt is `strategist-v2`. Venting that carries real room content is
+allowed through and neutralized by the model. Analytics: `open_chat`,
+`open_chat_blocked {reason}`.
+
 Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
 stakeholder coach that reasons only over the room snapshot and `recentTurns`. It
 returns `{ answer, moves, cites, grounded }`. `normalizeStrategistAnswer` grounds

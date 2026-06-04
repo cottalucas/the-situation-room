@@ -184,7 +184,7 @@ function EmptyConversation() {
  * The conversation. User prompts and assistant command confirmations alternate
  * in the thread. Person reads live in the floating profile, never in this stream.
  */
-export function Chat({ messages, participants, decision, onShowNetwork, onOpenProfile, onCiteClick, onOpenCommands, draft, setDraft, onSubmit, isGenerating }) {
+export function Chat({ messages, participants, decision, onShowNetwork, onOpenProfile, onCiteClick, onOpenCommands, draft, setDraft, onSubmit, isGenerating, openChat }) {
   const endRef = useRef(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -194,7 +194,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
   const last = messages.length - 1;
   const locked = !decision;
   const trimmedDraft = draft.trim();
-  const commandReady = trimmedDraft.startsWith("@");
+  const commandReady = trimmedDraft.startsWith("@") || (openChat && trimmedDraft.length > 0);
 
   return (
     <section className="chat">
@@ -254,7 +254,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
             className="chat-input"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder={locked ? "Create a decision to start the conversation" : "Type @network, @energy, @map, @note, or /"}
+            placeholder={locked ? "Create a decision to start the conversation" : openChat ? "Ask about the room, or type @ for a command" : "Type @network, @energy, @map, @note, or /"}
             disabled={locked || isGenerating}
           />
           <button className="chat-send" type="submit" disabled={locked || isGenerating || !commandReady}>
@@ -262,7 +262,11 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
           </button>
         </form>
         <p className="chat-hint">
-          Only commands run here. <code>@energy</code>, <code>@network</code>, <code>@note</code>, and <code>@map</code> build the room. <code>@read</code> and <code>@ask</code> get a strategic read. Tap <code>/</code> for all commands.
+          {openChat ? (
+            <>Ask about the room in plain language, or use a command. <code>@energy</code>, <code>@network</code>, <code>@note</code>, <code>@map</code> build it; <code>@read</code> and <code>@ask</code> read it. Tap <code>/</code> for all.</>
+          ) : (
+            <>Only commands run here. <code>@energy</code>, <code>@network</code>, <code>@note</code>, and <code>@map</code> build the room. <code>@read</code> and <code>@ask</code> get a strategic read. Tap <code>/</code> for all commands.</>
+          )}
         </p>
       </div>
     </section>
