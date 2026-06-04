@@ -5,6 +5,21 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Framework popovers finished and mobile tabs pinned
+
+Completed the person-card framework readability pass and the small mobile lens
+navigation pass. The four framework rows still keep their existing visual value
+chips, but the tappable "i" popovers now use one plain-language sentence each and
+reflect mapped values already present in the UI: SCARF dimensions explain the
+reassuring move, Thomas-Kilmann styles explain the conflict move, Cialdini levers
+explain the influence move, and Fisher and Ury explains how to work from the
+underlying interest instead of the stated ask. The copy stays static and frames
+the reads as observable behavior and stated positions, not personality typing.
+On mobile, the People, Energy, and Network tabs pin to the bottom of the viewport
+with compact labels and safe bottom padding so the app reads more like a mobile
+workflow. Removed the remaining audit report file and kept the durable record in
+the docs. No data-model change and no model calls.
+
 ## 2026-06-04 - Frameworks made legible on the person card
 
 The four framework lenses (SCARF, Thomas-Kilmann, Cialdini, Fisher-Ury) showed as

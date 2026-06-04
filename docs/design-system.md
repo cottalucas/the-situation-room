@@ -97,13 +97,18 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   framework shows a muted "Not mapped" state and, when expanded, a concise
   "what it is and how to use it" note. Each row carries a tappable "i" that opens
   one plain-language sentence in a persistent popover: what the lens reads about
-  the person and, for a mapped value, what it means for action (for example
-  "Competing style. Expect them to push for their position, so come with leverage,
-  not just rapport."). The popover uses ink on the overlay surface for legible
-  contrast and is bounded inside the row so it never overflows on mobile. One
-  "What are these?" disclosure above the rows explains the set in three short
-  lines: they are influence and negotiation lenses on observable behavior and
-  stated positions, not personality typing. Static copy only, no model calls.
+  the person and, for mapped SCARF, Thomas-Kilmann, Cialdini, or Fisher and Ury
+  values, what that value means for action. Example: "Competing style means
+  expect them to push for their position, so come with leverage, not just
+  rapport." The popover uses ink on the overlay surface for legible contrast and
+  is bounded inside the row so it never overflows on mobile. One "What are
+  these?" disclosure above the rows explains the set in three short lines: they
+  are influence and negotiation lenses on observable behavior and stated
+  positions, not personality typing. Static copy only, no model calls.
+- On mobile, the People, Energy, and Network lens tabs pin to the bottom of the
+  viewport like app navigation. Keep the labels short, hide the hint copy, and
+  leave enough bottom padding that tab content and chat controls do not sit under
+  the bar.
 
 ## Tooling
 

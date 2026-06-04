@@ -5,20 +5,28 @@ import { SCARF_ALL, SCARF_COLORS, TKI_COLORS } from "../lib/frameworks.js";
 // helps you move them. These are lenses on observable behavior and stated
 // positions, never fixed traits about the person.
 const FRAMEWORK_INFO = {
-  scarf: "How they react to status, certainty, autonomy, relatedness, and fairness. It tells you what threatens or reassures them.",
-  tki: "Their default in conflict. It tells you how they tend to behave when pushed.",
-  cialdini: "Which influence lever, like reciprocity, authority, or social proof, is most likely to land with them.",
-  fisherUry: "Their interests versus their positions, what they actually want underneath what they are asking for.",
+  scarf: "SCARF reads status, certainty, autonomy, relatedness, and fairness so you know what threatens or reassures them.",
+  tki: "Thomas-Kilmann reads how they tend to handle conflict so you can choose the right pressure and pace.",
+  cialdini: "Cialdini reads which influence lever is most likely to land so your ask reaches them the right way.",
+  fisherUry: "The Fisher and Ury lens reads the interest under the position so you solve the real need, not only the stated ask.",
 };
 
 // What a specific Thomas-Kilmann conflict style means for how you approach them.
 // Behavior to expect when pushed, not a fixed label on the person.
 const TKI_ACTION = {
-  Competing: "Competing style. Expect them to push for their position, so come with leverage, not just rapport.",
-  Collaborating: "Collaborating style. They look for a joint win, so bring them in to shape the solution.",
-  Avoiding: "Avoiding style. They sidestep conflict, so lower the stakes and make it easy to agree.",
-  Accommodating: "Accommodating style. They tend to yield, so confirm they really agree, not just defer.",
-  Compromising: "Compromising style. They meet halfway, so open with room to trade.",
+  Competing: "Competing style means expect them to push for their position, so come with leverage, not just rapport.",
+  Collaborating: "Collaborating style means they look for a joint win, so bring them in to shape the solution.",
+  Avoiding: "Avoiding style means they sidestep conflict, so lower the stakes and make it easy to agree.",
+  Accommodating: "Accommodating style means they tend to yield, so confirm they really agree, not just defer.",
+  Compromising: "Compromising style means they meet halfway, so open with room to trade.",
+};
+
+const SCARF_ACTION = {
+  Status: "protect their standing",
+  Certainty: "reduce surprise",
+  Autonomy: "give them a real choice",
+  Relatedness: "build trust first",
+  Fairness: "show the process is even-handed",
 };
 
 const WHAT_ARE_THESE = [
@@ -26,6 +34,43 @@ const WHAT_ARE_THESE = [
   "They read observable behavior and stated positions, not fixed personality.",
   "Each points at a different way to move someone: what reassures them, how they handle conflict, which influence lever lands, and what they really want.",
 ];
+
+function listPhrase(items) {
+  if (items.length <= 1) return items[0] || "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+function cialdiniMove(lever) {
+  const key = lever.toLowerCase();
+  if (key.includes("reciprocity")) return "offer a useful trade first";
+  if (key.includes("authority")) return "bring credible proof or a respected source";
+  if (key.includes("social proof") || key.includes("consensus")) return "show aligned peers";
+  if (key.includes("consistency")) return "link the ask to a prior commitment";
+  if (key.includes("liking")) return "use a trusted messenger";
+  if (key.includes("scarcity")) return "make the cost of waiting concrete";
+  if (key.includes("unity")) return "frame the move around shared identity";
+  if (key.includes("status")) return "give them a face-saving win";
+  return `use ${lever.toLowerCase()} deliberately`;
+}
+
+function scarfInfoFor(dims) {
+  if (!dims.length) return FRAMEWORK_INFO.scarf;
+  const moves = dims.map((d) => SCARF_ACTION[d]).filter(Boolean);
+  if (!moves.length) return FRAMEWORK_INFO.scarf;
+  return `SCARF ${listPhrase(dims)} calls for ${listPhrase(moves)} so the ask feels reassuring, not threatening.`;
+}
+
+function cialdiniInfoFor(levers) {
+  if (!levers.length) return FRAMEWORK_INFO.cialdini;
+  const moves = levers.map(cialdiniMove);
+  return `Cialdini ${listPhrase(levers)} calls for ${listPhrase(moves)} so the ask fits the observed pattern.`;
+}
+
+function fisherUryInfoFor(teaser) {
+  if (!teaser) return FRAMEWORK_INFO.fisherUry;
+  return "The Fisher and Ury lens uses this position and interest read so you solve the underlying need before trading on the stated ask.";
+}
 
 function Row({ id, label, info, hasData, body, infoOpen, onToggleInfo, children }) {
   const [open, setOpen] = useState(false);
@@ -98,7 +143,10 @@ export function FrameworkVisuals({ person }) {
   const hasAny = Boolean(read.scarf || read.tki || read.cialdini || read.fisherUry || dims.length || hasTki || levers.length || tags.fuTeaser);
 
   // The Thomas-Kilmann popover explains the mapped style for action when set.
+  const scarfInfo = scarfInfoFor(dims);
   const tkiInfo = hasTki ? TKI_ACTION[tags.tkiStyle] || FRAMEWORK_INFO.tki : FRAMEWORK_INFO.tki;
+  const cialdiniInfo = cialdiniInfoFor(levers);
+  const fisherUryInfo = fisherUryInfoFor(tags.fuTeaser);
 
   return (
     <div className="vfw-list" ref={listRef}>
@@ -121,7 +169,7 @@ export function FrameworkVisuals({ person }) {
         </p>
       )}
 
-      <Row id="scarf" label="SCARF" info={FRAMEWORK_INFO.scarf} hasData={Boolean(read.scarf || dims.length)} body={read.scarf} infoOpen={openInfo === "scarf"} onToggleInfo={toggleInfo}>
+      <Row id="scarf" label="SCARF" info={scarfInfo} hasData={Boolean(read.scarf || dims.length)} body={read.scarf} infoOpen={openInfo === "scarf"} onToggleInfo={toggleInfo}>
         <span className="scarf-dims">
           {SCARF_ALL.map((d) => {
             const on = dims.includes(d);
@@ -145,7 +193,7 @@ export function FrameworkVisuals({ person }) {
         </span>
       </Row>
 
-      <Row id="cialdini" label="Cialdini" info={FRAMEWORK_INFO.cialdini} hasData={Boolean(read.cialdini || levers.length)} body={read.cialdini} infoOpen={openInfo === "cialdini"} onToggleInfo={toggleInfo}>
+      <Row id="cialdini" label="Cialdini" info={cialdiniInfo} hasData={Boolean(read.cialdini || levers.length)} body={read.cialdini} infoOpen={openInfo === "cialdini"} onToggleInfo={toggleInfo}>
         <span className="cialdini-chips">
           {levers.length ? (
             levers.map((l) => (
@@ -159,7 +207,7 @@ export function FrameworkVisuals({ person }) {
         </span>
       </Row>
 
-      <Row id="fisherUry" label="Fisher & Ury" info={FRAMEWORK_INFO.fisherUry} hasData={Boolean(read.fisherUry || tags.fuTeaser)} body={read.fisherUry} infoOpen={openInfo === "fisherUry"} onToggleInfo={toggleInfo}>
+      <Row id="fisherUry" label="Fisher & Ury" info={fisherUryInfo} hasData={Boolean(read.fisherUry || tags.fuTeaser)} body={read.fisherUry} infoOpen={openInfo === "fisherUry"} onToggleInfo={toggleInfo}>
         <span className={`fu-teaser ${tags.fuTeaser ? "" : "fu-empty"}`}>{tags.fuTeaser || "Not mapped"}</span>
       </Row>
     </div>
