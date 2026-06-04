@@ -20,6 +20,14 @@ Haiku-only, offline evals 7 -> 15.
 **Pass 2 (verify + make the strategist the spine).** Verified pass 1's persistence
 and anaphora, then made the grounded strategist first-class and deployed live.
 
+**Pass 3 (sharpen + open the chat).** Consolidated docs and added
+`docs/llm-pipeline.md`. Fixed person resolution so titles, roles, generic leader
+phrases, typos, and multi-word `@note` targets all work. Moved "The Read" into the
+chat as an on-arrival, persisted message refreshed by `@read` (no per-landing
+regeneration). Clarified command purposes. Made all four frameworks always present
+with info tooltips and empty states. Shipped an experimental, heavily guarded open
+(non-command) chat that routes to the grounded strategist. All deployed live.
+
 ## What changed (by theme)
 
 - **Calibrated interpretation.** `@energy`/`@grid` maps qualitative language to
@@ -56,8 +64,12 @@ and anaphora, then made the grounded strategist first-class and deployed live.
 
 The deterministic commands and the grounded strategist are live and tested. The
 encryption, owner-scoped rules, and Haiku-only cost posture hold. The chat is
-persistent and context-aware. The open (non-deterministic) chat is intentionally
-still gated behind commands and the grounded strategist.
+persistent and context-aware, "The Read" lives in the chat and refreshes with
+`@read`, person references resolve by name / role / title / typo, and every person
+shows all four frameworks. Open (non-command) chat is live but experimental,
+double-guarded (deterministic input harness + the strategist-v2 prompt), pending
+review of real test logs before it becomes a default surface. Offline suite 17/17,
+five `verify:*` scripts green, deployed to `the-situation-room-708c6`.
 
 ## Known limitations / flagged
 
