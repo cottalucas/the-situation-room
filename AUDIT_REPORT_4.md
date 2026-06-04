@@ -117,4 +117,35 @@ Layout: with the rail collapsed to a 36px strip, the onboarding panel
 cleanly. Eval: added a Phase C robustness section to `verify:onboarding`
 (empty-seeded-room, archived-only, real-content, no-marker). Checks: onboarding
 verify 48/48, offline eval 19/19, build clean.
+
+## 2026-06-04 17:15 CEST — Phase D: one engine, three doors
+
+First-run onboarding, guided new-room, and manual setup are now one system.
+
+- ONE ENGINE. The conversation logic lives in `src/lib/onboarding.js` (questions,
+  reflection, naming, command plan, closing, trigger guards) and renders through
+  the single `OnboardingChat` view. Room.jsx drives all entries through the same
+  `startOnboarding` / `submitOnboarding` / `completeOnboarding` handlers, keyed by
+  a `mode` field. There is no second conversation path.
+- DOOR 1, FIRST-RUN. The auto path uses the engine plus the product intro
+  (`ONBOARDING_INTRO`, "The Situation Room maps the people behind a decision ...").
+- DOOR 2, "+ NEW ROOM". The rail's new-room action now opens the same engine with
+  returning-user framing (`ONBOARDING_INTRO_RETURNING`, no product pitch) via
+  `startGuidedRoom`. Same questions, same build path.
+- DOOR 3, MANUAL. "Skip, I'll set it up myself" now drops into the existing
+  manual Room Settings modal instead of just closing. It reuses an empty room if
+  present, else creates one, then opens `RoomSettings`, so guided and manual are
+  connected, not parallel. The empty-state keeps both a "Start guided setup"
+  primary and a manual "New room" secondary.
+
+FLAG (per Phase D guidance): returning-user guided is a thin wrapper over the
+first-run engine, the only difference is the intro line and the absence of the
+first-run rail collapse. I did not extract the Room.jsx state machine into a
+standalone hook/module tonight, because the wrapper is thin and the refactor
+carries regression risk for no behavior gain. The pure engine already lives in
+`onboarding.js`; a later hook extraction (`useGuidedSetup`) is the deferred
+remainder if Room.jsx coupling becomes a problem.
+
+Eval: added a Phase D section to `verify:onboarding` (the two intro framings).
+Checks: onboarding verify 52/52, offline eval 19/19, build clean.
 </content>

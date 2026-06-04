@@ -264,9 +264,18 @@ export default function Room({ onExit, userId }) {
   const skipOnboarding = useCallback(() => {
     store.setPref("onboardingPrompted", true);
     store.setPref("railCollapsed", false);
+    trackEvent("onboarding_skipped", { mode: onboarding.mode });
     setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
-    trackEvent("onboarding_skipped");
-  }, [store]);
+    // Connect guided and manual: "I'll set it up myself" drops into the existing
+    // Room Settings modal. Reuse an empty room if one exists, else create one.
+    const emptyRoom = store.getRooms().find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
+    const roomId = emptyRoom?.id || store.createRoom();
+    setActiveRoomId(roomId);
+    setActiveDecisionId(null);
+    setProfile(null);
+    setActiveTab("people");
+    setModal({ type: "roomSettings", id: roomId });
+  }, [store, onboarding.mode]);
 
   const openOnboardingRoom = useCallback(() => {
     // Expand the rooms rail and land in the now-populated room.
@@ -338,6 +347,9 @@ export default function Room({ onExit, userId }) {
     setActiveTab("people");
     setModal({ type: "roomSettings", id });
   }, [store]);
+  // The "+ New room" door reuses the same guided engine with returning-user
+  // framing (no product intro). Skipping it drops into manual Room Settings.
+  const startGuidedRoom = useCallback(() => startOnboarding({ auto: false, mode: "guided" }), [startOnboarding]);
   const newDecision = useCallback(() => {
     if (!room?.rosterIds?.length) {
       setModal({ type: "roomSettings", id: activeRoomId });
@@ -904,7 +916,7 @@ export default function Room({ onExit, userId }) {
           collapsed={collapsed}
           onToggleCollapse={() => store.setPref("railCollapsed", !collapsed)}
           onSelectRoom={selectRoom}
-          onNewRoom={newRoom}
+          onNewRoom={startGuidedRoom}
           onEditRoom={(id) => setModal({ type: "roomSettings", id })}
           onDeleteRoom={(id) => setModal({ type: "deleteRoom", id })}
           decisions={decisions}

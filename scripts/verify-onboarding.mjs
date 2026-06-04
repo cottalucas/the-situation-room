@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ONBOARDING_INTRO,
+  ONBOARDING_INTRO_RETURNING,
   ONBOARDING_QUESTIONS,
   buildClosingSummary,
   buildOnboardingCommandPlan,
@@ -140,6 +142,13 @@ check("archived-only room is not usable", hasUsableRoom([{ id: "r", rosterIds: [
 // A user with real content never sees first-run, even if the marker is pending.
 check("real content never auto-starts", shouldAutoStartOnboarding({ pending: true, prompted: false, usableRoom: true }) === false);
 check("no pending marker never auto-starts", shouldAutoStartOnboarding({ pending: false, prompted: false, usableRoom: false }) === false);
+
+console.log("\n[8] Phase D: one engine, two framings");
+// First-run carries the product intro; the returning-user door does not.
+check("first-run intro frames the product", /situation room/i.test(ONBOARDING_INTRO));
+check("returning intro drops the product pitch", !/situation room/i.test(ONBOARDING_INTRO_RETURNING));
+check("returning intro is shorter and to the point", ONBOARDING_INTRO_RETURNING.length < ONBOARDING_INTRO.length);
+check("both framings promise the same three questions", /three quick questions/i.test(ONBOARDING_INTRO) && /three quick questions/i.test(ONBOARDING_INTRO_RETURNING));
 
 console.log(`\nOnboarding verification: ${passed} passed, ${failed} failed`);
 if (failed) {
