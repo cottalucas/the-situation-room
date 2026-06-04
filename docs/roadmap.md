@@ -100,6 +100,8 @@
   edges through accidental line clicks.
 - Bundle splitting for Firebase modules if the production bundle warning starts
   to matter.
+- Bump the Firebase Functions runtime off the deprecated Node 20 (decommission
+  2026-10-31) before the deadline.
 
 ## Out of scope
 - No personality or trait quiz about colleagues. Low signal, privacy risk.

@@ -7,8 +7,9 @@ entries; correct them with a follow up that references the original.
 
 ## 2026-06-04 - Guided Setup as the winning first-run moment (Phases A to E)
 
-Overnight pass to make Guided Setup the first-run win. Full detail in
-`AUDIT_REPORT_4.md`; one commit per phase, revertable.
+Overnight pass to make Guided Setup the first-run win. One commit per phase,
+revertable. The retired audit reports (`AUDIT_REPORT*.md`) were removed in this
+pass; this log and the `docs/` set are the running record.
 
 Phase A (extraction). The build step produced poor rooms. Fixed at the
 extraction layer, still through the existing command pipeline: `deriveDecisionTitle`
