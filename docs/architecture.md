@@ -306,9 +306,14 @@ Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
 stakeholder coach that reasons only over the room snapshot and `recentTurns`. It
 returns `{ answer, moves, cites, grounded }`. `normalizeStrategistAnswer` grounds
 `cites` to known participant ids and drops anything outside the room, so the
-coach cannot reference invented people. The system prompt forbids diagnosis,
-personality types, and traits, and declines off-topic or generic requests with
-`grounded: false`. It runs on Haiku with a 900 token cap. This is additive: the
+coach cannot reference invented people. It also enforces house style
+deterministically: it strips em and en dashes, and a decline (`grounded: false`)
+carries an empty `moves` array regardless of what the model returns. The system
+prompt (`strategist-v3`) keeps answers to two to four sentences with at most three
+one-sentence moves, declines off-topic / roleplay with `grounded: false`, and when
+the room is too thin for a confident play it asks one focused question or names
+what to map next instead of forcing a full play. It runs on Haiku with a 900 token
+cap. This is additive: the
 deterministic commands are unchanged. The eval harness scores strategist cases
 for grounded cites, a banned trait and diagnosis vocabulary list, and off-topic
 decline.

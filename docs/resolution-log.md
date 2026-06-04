@@ -5,6 +5,22 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Fix: strategist response quality (concise, hint when thin)
+
+From the live screenshot and local traces the strategist read was too extensive,
+returned moves even when declining, and once slipped an em dash past the
+"no em dash" rule. Note on retrieval: production stores trace metadata only (raw
+off by default for privacy), so the exact prod prompt/response was not retrievable;
+this was driven by the visible response and the local Phase D traces. Tightened the
+prompt to `strategist-v3`: two to four sentences, at most three one-sentence moves,
+no padding, and when the room is too thin for a confident play, ask one focused
+question or name what to map next instead of forcing a play. Added a deterministic
+safety net in `normalizeStrategistAnswer` (both src and functions): strip em/en
+dashes, and force an empty moves array on a decline. No new eval/clarify machinery
+(per request). Added two offline fixtures (thin-room asks, em-dash + decline-moves
+cleanup) and `no_em_dash` / `decline_has_no_moves` checks; offline 19/19. Deployed
+functions + hosting; prompt versions in sync.
+
 ## 2026-06-04 - Fix: framework empty-state spacing + concise tooltip
 
 Fixed the cramped frameworks empty-state message (proper 8px-rhythm margins, top

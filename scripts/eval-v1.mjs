@@ -150,7 +150,11 @@ function scoreStrategist(testCase, candidate) {
   checks.push(["forbidden_terms_absent", hasForbidden(normalized, expect.forbiddenTerms).length === 0]);
   if (expect.requireCites) checks.push(["cites_present", normalized.cites.length > 0]);
   if (expect.requireMoves) checks.push(["moves_present", normalized.moves.length > 0]);
-  if (expect.expectDecline) checks.push(["declines_off_topic", normalized.grounded === false]);
+  if (expect.expectDecline) {
+    checks.push(["declines_off_topic", normalized.grounded === false]);
+    checks.push(["decline_has_no_moves", normalized.moves.length === 0]);
+  }
+  checks.push(["no_em_dash", !/[—–]/.test(flattenText(normalized))]);
   (expect.requiredPeople || []).forEach((id) => {
     const inCites = normalized.cites.includes(id);
     const inText = flattenText(normalized).toLowerCase().includes(String(id).toLowerCase());

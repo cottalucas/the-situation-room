@@ -124,19 +124,28 @@ export function compactRoomCommandContext({ room, decision, participants, edges,
  * Validate a strategist answer. Grounds cites to known participant ids and drops
  * anything outside the room, so the coach cannot reference invented people.
  */
+// Strip em/en dashes used as connectors, enforcing the no-em-dash house style
+// regardless of what the model returns.
+function stripDashes(value) {
+  return String(value || "").replace(/\s*[—–]\s*/g, ", ");
+}
+
 export function normalizeStrategistAnswer(raw, participants = []) {
   if (!raw || typeof raw !== "object") return null;
   const known = new Set((participants || []).map((p) => p.id));
-  const answer = cleanParagraph(raw.answer, 1400);
+  const answer = stripDashes(cleanParagraph(raw.answer, 1400));
   if (!answer) return null;
-  const moves = (Array.isArray(raw.moves) ? raw.moves : [])
-    .slice(0, 3)
-    .map((m) => cleanText(m, 300))
-    .filter(Boolean);
+  const grounded = raw.grounded !== false;
+  // A decline carries no moves, deterministically, even if the model returns some.
+  const moves = grounded
+    ? (Array.isArray(raw.moves) ? raw.moves : [])
+        .slice(0, 3)
+        .map((m) => stripDashes(cleanText(m, 300)))
+        .filter(Boolean)
+    : [];
   const cites = [...new Set((Array.isArray(raw.cites) ? raw.cites : []).map((c) => cleanText(c, 120)))]
     .filter((id) => known.has(id))
     .slice(0, 12);
-  const grounded = raw.grounded !== false;
   return { kind: "coach", answer, moves, cites, grounded };
 }
 
