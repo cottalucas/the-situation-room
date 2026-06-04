@@ -1205,6 +1205,14 @@ code {
 .chat-commands:hover { border-color: var(--ink); color: var(--ink); }
 
 /* commands modal */
+.command-group + .command-group { margin-top: var(--s5); }
+.command-group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  margin-bottom: var(--s3);
+}
 .commands-list { display: flex; flex-direction: column; gap: 12px; }
 .command-row { display: flex; flex-direction: column; gap: 5px; }
 .command-code {

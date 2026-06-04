@@ -262,7 +262,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
           </button>
         </form>
         <p className="chat-hint">
-          Only commands run here. <code>@note</code> saves memory. <code>@network</code>, <code>@energy</code>, and <code>@map</code> update the room.
+          Only commands run here. <code>@energy</code>, <code>@network</code>, <code>@note</code>, and <code>@map</code> build the room. <code>@read</code> and <code>@ask</code> get a strategic read. Tap <code>/</code> for all commands.
         </p>
       </div>
     </section>

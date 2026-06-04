@@ -5,6 +5,16 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 3 Step 4: command purpose clarified
+
+Reworked the commands reference into two clearly separated groups, "Build the
+room" (@energy, @network, @note, @map, @create, @add) and "Read the room" (@read,
+@ask), each with a single crisp purpose and an example. Removed the overlap
+confusion: @map is the broad intake, @create only adds people, @add adds one
+external, @read reads the whole room, @ask answers one question. Tightened the
+chat hint line. Names unchanged (muscle memory + aliases preserved); this is
+clarity, not a rename. Client-only; deployed to hosting.
+
 ## 2026-06-04 - Pass 3 Step 3: The Read moved into the chat, on-arrival + @read
 
 Removed the always-on top-of-room read card (and `TheRead.jsx`); the lenses are

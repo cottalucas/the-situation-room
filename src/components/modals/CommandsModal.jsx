@@ -1,28 +1,45 @@
 import React from "react";
 import { Modal } from "./Modal.jsx";
 
-const COMMANDS = [
-  { cmd: "@note <name> <text>", desc: "Rewrite the note, save it, and update the person's read when there is enough signal." },
-  { cmd: "@energy <text>", desc: "Read power, interest, and stance from plain language, then place people on the Energy map. (@grid also works.)" },
-  { cmd: "@network <text>", desc: "Read reporting, control, alliance, conflict, and influence, then update the network." },
-  { cmd: "@map <text>", desc: "Read people, notes, grid, and network from a longer situation." },
-  { cmd: "@ask <question>", desc: "Ask the grounded strategist about this room: who to talk to first, what is missing, where the risk is. Cites the people it reasons from." },
-  { cmd: "@create <text>", desc: "Create people from a longer description, then add them to this decision." },
-  { cmd: "@add <name>, <role>", desc: "Add someone external to this decision only." },
+// Two clear jobs: build the map, then read it. Each command has one purpose.
+const GROUPS = [
+  {
+    title: "Build the room",
+    items: [
+      { cmd: "@energy <text>", desc: "Place people by power and interest, and set where they stand. Example: “@energy the CEO has high power but low interest.”" },
+      { cmd: "@network <text>", desc: "Map who reports to, allies with, or clashes with whom. Example: “@network sales reports to the CEO and clashes with product.”" },
+      { cmd: "@note <person> <text>", desc: "Save one observation about a person and sharpen their read. The person can be a name, first name, or role. Example: “@note head of sales keeps asking for updates.”" },
+      { cmd: "@map <text>", desc: "Describe the whole situation in prose and let it route to people, notes, energy, and network at once. The broad intake command." },
+      { cmd: "@create <text>", desc: "Only add people by name and role, without analyzing them yet." },
+      { cmd: "@add <name>, <role>", desc: "Add one outside person to this decision only." },
+    ],
+  },
+  {
+    title: "Read the room",
+    items: [
+      { cmd: "@read", desc: "Get the strategist’s read of the whole room: what you are missing and who to move first. Refreshes the read in the chat." },
+      { cmd: "@ask <question>", desc: "Ask the strategist one question about this room, like who to talk to first or where the risk is. It cites the people it reasons from." },
+    ],
+  },
 ];
 
-/** Reference for the chat commands. Same design as the other modals. */
+/** Reference for the chat commands, grouped by purpose. */
 export function CommandsModal({ onClose }) {
   return (
-    <Modal title="Commands" sub="Type these in the chat." onClose={onClose}>
-      <ul className="commands-list">
-        {COMMANDS.map((c) => (
-          <li key={c.cmd} className="command-row">
-            <code className="command-code">{c.cmd}</code>
-            <span className="command-desc">{c.desc}</span>
-          </li>
-        ))}
-      </ul>
+    <Modal title="Commands" sub="Type these in the chat. Each one has a single job." onClose={onClose}>
+      {GROUPS.map((group) => (
+        <div key={group.title} className="command-group">
+          <p className="command-group-title">{group.title}</p>
+          <ul className="commands-list">
+            {group.items.map((c) => (
+              <li key={c.cmd} className="command-row">
+                <code className="command-code">{c.cmd}</code>
+                <span className="command-desc">{c.desc}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </Modal>
   );
 }
