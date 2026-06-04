@@ -17,6 +17,7 @@
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:emulator": "firebase emulators:exec --only firestore 'node tests/emulator/persistence.emulator.test.mjs'",
     "eval:live": "EVAL_ALLOW_LIVE=true node scripts/eval-v1.mjs --live",
+    "eval:onboarding:live": "node scripts/eval-onboarding-live.mjs",
     "functions:lint": "npm --prefix functions run lint",
     "trace:summary": "node scripts/trace-summary.mjs"
   },

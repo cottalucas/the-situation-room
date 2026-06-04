@@ -5,6 +5,52 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Guided Setup as the winning first-run moment (Phases A to E)
+
+Overnight pass to make Guided Setup the first-run win. Full detail in
+`AUDIT_REPORT_4.md`; one commit per phase, revertable.
+
+Phase A (extraction). The build step produced poor rooms. Fixed at the
+extraction layer, still through the existing command pipeline: `deriveDecisionTitle`
+strips lead-in filler and caps a short human room name (never the raw paragraph
+or a "room" suffix); `decisionSeedNeedsConfirm` and an optional name override
+drive a naming confirm; `forceCreatePeople` guarantees every extracted person
+from `@create` becomes a participant (no more "No participants"), with apply-time
+`resolvePersonRef` still deduping role mentions to existing roster members.
+
+Phase B (voice). Rewrote the three questions in plain, warm language and made the
+relationships step skippable. Added a grounded one-sentence reflection between
+answers that echoes the user's own words, a brief thinking indicator, an optional
+naming confirm, and a specific closing summary. Decision: the reflection is
+deterministic, not Haiku-written, to avoid a second model surface that could
+hallucinate a fact about a real colleague; the Haiku reflection is flagged as a
+deferred enhancement.
+
+Phase C (choreography). First-run opens Guided Setup by default and collapses the
+rooms rail; "Open room" and skip expand it again. First-run detection stays robust
+via `hasUsableRoom` (a user with real content never sees it). Events:
+started/completed/skipped/room_created.
+
+Phase D (one engine, three doors). First-run, "+ New room" (returning-user
+framing), and manual share one engine and the one `OnboardingChat` view. "Skip,
+I'll set it up myself" now opens the existing Room Settings modal. Flagged: a full
+Room.jsx-to-hook extraction is deferred since returning-user guided is a thin
+wrapper.
+
+Phase E (live proof). Ran the gated live suite once on real Haiku for a messy
+multi-person paragraph: 17/17, 0 flagged, spend $0.0109 (0.02% of the $50
+ceiling). Real output matched goldens: room "Get the team to kill the half-built
+sales dashboard", four deduped participants (Robert kept distinct, role-only
+mentions labeled by role, no phantom), banded Energy (60 to 80, no extremes),
+exactly the two stated edges (defers to Robert, one conflict), specific closing.
+Observed and flagged (eval NOT loosened): the model set Energy in the `@create`
+pass and returned the separate `@grid` pass without person references, so that
+pass was a no-op; the end state is correct, but the redundant grid pass is a
+candidate to tighten or drop. Checks: onboarding verify 52/52, offline eval 19/19,
+resolution 19/19, guard 12/12, persistence 24/24, autoread 10/10, confidence 9/9,
+build clean, function syntax OK. No prompt changes, so the src/functions mirror is
+untouched. Haiku-only, no raw prod traces, encryption and scoped rules intact.
+
 ## 2026-06-04 - First-run guided onboarding, local only
 
 Added a first-run onboarding conversation for new accounts. Email registration

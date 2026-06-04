@@ -148,4 +148,78 @@ remainder if Room.jsx coupling becomes a problem.
 
 Eval: added a Phase D section to `verify:onboarding` (the two intro framings).
 Checks: onboarding verify 52/52, offline eval 19/19, build clean.
+
+## 2026-06-04 17:35 CEST — Phase E: prove it live (gated, minimal spend)
+
+Added `scripts/eval-onboarding-live.mjs` (`npm run eval:onboarding:live`), gated
+by `EVAL_ALLOW_LIVE=true`. It runs the full guided build through real Haiku via
+the same `/api/interpret-room-command` bridge the app uses, faithfully simulates
+the apply path (force-create + `resolvePersonRef` dedup), asserts the end state,
+and logs spend. It never loosens an assertion to make a run pass.
+
+Ran it once against a local dev server (`.env.local` sourced so the key is not
+shadowed) on the messy paragraph "I need to get the team to kill the half-built
+sales dashboard feature so we can refocus on onboarding, but Robert keeps pushing
+back." Real Haiku result, vs goldens:
+
+- Room name: "Get the team to kill the half-built sales dashboard" (short, human,
+  not the raw paragraph). MATCH.
+- Participants: Robert, Head of Engineering, Head of UX, Susan. Four distinct,
+  deduped, every one named. Robert stayed a separate person; the role-only
+  mentions became role-labeled people; no phantom duplicate. MATCH.
+- Energy: 70/75, 80/70, 75/70, 60/75. All banded (10 to 95), no extremes, because
+  the language carried no stated absolutes. MATCH.
+- Edges: head of UX defers to Robert; Susan conflict head of engineering. Exactly
+  the two stated relationships, no padding, the defers points to Robert. MATCH.
+- Closing: "Mapped Robert, Head of Engineering, Head of UX, and Susan; set initial
+  Energy; drew the relationships you mentioned." Specific, no em dash. MATCH.
+
+Result: 17/17 passed, 0 flagged. Spend $0.010889 total (create $0.004847, grid
+$0.003113, network $0.002929), 0.02% of the $50 ceiling.
+
+FLAG (real model behavior, eval NOT loosened): in this run the model set Energy
+during the `@create` pass and then returned the separate `@grid` pass with grid
+values but no person references, so the grid pass applied to no one. The end state
+is still correct and banded because `@create` legitimately calibrates Energy, but
+the separate grid pass was a redundant call here. Candidate follow-up: either
+require the grid plan text to echo each person's id/name, or drop the grid pass
+since `@create` already calibrates. Not changed tonight to avoid over-building.
+
+---
+
+## FINAL
+
+What changed, by phase:
+- A: short human room title (never the raw paragraph), naming confirm,
+  force-create participants (never "No participants"), apply-time dedup of role
+  mentions. All through the existing command pipeline.
+- B: plain warm questions, grounded reflection between answers, thinking
+  indicator, optional naming confirm, specific closing.
+- C: first-run opens Guided Setup by default with the rooms rail collapsed;
+  expands on finish; robust first-run detection; analytics.
+- D: one engine, three doors (first-run, "+ New room", manual via Room Settings).
+- E: gated live suite, 17/17, $0.0109 spend, behavior matched goldens.
+
+Flagged / deferred:
+- Haiku-written reflection (shipped deterministic grounded reflection instead, to
+  avoid a second model surface and hallucination risk).
+- Full Room.jsx-to-hook extraction of the engine (returning-user guided is a thin
+  wrapper; not worth the regression risk tonight).
+- Redundant `@grid` onboarding pass when `@create` already calibrates Energy
+  (observed live; tighten or drop later).
+- "Energy" naming, network readability: untouched, deferred per the brief.
+- Visual confirmation is auth-gated (Firebase), so a signed-in screenshot of the
+  conversation, the collapsed-rail first-run, and the populated room is
+  recommended.
+
+Constraints held: Haiku-only (`claude-haiku-4-5-20251001`, model unchanged); no
+raw production traces (no trace-posture change); encryption intact (no field
+changes); owner-scoped Firestore rules unchanged; every behavioral change has an
+offline mocked fixture (`verify:onboarding` 52/52); onboarding reuses the existing
+command pipeline (no second interpretation path; no prompt or functions-mirror
+change). Live spend logged: $0.010889.
+
+Final battery: offline eval 19/19, onboarding verify 52/52, resolution 19/19,
+guard 12/12, persistence 24/24, autoread 10/10, confidence 9/9, build clean,
+function syntax OK.
 </content>

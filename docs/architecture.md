@@ -302,16 +302,39 @@ strategist prompt is `strategist-v2`. Venting that carries real room content is
 allowed through and neutralized by the model. Analytics: `open_chat`,
 `open_chat_blocked {reason}`.
 
-First-run onboarding. New account creation marks a one-shot local onboarding
-flag. If the account has no usable room, Room opens a guided three-question
-conversation once: decision and desired outcome, 2 to 4 key people, and the
-relationships that matter. Users can skip at any point, and empty states keep a
-manual Start guided setup button for users who missed it. The onboarding
-orchestrator is not a second interpreter. It creates the room and decision, then
-routes the collected answers through `interpretRoomCommand` with the existing
-`@create`, `@energy` (`grid` internally), and `@network` contracts, validators,
-and `applyRoomUpdate` write path. No new model path or calibration logic exists
-for onboarding.
+Guided Setup (one engine, three doors). New account creation marks a one-shot
+local onboarding flag. The conversation engine lives in `src/lib/onboarding.js`
+(questions, reflection, naming, command plan, closing, trigger guards) and renders
+through the single `OnboardingChat` view. Three doors share it:
+
+- First-run: on first login with no usable room (`hasUsableRoom === false`,
+  pending marker, not yet prompted) Room opens Guided Setup by default and
+  collapses the left rooms rail so the conversation owns the screen. "Open room"
+  expands the rail and lands in the populated room.
+- "+ New room": the rail's new-room action opens the same engine with
+  returning-user framing (no product intro).
+- Manual: "Skip, I'll set it up myself" drops into the existing Room Settings
+  modal, reusing an empty room or creating one, so guided and manual are
+  connected.
+
+The three plain-language questions are the decision and a good outcome, the few
+make-or-break people, and the relationships (skippable). Between answers the
+assistant reflects back one grounded sentence built from the user's own words
+(`reflectOnAnswer`, deterministic, no model surface, cannot hallucinate) behind a
+brief thinking indicator. Before building it shows one short naming confirm
+pre-filled with a short derived title (`deriveDecisionTitle` strips lead-in
+filler and caps at a word boundary, never the raw paragraph). The closing names
+what it built specifically (`buildClosingSummary`).
+
+The orchestrator is not a second interpreter. It creates the room and decision,
+then routes the collected answers through `interpretRoomCommand` with the
+existing `@create`, `@energy` (`grid` internally), and `@network` contracts,
+validators, and `applyRoomUpdate` write path. `forceCreatePeople` guarantees
+every extracted person from the `@create` pass becomes a participant (building
+never yields "No participants"), while apply-time `resolvePersonRef` resolution
+still dedupes role mentions to existing roster members. No new model path or
+calibration logic exists for onboarding. Analytics: `onboarding_started`,
+`onboarding_completed`, `onboarding_skipped`, `onboarding_room_created`.
 
 Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
 stakeholder coach that reasons only over the room snapshot and `recentTurns`. It

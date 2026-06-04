@@ -61,11 +61,16 @@
   is not regenerated on every landing; below threshold it returns basic insights
   and asks for more information with no model call.
 - Global person memory: observations and cross decision history.
-- First-run guided onboarding for new accounts. A three-question conversation
-  collects the decision, the people, and the key relationships, then creates the
-  room and decision through the existing @create, @energy, and @network command
-  pipeline. Existing users do not see it on every arrival, and empty states keep
-  a manual Start guided setup path.
+- Guided Setup, one engine behind three doors (first-run, "+ New room", and
+  manual). A warm three-question conversation (decision and outcome, make-or-break
+  people, relationships) reflects back the user's own words between answers,
+  shows one short naming confirm with a derived title, and builds the room through
+  the existing @create, @energy, and @network command pipeline. First-run opens
+  by default with the rooms rail collapsed and never shows to a user who already
+  has real content; "Skip, I'll set it up myself" drops into the manual Room
+  Settings modal. Building force-creates every extracted person (never "No
+  participants") while apply-time resolution dedupes role mentions, and the
+  closing names what it built specifically.
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase
   Function syntax check.
