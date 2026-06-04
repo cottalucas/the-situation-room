@@ -1,25 +1,35 @@
 import React, { useEffect, useRef } from "react";
-import { ONBOARDING_QUESTIONS } from "../lib/onboarding.js";
 
+/**
+ * The single Guided Setup view, driven entirely by props from the engine in
+ * Room.jsx. It renders the conversation, a thinking indicator between turns, a
+ * question step, a one short naming confirm, and the open-room handoff. The same
+ * component backs first-run and the returning-user "+ New room" door.
+ */
 export function OnboardingChat({
   messages,
+  thinking,
+  phase, // "questions" | "naming" | "done"
   step,
+  totalSteps,
+  question,
+  skippable,
   draft,
   setDraft,
+  nameDraft,
+  setNameDraft,
   busy,
-  done,
   error,
   onSubmit,
   onSkip,
   onOpenRoom,
+  headline,
 }) {
   const endRef = useRef(null);
-  const question = ONBOARDING_QUESTIONS[step];
-  const buttonLabel = step === ONBOARDING_QUESTIONS.length - 1 ? "Build room" : "Send";
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy, error]);
+  }, [messages, thinking, busy, error, phase]);
 
   const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -28,13 +38,16 @@ export function OnboardingChat({
     }
   };
 
+  const questionLabel = skippable && !draft.trim() ? "Skip" : step === totalSteps - 1 ? "Continue" : "Continue";
+  const canSubmitQuestion = skippable || Boolean(draft.trim());
+
   return (
     <section className="onboarding-chat" aria-label="Guided setup">
       <header className="onboarding-head">
         <span className="msg-label">Guided setup</span>
-        <h2>Build your first room</h2>
+        <h2>{headline || "Build your first room"}</h2>
         <button type="button" className="btn-ghost" onClick={onSkip} disabled={busy}>
-          Skip, I will set it up myself
+          Skip, I'll set it up myself
         </button>
       </header>
 
@@ -44,6 +57,15 @@ export function OnboardingChat({
             <p>{message.body}</p>
           </div>
         ))}
+        {thinking && (
+          <div className="onboarding-msg onboarding-assistant onboarding-thinking" aria-label="Thinking">
+            <span className="onboarding-dots">
+              <span />
+              <span />
+              <span />
+            </span>
+          </div>
+        )}
         {busy && (
           <div className="onboarding-msg onboarding-assistant">
             <p>Building the room from your answers.</p>
@@ -57,16 +79,37 @@ export function OnboardingChat({
         <div ref={endRef} />
       </div>
 
-      {done ? (
+      {phase === "done" ? (
         <div className="onboarding-actions">
           <button type="button" className="btn-primary" onClick={onOpenRoom}>
             Open room
           </button>
         </div>
+      ) : phase === "naming" ? (
+        <form className="onboarding-form" onSubmit={onSubmit}>
+          <label className="onboarding-progress" htmlFor="onboarding-name">
+            Name the room
+          </label>
+          <input
+            id="onboarding-name"
+            className="onboarding-input onboarding-name-input"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Short name for the decision"
+            disabled={busy}
+            autoFocus
+          />
+          <div className="onboarding-actions">
+            <button type="submit" className="btn-primary" disabled={busy || !nameDraft.trim()}>
+              Build room
+            </button>
+          </div>
+        </form>
       ) : (
         <form className="onboarding-form" onSubmit={onSubmit}>
           <label className="onboarding-progress" htmlFor="onboarding-answer">
-            Question {step + 1} of {ONBOARDING_QUESTIONS.length}
+            Question {step + 1} of {totalSteps}
           </label>
           <textarea
             id="onboarding-answer"
@@ -75,16 +118,13 @@ export function OnboardingChat({
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={question?.prompt || ""}
-            disabled={busy}
+            disabled={busy || thinking}
             rows={4}
             autoFocus
           />
           <div className="onboarding-actions">
-            <button type="button" className="btn-secondary" onClick={onSkip} disabled={busy}>
-              Skip
-            </button>
-            <button type="submit" className="btn-primary" disabled={busy || !draft.trim()}>
-              {buttonLabel}
+            <button type="submit" className="btn-primary" disabled={busy || thinking || !canSubmitQuestion}>
+              {questionLabel}
             </button>
           </div>
         </form>

@@ -1,20 +1,26 @@
 export const ONBOARDING_QUESTIONS = [
   {
     id: "decision",
-    prompt: "What decision are you trying to get through, and what outcome do you want?",
+    prompt: "What's the decision you're trying to get through, and what would a good outcome look like?",
   },
   {
     id: "people",
-    prompt: "Who are the 2 to 4 people who most affect it? Add name, role, and where they stand if you know.",
+    prompt: "Who are the few people who can make or break this? Names, and roughly what they do.",
   },
   {
     id: "relationships",
-    prompt: "What relationships matter? Name reporting lines, who defers to whom, support, or friction. Say skip if none.",
+    prompt: "Anything about how they relate? Who leans on whom, who's aligned, where there's tension. Skip if you're not sure.",
+    skippable: true,
   },
 ];
 
+// First-run framing carries a one-line product intro. The returning-user door
+// ("+ New room") reuses the same engine without it.
 export const ONBOARDING_INTRO =
-  "The Situation Room maps the people behind a decision and helps you plan how to move the room. I will ask three quick questions, then build your first map.";
+  "The Situation Room maps the people behind a decision and helps you plan how to move the room. Three quick questions and I'll build your first map.";
+
+export const ONBOARDING_INTRO_RETURNING =
+  "Let's map a new decision. Three quick questions and I'll build the room.";
 
 function cleanAnswer(value, max = 1200) {
   return String(value || "")
@@ -151,6 +157,67 @@ export function forceCreatePeople(update) {
     ...update,
     people: update.people.map((p) => ({ ...p, create: p.create || Boolean(p.name) })),
   };
+}
+
+function firstSentence(text, max = 120) {
+  const clean = cleanAnswer(text, 600);
+  if (!clean) return "";
+  const sentence = clean.split(/(?<=[.!?])\s+/)[0] || clean;
+  return capWords(sentence.replace(/[.\s]+$/, ""), max);
+}
+
+/**
+ * One short, grounded sentence that reflects back what the user just said before
+ * the next question. It echoes the user's own salient words, so it stays
+ * specific and never invents a fact. This is deterministic on purpose: it adds
+ * no model surface and cannot hallucinate. (A Haiku-written reflection is
+ * flagged as a deferred enhancement.)
+ */
+export function reflectOnAnswer(questionId, answer) {
+  if (questionId === "relationships" && relationshipAnswerIsEmpty(answer)) {
+    return "No relationships yet, that's fine. I'll start from the people.";
+  }
+  const fragment = firstSentence(answer);
+  if (!fragment) return "";
+  if (questionId === "decision") {
+    return `So this is the decision: ${deriveDecisionTitle(answer)}.`;
+  }
+  if (questionId === "people") {
+    return `So ${capFirst(fragment)}, noted.`;
+  }
+  return `Noted: ${capFirst(fragment)}.`;
+}
+
+/**
+ * The one short naming confirm shown before building. Pre-fills the derived
+ * title and asks the user to keep or rename it. Never shows the raw paragraph.
+ */
+export function namingPrompt(decisionAnswer) {
+  const title = deriveDecisionTitle(decisionAnswer);
+  if (decisionSeedNeedsConfirm(decisionAnswer)) {
+    return `Before I build, what should I call this room? A short name for the decision works best.`;
+  }
+  return `I'll call this room "${title}". Keep it, or type a better name.`;
+}
+
+function joinNames(names) {
+  const list = (names || []).filter(Boolean);
+  if (!list.length) return "";
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} and ${list[1]}`;
+  return `${list.slice(0, -1).join(", ")}, and ${list[list.length - 1]}`;
+}
+
+/**
+ * The closing message names what it built specifically: the people it mapped,
+ * whether it set initial Energy, and whether it drew relationships.
+ */
+export function buildClosingSummary({ names = [], placedCount = 0, edgeCount = 0 } = {}) {
+  const parts = [];
+  parts.push(names.length ? `Mapped ${joinNames(names)}` : "Built your room");
+  if (placedCount) parts.push("set initial Energy");
+  if (edgeCount) parts.push(`drew the ${edgeCount === 1 ? "relationship" : "relationships"} you mentioned`);
+  return `${parts.join("; ")}.`;
 }
 
 export function buildOnboardingCommandPlan(answers) {

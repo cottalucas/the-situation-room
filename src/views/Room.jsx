@@ -8,13 +8,24 @@ import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 import { screenOpenMessage } from "../lib/chat-guard.js";
 import {
   ONBOARDING_INTRO,
+  ONBOARDING_INTRO_RETURNING,
   ONBOARDING_QUESTIONS,
+  buildClosingSummary,
   buildOnboardingCommandPlan,
+  decisionSeedNeedsConfirm,
   deriveDecisionSeed,
+  deriveDecisionTitle,
   forceCreatePeople,
   hasUsableRoom,
+  namingPrompt,
+  reflectOnAnswer,
   shouldAutoStartOnboarding,
 } from "../lib/onboarding.js";
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A brief thinking beat between the user's send and the assistant's reflection,
+// so the conversation feels considered rather than instant and canned.
+const REFLECT_DELAY_MS = 600;
 
 const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 // Open (non-command) chat is experimental and routes to the grounded strategist
@@ -106,12 +117,15 @@ export default function Room({ onExit, userId }) {
   const [pendingOnboarding, setPendingOnboarding] = useState(false);
   const [onboarding, setOnboarding] = useState({
     active: false,
+    mode: "first-run", // "first-run" | "guided"
+    phase: "questions", // "questions" | "naming" | "done"
     step: 0,
     answers: {},
     draft: "",
+    nameDraft: "",
     messages: [],
+    thinking: false,
     busy: false,
-    done: false,
     error: "",
   });
 
@@ -202,22 +216,29 @@ export default function Room({ onExit, userId }) {
   );
 
   const startOnboarding = useCallback(
-    ({ auto = false } = {}) => {
+    ({ auto = false, mode = "first-run" } = {}) => {
       store.setPref("onboardingPrompted", true);
+      // First-run opens with the rooms rail collapsed so the conversation owns
+      // the screen; Phase C expands it again on "Open room".
+      if (auto) store.setPref("railCollapsed", true);
+      const intro = mode === "guided" ? ONBOARDING_INTRO_RETURNING : ONBOARDING_INTRO;
       setOnboarding({
         active: true,
+        mode,
+        phase: "questions",
         step: 0,
         answers: {},
         draft: "",
+        nameDraft: "",
         messages: [
-          { role: "assistant", body: ONBOARDING_INTRO },
+          { role: "assistant", body: intro },
           { role: "assistant", body: ONBOARDING_QUESTIONS[0].prompt },
         ],
+        thinking: false,
         busy: false,
-        done: false,
         error: "",
       });
-      trackEvent("onboarding_started", { auto });
+      trackEvent("onboarding_started", { auto, mode });
     },
     [store]
   );
@@ -242,13 +263,16 @@ export default function Room({ onExit, userId }) {
 
   const skipOnboarding = useCallback(() => {
     store.setPref("onboardingPrompted", true);
-    setOnboarding((current) => ({ ...current, active: false, busy: false, done: false, error: "" }));
+    store.setPref("railCollapsed", false);
+    setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
     trackEvent("onboarding_skipped");
   }, [store]);
 
   const openOnboardingRoom = useCallback(() => {
+    // Expand the rooms rail and land in the now-populated room.
+    store.setPref("railCollapsed", false);
     setOnboarding((current) => ({ ...current, active: false, busy: false }));
-  }, []);
+  }, [store]);
 
   /* navigation */
   const selectRoom = useCallback(
@@ -511,12 +535,12 @@ export default function Room({ onExit, userId }) {
   );
 
   const completeOnboarding = useCallback(
-    async (answers) => {
+    async (answers, nameOverride) => {
       if (!LIVE_LLM) {
         throw new Error("Guided setup needs live local reasoning. Turn on VITE_ENABLE_LIVE_LLM, then try again.");
       }
 
-      const seed = deriveDecisionSeed(answers.decision);
+      const seed = deriveDecisionSeed(answers.decision, nameOverride);
       const emptyRoom = rooms.find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
       const roomId = emptyRoom?.id || store.createRoom(seed.roomName);
       if (emptyRoom) store.updateRoom(roomId, { name: seed.roomName });
@@ -555,16 +579,28 @@ export default function Room({ onExit, userId }) {
         applyRoomUpdate(update, item.command, { roomId, decisionId });
       }
 
-      const mappedPeople = store.getParticipants(decisionId).length;
-      if (!mappedPeople) throw new Error("I could not map any people from that answer. Try names with short roles.");
+      const finalDecision = store.getDecision(decisionId);
+      const finalParticipants = store.getParticipants(decisionId);
+      if (!finalParticipants.length) throw new Error("I could not map any people from that answer. Try names with short roles.");
       setActiveTab("people");
+
+      const placedCount = Object.keys(finalDecision?.placements || {}).filter(
+        (id) => finalParticipants.some((p) => p.id === id)
+      ).length;
+      const edgeCount = (finalDecision?.edges || []).length;
 
       store.pushMessage(decisionId, {
         type: "updated",
         label: "Room ready",
         body: "Your first map is ready. Run @read for the first room read, or ask @ask who to talk to first.",
       });
-      trackEvent("onboarding_completed", { people: mappedPeople });
+      trackEvent("onboarding_completed", { people: finalParticipants.length, edges: edgeCount });
+
+      return {
+        names: finalParticipants.map((p) => p.name),
+        placedCount,
+        edgeCount,
+      };
     },
     [applyRoomUpdate, rooms, store]
   );
@@ -572,55 +608,86 @@ export default function Room({ onExit, userId }) {
   const submitOnboarding = useCallback(
     async (e) => {
       e.preventDefault();
-      if (onboarding.busy || onboarding.done) return;
-      const answer = onboarding.draft.trim();
-      if (!answer) return;
-      const question = ONBOARDING_QUESTIONS[onboarding.step];
-      const answers = { ...onboarding.answers, [question.id]: answer };
-      const messages = [...onboarding.messages, { role: "user", body: answer }];
+      if (onboarding.thinking || onboarding.busy) return;
 
-      if (onboarding.step < ONBOARDING_QUESTIONS.length - 1) {
-        const nextStep = onboarding.step + 1;
-        setOnboarding({
-          ...onboarding,
-          step: nextStep,
-          answers,
-          draft: "",
-          messages: [...messages, { role: "assistant", body: ONBOARDING_QUESTIONS[nextStep].prompt }],
+      // Naming confirm: build the room with the chosen name, then close.
+      if (onboarding.phase === "naming") {
+        const name = onboarding.nameDraft.trim();
+        if (!name) return;
+        const answers = onboarding.answers;
+        setOnboarding((current) => ({
+          ...current,
+          messages: [...current.messages, { role: "user", body: name }],
+          busy: true,
           error: "",
-        });
+        }));
+        try {
+          const summary = await completeOnboarding(answers, name);
+          setOnboarding((current) => ({
+            ...current,
+            busy: false,
+            phase: "done",
+            messages: [...current.messages, { role: "assistant", body: buildClosingSummary(summary) }],
+          }));
+        } catch (err) {
+          setOnboarding((current) => ({
+            ...current,
+            busy: false,
+            error: err?.message || "Guided setup failed. You can try again or set up the room yourself.",
+          }));
+        }
         return;
       }
 
-      setOnboarding({
-        ...onboarding,
+      // Question phase. The relationships step is skippable with an empty answer.
+      const question = ONBOARDING_QUESTIONS[onboarding.step];
+      const raw = onboarding.draft.trim();
+      const skipped = !raw && question.skippable;
+      if (!raw && !skipped) return;
+      const answer = skipped ? "skip" : raw;
+      const answers = { ...onboarding.answers, [question.id]: answer };
+      const isLast = onboarding.step >= ONBOARDING_QUESTIONS.length - 1;
+
+      // Show the user turn, then a brief thinking beat before the reflection.
+      setOnboarding((current) => ({
+        ...current,
         answers,
         draft: "",
-        messages: [...messages, { role: "assistant", body: "I have enough. I am building the room now." }],
-        busy: true,
+        thinking: true,
         error: "",
-      });
-      try {
-        await completeOnboarding(answers);
+        messages: [...current.messages, { role: "user", body: skipped ? "Skip" : answer }],
+      }));
+
+      await sleep(REFLECT_DELAY_MS);
+
+      const reflection = reflectOnAnswer(question.id, answer);
+      if (isLast) {
+        const prefill = decisionSeedNeedsConfirm(answers.decision) ? "" : deriveDecisionTitle(answers.decision);
         setOnboarding((current) => ({
           ...current,
-          busy: false,
-          done: true,
+          thinking: false,
+          phase: "naming",
+          nameDraft: prefill,
           messages: [
             ...current.messages,
-            {
-              role: "assistant",
-              body: "Done. I mapped the first people, their initial Energy, and the relationships you named.",
-            },
+            ...(reflection ? [{ role: "assistant", body: reflection }] : []),
+            { role: "assistant", body: namingPrompt(answers.decision) },
           ],
         }));
-      } catch (err) {
-        setOnboarding((current) => ({
-          ...current,
-          busy: false,
-          error: err?.message || "Guided setup failed. You can try again or set up the room yourself.",
-        }));
+        return;
       }
+
+      const nextStep = onboarding.step + 1;
+      setOnboarding((current) => ({
+        ...current,
+        step: nextStep,
+        thinking: false,
+        messages: [
+          ...current.messages,
+          ...(reflection ? [{ role: "assistant", body: reflection }] : []),
+          { role: "assistant", body: ONBOARDING_QUESTIONS[nextStep].prompt },
+        ],
+      }));
     },
     [completeOnboarding, onboarding]
   );
@@ -852,12 +919,19 @@ export default function Room({ onExit, userId }) {
           <main className="onboarding-panel">
             <OnboardingChat
               messages={onboarding.messages}
+              thinking={onboarding.thinking}
+              phase={onboarding.phase}
               step={onboarding.step}
+              totalSteps={ONBOARDING_QUESTIONS.length}
+              question={ONBOARDING_QUESTIONS[onboarding.step]}
+              skippable={Boolean(ONBOARDING_QUESTIONS[onboarding.step]?.skippable)}
               draft={onboarding.draft}
               setDraft={(value) => setOnboarding((current) => ({ ...current, draft: value }))}
+              nameDraft={onboarding.nameDraft}
+              setNameDraft={(value) => setOnboarding((current) => ({ ...current, nameDraft: value }))}
               busy={onboarding.busy}
-              done={onboarding.done}
               error={onboarding.error}
+              headline={onboarding.mode === "guided" ? "Set up a new room" : "Build your first room"}
               onSubmit={submitOnboarding}
               onSkip={skipOnboarding}
               onOpenRoom={openOnboardingRoom}

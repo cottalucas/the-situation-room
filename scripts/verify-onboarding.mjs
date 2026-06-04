@@ -4,12 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ONBOARDING_QUESTIONS,
+  buildClosingSummary,
   buildOnboardingCommandPlan,
   deriveDecisionSeed,
   deriveDecisionTitle,
   decisionSeedNeedsConfirm,
   forceCreatePeople,
   hasUsableRoom,
+  namingPrompt,
+  reflectOnAnswer,
   relationshipAnswerIsEmpty,
   shouldAutoStartOnboarding,
 } from "../src/lib/onboarding.js";
@@ -100,6 +103,29 @@ const roster = fixture.dedupRoster;
 check("role mention resolves to existing person", resolvePersonRef("the head of engineering", [roster])?.id === "p_robert");
 check("bare role label resolves to existing person", resolvePersonRef("Head of Engineering", [roster])?.id === "p_robert");
 check("unrelated name does not resolve to a duplicate", resolvePersonRef("Susan", [roster]) === null);
+
+console.log("\n[6] Phase B: plain-language questions, reflection, naming, closing");
+const noDash = (s) => !/[—–]/.test(s);
+const oneSentence = (s) => (s.match(/[.!?]/g) || []).length <= 1;
+// Questions read like a sharp colleague and the relationships step is skippable.
+check("decision question is plain language", /good outcome/i.test(ONBOARDING_QUESTIONS[0].prompt));
+check("people question asks make-or-break", /make or break/i.test(ONBOARDING_QUESTIONS[1].prompt));
+check("relationships step is skippable", ONBOARDING_QUESTIONS[2].skippable === true);
+check("questions carry no em dashes", ONBOARDING_QUESTIONS.every((q) => noDash(q.prompt)));
+// Reflection echoes the user's own words, grounded and one sentence.
+const peopleReflection = reflectOnAnswer("people", "Robert adds pressure instead of shielding the team. The head of UX is on board.");
+check("people reflection echoes the user", /Robert adds pressure instead of shielding the team/.test(peopleReflection));
+check("people reflection is one short sentence", oneSentence(peopleReflection) && noDash(peopleReflection));
+const decisionReflection = reflectOnAnswer("decision", fixture.messy.decision);
+check("decision reflection names the derived decision", decisionReflection.includes(deriveDecisionTitle(fixture.messy.decision)));
+check("skipped relationships reflect gracefully", /No relationships yet/i.test(reflectOnAnswer("relationships", "skip")));
+// Naming confirm pre-fills a clear title and asks when vague.
+check("naming confirm offers the derived name", namingPrompt(fixture.answers.decision).includes(deriveDecisionTitle(fixture.answers.decision)));
+check("naming confirm asks for a name when vague", /what should I call this room/i.test(namingPrompt("launch")));
+// Closing summary names what it built, specifically and without em dashes.
+const closing = buildClosingSummary({ names: ["Robert", "Head of Engineering", "Head of UX", "Susan"], placedCount: 4, edgeCount: 2 });
+check("closing names the people", closing.startsWith("Mapped Robert, Head of Engineering, Head of UX, and Susan"));
+check("closing names Energy and relationships", /set initial Energy/.test(closing) && /drew the relationships/.test(closing) && noDash(closing));
 
 console.log(`\nOnboarding verification: ${passed} passed, ${failed} failed`);
 if (failed) {
