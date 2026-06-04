@@ -11,6 +11,7 @@ import {
   ONBOARDING_QUESTIONS,
   buildOnboardingCommandPlan,
   deriveDecisionSeed,
+  forceCreatePeople,
   hasUsableRoom,
   shouldAutoStartOnboarding,
 } from "../lib/onboarding.js";
@@ -547,7 +548,11 @@ export default function Room({ onExit, userId }) {
           messages: [],
         });
         if (resp.kind !== "update") throw new Error(resp.body || "The mapping pass failed.");
-        applyRoomUpdate(resp.update, item.command, { roomId, decisionId });
+        // The @create pass must never silently drop a named person, or the room
+        // can land on "No participants". Force-create guarantees each extracted
+        // person is added; apply-time resolution still prevents duplicates.
+        const update = item.command === "create" ? forceCreatePeople(resp.update) : resp.update;
+        applyRoomUpdate(update, item.command, { roomId, decisionId });
       }
 
       const mappedPeople = store.getParticipants(decisionId).length;

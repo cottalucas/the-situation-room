@@ -1,9 +1,28 @@
 {
-  "version": "onboarding-v1-2026-06-04",
+  "version": "onboarding-v2-2026-06-04",
   "answers": {
     "decision": "I need to get the Q3 AI feature approved, but I want a narrower launch with clear evidence first.",
     "people": "Maya, PM for web, supports it but needs evidence. Sam, engineering director, has high power and is neutral. Dana, sales lead, is against it because she worries customers will be confused.",
     "relationships": "Maya reports to Sam. Dana has friction with Maya."
+  },
+  "messy": {
+    "decision": "I need to get the team to kill the half-built sales dashboard feature so we can refocus on onboarding, but Robert keeps pushing back.",
+    "people": "Robert adds pressure instead of shielding the team. The head of engineering and the head of UX are both on board. Susan in sales is against it.",
+    "relationships": "The head of UX defers to Robert. Susan has friction with the head of engineering.",
+    "expectedTitle": "Get the team to kill the half-built sales dashboard"
+  },
+  "dedupRoster": [
+    { "id": "p_robert", "name": "Robert", "role": "Head of Engineering" }
+  ],
+  "createMissingFlag": {
+    "summary": "Mapped the people, but one create flag was missing.",
+    "people": [
+      { "name": "Maya", "role": "PM for web", "create": true },
+      { "name": "Sam", "role": "Engineering director" },
+      { "name": "Dana", "role": "Sales lead", "create": false }
+    ],
+    "edges": [],
+    "openQuestions": []
   },
   "mockUpdates": {
     "create": {

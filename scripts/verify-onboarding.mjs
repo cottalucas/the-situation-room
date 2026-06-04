@@ -6,11 +6,15 @@ import {
   ONBOARDING_QUESTIONS,
   buildOnboardingCommandPlan,
   deriveDecisionSeed,
+  deriveDecisionTitle,
+  decisionSeedNeedsConfirm,
+  forceCreatePeople,
   hasUsableRoom,
   relationshipAnswerIsEmpty,
   shouldAutoStartOnboarding,
 } from "../src/lib/onboarding.js";
 import { normalizeRoomUpdate } from "../src/lib/room-command-contract.js";
+import { resolvePersonRef } from "../src/lib/person-ref.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = JSON.parse(fs.readFileSync(path.join(root, "evals", "fixtures", "onboarding.json"), "utf8"));
@@ -70,6 +74,32 @@ check("grid output carries confidence", grid.people.every((p) => p.confidence));
 check("network output only maps stated edges", network.edges.length <= 2);
 check("network output includes reporting line", network.edges.some((e) => e.from === "Maya" && e.to === "Sam" && e.type === "defers"));
 check("network output includes stated friction", network.edges.some((e) => e.from === "Dana" && e.to === "Maya" && e.type === "conflict"));
+
+console.log("\n[5] Phase A: extraction quality");
+// Room name: a short human title, never the raw pasted paragraph or a "room" suffix.
+const messyTitle = deriveDecisionTitle(fixture.messy.decision);
+check("messy decision yields a short title", messyTitle.length > 0 && messyTitle.length <= 56);
+check("title is not the raw paragraph", messyTitle !== fixture.messy.decision && messyTitle.length < fixture.messy.decision.length);
+check("title strips lead-in filler", !/^i need to/i.test(messyTitle) && !/^we need to/i.test(messyTitle));
+check("room name does not carry a 'room' suffix word", !/ room$/i.test(deriveDecisionSeed(fixture.messy.decision).roomName));
+check("derived title matches the golden", messyTitle === fixture.messy.expectedTitle);
+// Naming confirm: a vague one-word decision asks for a name; a clear one does not.
+check("vague decision flags a naming confirm", decisionSeedNeedsConfirm("launch") === true);
+check("clear decision does not force a confirm", decisionSeedNeedsConfirm(fixture.answers.decision) === false);
+// A user-typed name override wins over the derived title.
+check("name override wins", deriveDecisionSeed(fixture.messy.decision, "Kill the dashboard?").title === "Kill the dashboard?");
+
+// Participants: every extracted person from @create is created (force-create),
+// so building never lands on "No participants" when a create flag is missing.
+const forced = forceCreatePeople(normalizeRoomUpdate(fixture.createMissingFlag));
+check("force-create flags every named person", forced.people.every((p) => p.create === true) && forced.people.length === 3);
+
+// Dedup: a role-only mention resolves to the existing roster person instead of
+// creating a phantom duplicate (reuses findPersonRef / resolvePersonRef).
+const roster = fixture.dedupRoster;
+check("role mention resolves to existing person", resolvePersonRef("the head of engineering", [roster])?.id === "p_robert");
+check("bare role label resolves to existing person", resolvePersonRef("Head of Engineering", [roster])?.id === "p_robert");
+check("unrelated name does not resolve to a duplicate", resolvePersonRef("Susan", [roster]) === null);
 
 console.log(`\nOnboarding verification: ${passed} passed, ${failed} failed`);
 if (failed) {
