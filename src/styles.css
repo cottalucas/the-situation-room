@@ -254,6 +254,7 @@ code {
 .tab-hint { font-size: 11.5px; color: var(--ink-faint); }
 .tab-active { border-bottom-color: var(--ink); }
 .tab-active .tab-label { color: var(--ink); }
+.tab-mobile-only { display: none; }
 
 .tab-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
@@ -762,7 +763,7 @@ code {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-float);
-  z-index: 40;
+  z-index: 100;
   display: flex;
   flex-direction: column;
   max-height: 82vh;
@@ -1106,7 +1107,7 @@ code {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 120;
   background: rgba(26, 25, 22, 0.28);
   display: flex;
   align-items: center;
@@ -1252,6 +1253,7 @@ code {
 /* collapsed rail: workspace + chat take the room */
 .app-rail-collapsed .body { grid-template-columns: 36px minmax(0, 1fr) clamp(380px, 29vw, 460px); }
 .rail-collapsed { align-items: center; padding-top: 4px; }
+.rail-mobile-forced { display: none; }
 .rail-expand, .rail-collapse {
   background: var(--bg-raised);
   border: 1px solid var(--line-strong);
@@ -1714,18 +1716,55 @@ code {
 
 @media (max-width: 760px) {
   .app {
-    height: auto;
-    min-height: 100%;
-    padding: 0 18px calc(84px + env(safe-area-inset-bottom));
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 18px;
+  }
+  .header {
+    padding: 18px 0 14px;
+    flex-shrink: 0;
   }
   .brand {
     font-size: 30px;
   }
   .body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s4);
+    min-height: 0;
+    padding: 16px 0 calc(76px + env(safe-area-inset-bottom));
+    overflow: hidden;
+  }
+  .app-rail-collapsed .body {
     grid-template-columns: minmax(0, 1fr);
   }
+  .rail-desktop-only {
+    display: none;
+  }
   .rail {
-    max-height: 36vh;
+    flex: 0 0 auto;
+    max-height: 30dvh;
+    overflow-y: auto;
+    padding: 0 2px var(--s3) 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .rail-mobile-forced {
+    display: flex;
+  }
+  .rail-top {
+    padding: 0 8px 8px;
+  }
+  .rail-collapse {
+    display: none;
+  }
+  .overflow-trigger {
+    opacity: 1;
+  }
+  .workspace {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
   .tabs {
     position: fixed;
@@ -1734,7 +1773,7 @@ code {
     bottom: 0;
     z-index: 80;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 4px;
     margin: 0;
     padding: 8px max(12px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-right));
@@ -1742,6 +1781,9 @@ code {
     border-top: 1px solid var(--line-strong);
     border-bottom: none;
     box-shadow: 0 -10px 30px -22px rgba(26, 25, 22, 0.4);
+  }
+  .tab-mobile-only {
+    display: flex;
   }
   .tab {
     align-items: center;
@@ -1769,8 +1811,57 @@ code {
     border-bottom-color: transparent;
   }
   .tab-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     padding-right: 0;
     padding-bottom: var(--s3);
+  }
+  .chat {
+    display: none;
+  }
+  .app-tab-chat .rail {
+    display: none;
+  }
+  .app-tab-chat .workspace {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .app-tab-chat .tab-body {
+    display: none;
+  }
+  .app-tab-chat .chat {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+  .app-tab-chat .chat-thread {
+    min-height: 0;
+    padding: 4px 0 var(--s4);
+  }
+  .app-tab-chat .chat-input-area {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: var(--s3);
+  }
+  .app-tab-chat .prompt-chips {
+    flex-wrap: nowrap;
+    max-height: none;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .app-tab-chat .prompt-chip {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .app-tab-chat .chat-hint {
+    display: none;
   }
   .people-tab {
     padding-bottom: var(--s3);

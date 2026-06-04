@@ -5,6 +5,24 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Mobile shell and Safari sign-in hardened
+
+Changed the mobile app shell from a stacked desktop layout into a fixed-height
+mobile workflow. People, Energy, Network, and Chat now appear as bottom app tabs.
+Chat is a first-class tab, not a card below the lenses; when selected, it owns
+the remaining viewport with a scrolling thread and bottom input. The rooms rail
+stays vertical on mobile and ignores a saved desktop collapse state, so mobile
+users see rooms and decisions rather than a single-button left rail. The rail is
+compact and scrolls inside the viewport. Modals and the person profile now layer
+above the bottom tabs.
+
+Hardened Auth for phone Safari. Google sign-in uses redirect on iOS Safari and
+falls back to redirect when a popup is blocked. If browser-local persistence is
+not available, Auth tries session persistence and then in-memory persistence so
+the current session can still sign in. The redirect result is consumed in
+`useAuth()` and continues through the existing user-document setup path. No
+data-model change.
+
 ## 2026-06-04 - Framework popovers finished and mobile tabs pinned
 
 Completed the person-card framework readability pass and the small mobile lens

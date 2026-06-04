@@ -9,6 +9,18 @@ function authErrorMessage(err, fallback) {
   if (err?.code === "auth/unauthorized-domain") {
     return "This local URL is not authorized for sign in. Use localhost, or add this domain in Firebase Auth settings.";
   }
+  if (err?.code === "auth/operation-not-allowed") {
+    return "This sign-in method is not enabled for this Firebase project yet.";
+  }
+  if (err?.code === "auth/popup-blocked" || err?.code === "auth/operation-not-supported-in-this-environment") {
+    return "Your browser blocked the popup. Try Continue with Google again and I will use a full-page sign-in.";
+  }
+  if (err?.code === "auth/web-storage-unsupported") {
+    return "This browser is blocking sign-in storage. Turn off private browsing or allow website storage for this site.";
+  }
+  if (err?.code === "permission-denied") {
+    return "Sign-in worked, but the database rejected the first setup write. Try again after refreshing.";
+  }
   return err.message?.replace("Firebase: ", "") || fallback;
 }
 

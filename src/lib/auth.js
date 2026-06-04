@@ -8,11 +8,15 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   updateProfile,
   onAuthStateChanged,
   signOut,
   browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
   setPersistence,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -21,6 +25,12 @@ import { setUserKey, clearUserKey } from "./crypto.js";
 
 let persistencePromise = null;
 const ONBOARDING_PENDING_PREFIX = "tsr:onboarding:pending:";
+const POPUP_FALLBACK_CODES = new Set([
+  "auth/popup-blocked",
+  "auth/popup-closed-by-user",
+  "auth/cancelled-popup-request",
+  "auth/operation-not-supported-in-this-environment",
+]);
 
 function onboardingKey(uid) {
   return `${ONBOARDING_PENDING_PREFIX}${uid}`;
@@ -41,8 +51,20 @@ export function consumeOnboardingPending(uid) {
 
 function ensureAuthPersistence() {
   if (!isConfigured || !auth) return Promise.resolve();
-  if (!persistencePromise) persistencePromise = setPersistence(auth, browserLocalPersistence);
+  if (!persistencePromise) {
+    persistencePromise = setPersistence(auth, browserLocalPersistence).catch(() =>
+      setPersistence(auth, browserSessionPersistence).catch(() => setPersistence(auth, inMemoryPersistence))
+    );
+  }
   return persistencePromise;
+}
+
+function prefersRedirectSignIn() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isiOS = /iPad|iPhone|iPod/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua);
+  return isiOS || (isSafari && navigator.maxTouchPoints > 1);
 }
 
 /** Watch auth state. Sets the encryption key on sign in. Returns unsubscribe. */
@@ -78,6 +100,22 @@ async function ensureUserDoc(user, name) {
   return isNew;
 }
 
+async function finishGoogleCredential(cred) {
+  if (!cred?.user) return null;
+  setUserKey(cred.user.uid);
+  const isNew = await ensureUserDoc(cred.user);
+  if (isNew) markOnboardingPending(cred.user.uid);
+  trackEvent("login", { method: "google" });
+  return cred.user;
+}
+
+export async function completeRedirectSignIn() {
+  if (!isConfigured || !auth) return null;
+  await ensureAuthPersistence();
+  const cred = await getRedirectResult(auth);
+  return finishGoogleCredential(cred);
+}
+
 export async function registerEmail({ name, email, password }) {
   await ensureAuthPersistence();
   const cred = await createUserWithEmailAndPassword(auth, email, password);
@@ -100,12 +138,21 @@ export async function signInEmail({ email, password }) {
 
 export async function signInGoogle() {
   await ensureAuthPersistence();
-  const cred = await signInWithPopup(auth, new GoogleAuthProvider());
-  setUserKey(cred.user.uid);
-  const isNew = await ensureUserDoc(cred.user);
-  if (isNew) markOnboardingPending(cred.user.uid);
-  trackEvent("login", { method: "google" });
-  return cred.user;
+  const provider = new GoogleAuthProvider();
+  if (prefersRedirectSignIn()) {
+    await signInWithRedirect(auth, provider);
+    return null;
+  }
+  try {
+    const cred = await signInWithPopup(auth, provider);
+    return finishGoogleCredential(cred);
+  } catch (err) {
+    if (POPUP_FALLBACK_CODES.has(err?.code)) {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function signOutUser() {

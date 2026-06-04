@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { onAuthChange } from "../lib/auth.js";
+import { onAuthChange, completeRedirectSignIn } from "../lib/auth.js";
 import { isConfigured, localPreviewEnabled } from "../lib/firebase.js";
 
 /**
@@ -14,6 +14,7 @@ export function useAuth() {
   const [status, setStatus] = useState(isConfigured ? "loading" : "out");
 
   useEffect(() => {
+    completeRedirectSignIn().catch(() => {});
     const unsub = onAuthChange((u) => {
       setUser(u);
       setStatus(u ? "in" : "out");

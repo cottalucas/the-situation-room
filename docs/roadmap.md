@@ -21,8 +21,9 @@
   placements.
 - Three lenses: People, Energy (the draggable power/interest map, command
   @energy with @grid as a hidden alias), Network (typed edges, sequence path).
-- Mobile lens navigation pins People, Energy, and Network to the bottom of the
-  viewport so the three working surfaces stay reachable like app tabs.
+- Mobile navigation pins People, Energy, Network, and Chat to the bottom of the
+  viewport. Rooms and decisions stack vertically above the active work surface,
+  while Chat runs as its own fixed-height conversation tab.
 - Floating person profile, compact from grid and network, full from People.
 - Visual first frameworks (SCARF, Thomas Kilmann, Cialdini, Fisher and Ury).
 - Command-first chat. Send is enabled only for `@` commands while open play

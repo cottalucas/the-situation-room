@@ -105,10 +105,13 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   these?" disclosure above the rows explains the set in three short lines: they
   are influence and negotiation lenses on observable behavior and stated
   positions, not personality typing. Static copy only, no model calls.
-- On mobile, the People, Energy, and Network lens tabs pin to the bottom of the
-  viewport like app navigation. Keep the labels short, hide the hint copy, and
-  leave enough bottom padding that tab content and chat controls do not sit under
-  the bar.
+- On mobile, People, Energy, Network, and Chat pin to the bottom of the viewport
+  like app navigation. Keep labels short and hide hint copy. The rooms rail
+  stacks vertically above the active lens instead of becoming a left rail sliver;
+  a saved desktop collapse preference must not strand mobile users on a single
+  arrow. Chat is its own tab and owns the remaining viewport like a dedicated
+  messaging surface: the thread scrolls, the input stays at the bottom of that
+  surface, and the bottom tab bar never covers it.
 
 ## Tooling
 

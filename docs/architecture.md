@@ -113,6 +113,13 @@ stays signed in across reloads on the same origin. Local development should use
 auth storage are origin-specific. `src/main.jsx` redirects loopback IP visits
 to the matching `localhost` URL before the app renders.
 
+Safari and other storage-restricted browsers get a softer path. If browser-local
+persistence is blocked, Auth tries session persistence and then in-memory
+persistence so sign-in can still complete for the current session. Google
+sign-in uses a full-page redirect on iOS Safari and falls back to redirect when
+popup sign-in is blocked, then `useAuth()` consumes the redirect result on
+return and creates the user document through the same `ensureUserDoc` path.
+
 Optional App Check is enabled when `VITE_FIREBASE_APPCHECK_SITE_KEY` is set.
 Use Firebase Console to enforce App Check for Firestore after deployment tests
 pass.

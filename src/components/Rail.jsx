@@ -25,21 +25,11 @@ export function Rail({
 }) {
   const [archiveOpen, setArchiveOpen] = useState(false);
 
-  if (collapsed) {
-    return (
-      <nav className="rail rail-collapsed">
-        <button className="rail-expand" onClick={onToggleCollapse} title="Expand navigation">
-          ›
-        </button>
-      </nav>
-    );
-  }
-
   const active = decisions.filter((d) => d.status === "active");
   const archived = decisions.filter((d) => d.status === "archived");
 
-  return (
-    <nav className="rail">
+  const expandedRail = (className = "rail") => (
+    <nav className={className}>
       <div className="rail-top">
         <span className="rail-head-title">Rooms</span>
         <button className="rail-collapse" onClick={onToggleCollapse} title="Collapse navigation">
@@ -129,4 +119,19 @@ export function Rail({
       </button>
     </nav>
   );
+
+  if (collapsed) {
+    return (
+      <>
+        <nav className="rail rail-collapsed rail-desktop-only">
+          <button className="rail-expand" onClick={onToggleCollapse} title="Expand navigation">
+            ›
+          </button>
+        </nav>
+        {expandedRail("rail rail-mobile-forced")}
+      </>
+    );
+  }
+
+  return expandedRail();
 }

@@ -50,6 +50,7 @@ const TABS = [
   { id: "people", label: "People", hint: "Who you are dealing with" },
   { id: "grid", label: "Energy", hint: "Who to spend energy on" },
   { id: "network", label: "Network", hint: "Who moves whom" },
+  { id: "chat", label: "Chat", hint: "Ask the room", mobileOnly: true },
 ];
 
 function gridValueIsExtreme(value) {
@@ -247,6 +248,21 @@ export default function Room({ onExit, userId }) {
     if (!userId) return;
     setPendingOnboarding(consumeOnboardingPending(userId));
   }, [userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia("(max-width: 760px)");
+    const keepDesktopOnLens = () => {
+      if (!mq.matches && activeTab === "chat") setActiveTab("people");
+    };
+    keepDesktopOnLens();
+    if (mq.addEventListener) {
+      mq.addEventListener("change", keepDesktopOnLens);
+      return () => mq.removeEventListener("change", keepDesktopOnLens);
+    }
+    mq.addListener?.(keepDesktopOnLens);
+    return () => mq.removeListener?.(keepDesktopOnLens);
+  }, [activeTab]);
 
   useEffect(() => {
     if (
@@ -898,7 +914,7 @@ export default function Room({ onExit, userId }) {
   const modalPerson = modal?.id ? store.getPerson(modal.id) : null;
 
   return (
-    <div className={`app ${collapsed ? "app-rail-collapsed" : ""}`}>
+    <div className={`app ${collapsed ? "app-rail-collapsed" : ""} app-tab-${activeTab}`}>
       <header className="header">
         <div className="brand-lockup" aria-label="The Situation Room">
           <span className="brand">The Situation Room</span>
@@ -998,7 +1014,11 @@ export default function Room({ onExit, userId }) {
             <>
               <div className="tabs">
                 {TABS.map((t) => (
-                  <button key={t.id} className={`tab ${activeTab === t.id ? "tab-active" : ""}`} onClick={() => setActiveTab(t.id)}>
+                  <button
+                    key={t.id}
+                    className={`tab ${activeTab === t.id ? "tab-active" : ""} ${t.mobileOnly ? "tab-mobile-only" : ""}`}
+                    onClick={() => setActiveTab(t.id)}
+                  >
                     <span className="tab-label">{t.label}</span>
                     <span className="tab-hint">{t.hint}</span>
                   </button>
