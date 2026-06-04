@@ -623,6 +623,43 @@
       }
     },
     {
+      "id": "strategist-auto-read",
+      "kind": "strategist",
+      "tags": ["strategist", "auto_read", "grounding"],
+      "input": {
+        "question": "What is the single most important thing I am missing in this room, and who should I move first?",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "q3", "title": "Q3 AI feature", "context": { "deciding": "Whether to build the AI feature", "goal": "Ship the right work", "constraint": "Executive pressure, thin evidence" } },
+          "people": [
+            { "id": "alberto", "name": "Alberto", "role": "CEO", "currentPosition": "for", "currentPlacement": { "power": 92, "interest": 30 }, "goal": "", "context": "", "recentNotes": ["Wants the AI feature for visibility."] },
+            { "id": "rouven", "name": "Rouven", "role": "CPO", "currentPosition": "against", "currentPlacement": { "power": 88, "interest": 85 }, "goal": "", "context": "", "recentNotes": ["Skeptical the evidence supports it."] },
+            { "id": "chad", "name": "Chad", "role": "Head of Product", "currentPosition": "neutral", "currentPlacement": { "power": 70, "interest": 80 }, "goal": "", "context": "", "recentNotes": [] },
+            { "id": "john", "name": "John", "role": "Head of Sales", "currentPosition": "unknown", "currentPlacement": { "power": 65, "interest": 35 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": [
+            { "from": "chad", "to": "rouven", "type": "defers" },
+            { "from": "rouven", "to": "alberto", "type": "conflict" }
+          ]
+        }
+      },
+      "golden": {
+        "answer": "Your two highest-power people, Alberto and Rouven, are pulling in opposite directions, and Chad defers to Rouven, so the room is effectively stuck behind that conflict. Resolve the Alberto-Rouven split before counting anyone else. Move Rouven first with the evidence he is missing.",
+        "moves": [
+          "Meet Rouven with the evidence gap he keeps raising before he hardens further.",
+          "Use Alberto's visibility goal to frame a version Rouven can accept.",
+          "Bring Chad in once Rouven moves, since Chad follows his lead."
+        ],
+        "cites": ["alberto", "rouven", "chad"],
+        "grounded": true
+      },
+      "expect": {
+        "requireCites": true,
+        "requireMoves": true,
+        "requiredPeople": ["rouven", "alberto"]
+      }
+    },
+    {
       "id": "command-map-calibrated-mixed",
       "kind": "command",
       "tags": ["map", "calibration", "inference_discipline", "mixed_input"],

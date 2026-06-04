@@ -9,14 +9,18 @@ separately so each is revertable.
 
 ## Environment facts (this run)
 - Node v18.20.6, Firebase CLI 13.35.1, logged in as the project owner.
-- **No Java runtime** -> the Firestore emulator cannot start here.
-- `.env.local` has **empty** Firebase web config and an **empty**
-  `ANTHROPIC_API_KEY` -> no live Firestore and no live Anthropic calls here.
+- **No Java runtime** -> the Firestore emulator cannot start here. The
+  transport-level persistence test is written and runnable, but BLOCKED here.
+- `.env.local` IS fully populated: real Firebase web config (project
+  `the-situation-room-708c6`), `VITE_ENABLE_LIVE_LLM=true`, a real
+  `ANTHROPIC_API_KEY`, and `ANTHROPIC_MODEL=claude-haiku-4-5-20251001`. (An early
+  check in this run misread it as empty because it only listed key names; the
+  values are present.) So **live Anthropic calls and deploy are possible**; the
+  key stays gitignored and is never printed or committed.
 - Node has Web Crypto, so the encryption layer is fully testable in Node.
 
-These bound what could be executed live (see Phase A transport, Phase D, and the
-deploy step in FINAL). Nothing was faked: every result below is either a real run
-or explicitly marked BLOCKED with the exact blocker and a runnable command.
+Nothing was faked: every result below is either a real run or explicitly marked
+BLOCKED with the exact blocker and a runnable command.
 
 ---
 
@@ -87,3 +91,54 @@ level and scripted at the transport level.
 Haiku-only untouched, no traces written, encryption verified intact (it is the
 thing under test), rules unchanged. Build OK, offline evals 15/15,
 `verify:persistence` 24/24.
+
+---
+
+## PHASE B — Auto-surface the strategist
+
+Timestamp: 2026-06-04
+
+Made the strategic read the centerpiece without adding a lens or a new model path.
+
+### 1. Discoverability
+Added two first-class `@ask` chips to the always-present prompt chip row
+(`EXAMPLE_PROMPTS`): "@ask who should I talk to first?" and "@ask what am I
+missing?", alongside the existing command chips. `@ask` is no longer modal-only.
+
+### 2. The Read (Auto-Read card)
+- New `src/components/TheRead.jsx`, rendered at the top of the room above the lens
+  tabs, reusing card styling.
+- Eligibility: shows only when the decision has >= 4 participants AND >= 2 edges
+  (`autoReadEligible`). Below threshold it shows the calm prompt "Map a few more
+  people and relationships and I'll find the play." — never a blank card.
+- It calls the EXISTING strategist endpoint (`askStrategist`) with a fixed
+  internal question ("the single most important thing I am missing... who to move
+  first"). No new model path; the Phase-7 grounding, cite-to-room, and
+  banned-trait guard apply unchanged.
+- Output: one-sentence read + up to 3 moves + "Grounded in <names>" where each
+  name is a clickable chip that opens the person's compact profile.
+- Caching / cost: the result is cached by `autoReadSignature`, which is built from
+  grid placements (incl. confidence), positions, and edges. A model call happens
+  only when those strategic inputs change; title or note edits do not bust it, and
+  there is no call on every render. On error or with live LLM off, the card stays
+  quiet rather than showing a broken state.
+
+### 3. Instrumentation
+Through the existing analytics path: `read_generated` (when a fetch starts),
+`read_shown` (when a ready read renders), `read_chip_clicked {personId}` (chip
+click).
+
+### Offline evals
+- `strategist-auto-read` fixture: the fixed Auto-Read question over a 4-person /
+  2-edge room must cite only room people, produce moves, and surface the two
+  highest-power people. Added a `requireMoves` check to the strategist scorer.
+  Offline suite now 16/16.
+- `npm run verify:autoread` (`scripts/verify-phase-b.mjs`): 10/10 covering the
+  >=4/>=2 threshold (below -> empty state) and the cache-bust signature (busts on
+  placement/position/edge/confidence change, stable on title change).
+
+### Verification note
+Build clean; offline + threshold tests pass. A signed-in browser smoke of the
+live card was not run here because the app gates on real Firebase Auth (no
+interactive sign-in available in this environment); the live strategist path
+itself is exercised in Phase D.

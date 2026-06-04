@@ -1,8 +1,13 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
 import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
 import { resolvePersonRef } from "../lib/person-ref.js";
+import { autoReadEligible, autoReadSignature, AUTO_READ_QUESTION } from "../lib/auto-read.js";
+
+import { TheRead } from "../components/TheRead.jsx";
+
+const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
@@ -224,6 +229,62 @@ export default function Room({ onExit }) {
   /* profile */
   const openCompact = useCallback((id) => setProfile({ personId: id, variant: "compact" }), []);
   const openFull = useCallback((id) => setProfile({ personId: id, variant: "full" }), []);
+
+  /* Auto-Read: the always-on strategic read at the top of the room. Reuses the
+     existing strategist endpoint, cached by a grid/positions/edges signature so a
+     model call happens only when the strategic inputs change. */
+  const readEdges = activeDecisionId ? store.getEdges(activeDecisionId) : [];
+  const readEligible = autoReadEligible(participants.length, readEdges.length);
+  const readSignature = autoReadSignature(decision, readEdges);
+  const readCacheRef = useRef({});
+  const [autoRead, setAutoRead] = useState({ key: null, status: "idle", result: null });
+
+  const openReadChip = useCallback(
+    (id) => {
+      trackEvent("read_chip_clicked", { personId: id });
+      openCompact(id);
+    },
+    [openCompact]
+  );
+
+  useEffect(() => {
+    if (!decision || !readEligible || !LIVE_LLM) return;
+    const key = readSignature;
+    const cached = readCacheRef.current[key];
+    if (cached) {
+      setAutoRead({ key, status: "ready", result: cached });
+      return;
+    }
+    let cancelled = false;
+    setAutoRead({ key, status: "loading", result: null });
+    trackEvent("read_generated");
+    (async () => {
+      const resp = await askStrategist({
+        question: AUTO_READ_QUESTION,
+        room,
+        decision,
+        participants,
+        edges: readEdges,
+        messages: [],
+      });
+      if (cancelled) return;
+      if (resp.kind === "coach") {
+        readCacheRef.current[key] = resp.answer;
+        setAutoRead({ key, status: "ready", result: resp.answer });
+      } else {
+        setAutoRead({ key, status: "error", result: null });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readSignature, readEligible, decision?.id]);
+
+  useEffect(() => {
+    if (autoRead.status === "ready" && autoRead.result) trackEvent("read_shown");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRead.status, autoRead.key]);
 
   const findPersonRef = useCallback(
     (ref, currentParticipants = participants) => {
@@ -542,6 +603,13 @@ export default function Room({ onExit }) {
             </div>
           ) : (
             <>
+              <TheRead
+                eligible={readEligible}
+                status={autoRead.key === readSignature ? autoRead.status : "idle"}
+                result={autoRead.key === readSignature ? autoRead.result : null}
+                participants={participants}
+                onOpenProfile={openReadChip}
+              />
               <div className="tabs">
                 {TABS.map((t) => (
                   <button key={t.id} className={`tab ${activeTab === t.id ? "tab-active" : ""}`} onClick={() => setActiveTab(t.id)}>

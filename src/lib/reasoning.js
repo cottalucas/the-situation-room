@@ -130,6 +130,8 @@ export function getResponse(question, participants, context) {
 }
 
 export const EXAMPLE_PROMPTS = [
+  "@ask who should I talk to first?",
+  "@ask what am I missing?",
   "@network who moves whom",
   "@energy power and interest",
   "@note Chad protects PMs",

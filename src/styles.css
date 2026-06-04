@@ -771,6 +771,65 @@ code {
   color: var(--ink-faint);
 }
 .chat-play { border: 1px solid var(--line); background: var(--bg-raised); box-shadow: var(--shadow); padding: 18px 20px 20px; }
+
+/* The Read: always-on strategic read at the top of the room */
+.the-read {
+  border: 1px solid var(--line-strong);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: var(--s4);
+}
+.the-read-empty {
+  border-style: dashed;
+  box-shadow: none;
+  background: transparent;
+}
+.the-read-answer {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink);
+  margin-top: var(--s2);
+}
+.the-read-sub {
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin-top: var(--s2);
+}
+.the-read-moves {
+  margin: var(--s3) 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: decimal;
+}
+.the-read-moves li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.the-read-cites {
+  margin-top: var(--s3);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+.read-chip {
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin: 0 2px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.read-chip:hover {
+  border-color: var(--ink-faint);
+}
 .is-latest.chat-play { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink) 8%, transparent), var(--shadow); }
 .is-latest.chat-simple { border-color: var(--line-strong); }
 .msg-label { display: block; margin-bottom: var(--s2); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); }

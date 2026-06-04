@@ -5,6 +5,20 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 2 Phase B: auto-surfaced the strategist
+
+Made the strategic read the centerpiece without a new lens or model path. Added
+two first-class `@ask` prompt chips. Added "The Read" card (`TheRead.jsx`) at the
+top of the room: shows when a decision has >= 4 participants and >= 2 edges, calls
+the existing strategist endpoint with a fixed internal question, and renders a
+one-sentence read, up to three moves, and clickable "Grounded in" person chips.
+Cached by `autoReadSignature` (grid/positions/edges/confidence) so a model call
+fires only when the strategic inputs change; below threshold it shows a calm
+prompt, never a blank. Reuses the Phase-7 grounding and banned-trait guard.
+Analytics: `read_generated`, `read_shown`, `read_chip_clicked`. Offline suite
+16/16 (added `strategist-auto-read` + `requireMoves`); `npm run verify:autoread`
+10/10 for the threshold and cache-bust. Docs/architecture updated next phase.
+
 ## 2026-06-04 - Pass 2 Phase A: persistence + anaphora verified
 
 Verified the prior pass's persistent chat, context window, and `@ask` before

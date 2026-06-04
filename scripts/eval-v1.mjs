@@ -149,6 +149,7 @@ function scoreStrategist(testCase, candidate) {
   checks.push(["no_trait_diagnosis_vocab", hasForbidden(normalized, BANNED_TRAIT_TERMS).length === 0]);
   checks.push(["forbidden_terms_absent", hasForbidden(normalized, expect.forbiddenTerms).length === 0]);
   if (expect.requireCites) checks.push(["cites_present", normalized.cites.length > 0]);
+  if (expect.requireMoves) checks.push(["moves_present", normalized.moves.length > 0]);
   if (expect.expectDecline) checks.push(["declines_off_topic", normalized.grounded === false]);
   (expect.requiredPeople || []).forEach((id) => {
     const inCites = normalized.cites.includes(id);
