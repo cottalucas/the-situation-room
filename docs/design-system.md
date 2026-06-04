@@ -95,8 +95,15 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   one line teaser. Full text expands on click. All four are always present, even
   before there is a read, so the user can see what is coming; an unmapped
   framework shows a muted "Not mapped" state and, when expanded, a concise
-  "what it is and how to use it" note. Each row carries a small info tooltip with
-  the same one line explanation.
+  "what it is and how to use it" note. Each row carries a tappable "i" that opens
+  one plain-language sentence in a persistent popover: what the lens reads about
+  the person and, for a mapped value, what it means for action (for example
+  "Competing style. Expect them to push for their position, so come with leverage,
+  not just rapport."). The popover uses ink on the overlay surface for legible
+  contrast and is bounded inside the row so it never overflows on mobile. One
+  "What are these?" disclosure above the rows explains the set in three short
+  lines: they are influence and negotiation lenses on observable behavior and
+  stated positions, not personality typing. Static copy only, no model calls.
 
 ## Tooling
 

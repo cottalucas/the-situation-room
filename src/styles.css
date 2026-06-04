@@ -845,12 +845,28 @@ code {
 /* visual frameworks */
 .vfw-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .vfw { border-bottom: 1px solid var(--line); }
-.vfw-head { display: flex; align-items: center; gap: var(--s3); width: 100%; background: none; border: none; padding: 12px 2px; text-align: left; }
+.vfw-row { position: relative; display: flex; align-items: center; gap: var(--s3); padding: 12px 2px; }
+.vfw-label { flex-shrink: 0; width: 108px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+.vfw-head { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s3); background: none; border: none; padding: 0; text-align: left; cursor: pointer; }
 .vfw-head:hover { opacity: 0.85; }
-.vfw-label { flex-shrink: 0; width: 116px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
 .vfw-tag { flex: 1; min-width: 0; display: flex; align-items: center; }
 .vfw-chevron { flex-shrink: 0; font-size: 15px; color: var(--ink-faint); }
 .vfw-body { margin: 0 2px 14px; font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); }
+
+/* "What are these?" disclosure: one short, plain explanation of the lens set. */
+.fw-top { display: flex; justify-content: flex-end; padding: 8px 2px 2px; }
+.fw-whatlink {
+  background: none; border: none; padding: 3px 2px; cursor: pointer;
+  font-size: 12px; color: var(--ink-soft);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.fw-whatlink:hover, .fw-whatlink:focus-visible { color: var(--ink); }
+.fw-what {
+  margin: 2px 2px 12px; padding: 12px 14px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+}
+.fw-what p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
+.fw-what p + p { margin-top: 6px; }
 
 .scarf-dims { display: flex; gap: 5px; }
 .scarf-pill { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
@@ -860,51 +876,48 @@ code {
 .cialdini-chip { font-size: 11.5px; font-weight: 500; color: var(--ink); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px 11px; }
 .fu-teaser { font-size: 13px; color: var(--ink-soft); font-style: italic; }
 
-/* Framework info tooltip + empty states (frameworks are always present) */
-.vfw-label { display: inline-flex; align-items: center; gap: 6px; }
+/* Framework info: a tappable "i" that opens one legible, persistent sentence. */
 .vfw-info {
-  position: relative;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1px solid var(--line-strong);
-  color: var(--ink-faint);
-  font-size: 9px;
+  background: var(--bg);
+  color: var(--ink-soft);
+  font-size: 10px;
   font-weight: 700;
   font-style: normal;
+  line-height: 1;
   letter-spacing: 0;
   text-transform: none;
   cursor: pointer;
 }
-.vfw-info:hover { color: var(--ink); border-color: var(--ink-faint); }
-/* Small concise popover, shown on hover or keyboard focus. */
-.vfw-tip {
-  display: none;
+.vfw-info:hover, .vfw-info:focus-visible { color: var(--ink); border-color: var(--ink-faint); }
+.vfw-info-on { background: var(--ink); color: var(--bg-raised); border-color: var(--ink); }
+/* Persistent popover, bounded inside the row so it never overflows the card. */
+.vfw-pop {
   position: absolute;
-  top: 22px;
-  left: -6px;
-  width: 220px;
-  padding: 9px 11px;
+  top: calc(100% - 2px);
+  left: 4px;
+  right: 4px;
+  z-index: 60;
+  padding: 10px 12px;
   background: var(--bg-overlay);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-float);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 400;
   font-style: normal;
-  line-height: 1.45;
+  line-height: 1.5;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--ink-soft);
-  white-space: normal;
-  z-index: 50;
+  color: var(--ink);
 }
-.vfw-info:hover .vfw-tip,
-.vfw-info:focus .vfw-tip,
-.vfw-info:focus-within .vfw-tip { display: block; }
 .vfw-empty .vfw-tag { opacity: 0.9; }
 .tki-empty { background: var(--line-strong) !important; color: var(--ink-faint) !important; }
 .cialdini-empty, .fu-empty { color: var(--ink-faint); font-style: normal; }
@@ -1745,4 +1758,7 @@ code {
   .landing-title {
     font-size: 56px;
   }
+  /* Keep the floating profile, and the framework popover inside it, on-screen. */
+  .profile-compact { width: min(384px, calc(100vw - 24px)); }
+  .profile-full { width: min(460px, calc(100vw - 24px)); }
 }

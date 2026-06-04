@@ -5,6 +5,27 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Frameworks made legible on the person card
+
+The four framework lenses (SCARF, Thomas-Kilmann, Cialdini, Fisher-Ury) showed as
+acronyms with a faint, hover-only tooltip that overlapped the labels and was
+unreadable on mobile (and was invalid markup: an interactive span nested in the
+row button). Replaced it with a real tappable "i" button per row that opens one
+plain-language sentence in a persistent popover (click to open, dismiss on
+outside click or Escape, one open at a time). The sentence says what the lens
+reads about the person and why it helps move them; for Thomas-Kilmann the
+popover swaps to the mapped style's action line ("Competing style. Expect them to
+push for their position, so come with leverage, not just rapport."). The value
+chips are unchanged. Added one "What are these?" disclosure above the rows with
+three short lines framing the set as influence and negotiation lenses on
+observable behavior and stated positions, not personality typing. The popover is
+ink on the overlay surface (legible) and bounded inside the row (left/right 4px)
+so it cannot overflow; a mobile cap keeps the floating profile within a 375px
+screen. Static copy and UI only: no LLM calls, no data-model change, no
+diagnosis. Verified in local preview at desktop and 375px (popover legible and
+bounded, "What are these?" renders, zero page overflow, profile width 351px).
+Files: `FrameworkVisuals.jsx`, `styles.css`, `docs/design-system.md`.
+
 ## 2026-06-04 - Guided Setup as the winning first-run moment (Phases A to E)
 
 Overnight pass to make Guided Setup the first-run win. One commit per phase,
