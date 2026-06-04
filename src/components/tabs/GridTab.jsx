@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
 import { POSITION_META } from "../../lib/frameworks.js";
+import { placementNeedsConfirm } from "../../lib/placement.js";
 import { Chip } from "../Chip.jsx";
 
 /**
@@ -62,6 +63,7 @@ export function GridTab({ participants, decision, selectedId, onOpenProfile, onM
                 person={p}
                 position={decision.positions[p.id]}
                 selected={p.id === selectedId}
+                needsConfirm={placementNeedsConfirm(pl)}
                 pointer={makePointer(p.id)}
                 style={{
                   left: `${pl.interest}%`,

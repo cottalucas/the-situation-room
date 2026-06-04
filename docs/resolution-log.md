@@ -5,6 +5,17 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 2 Phase C: low-confidence visual honesty
+
+Persisted the interpretation-layer `confidence` onto `decision.placements[id]`
+(now `{power,interest,confidence}`) via a new pure `lib/placement.js`
+(`buildPlacement`, `placementNeedsConfirm`, default high). Additive and backward
+compatible: legacy placements read as high, no migration; a manual grid drag
+resets to high. `store.setPlacement` takes an optional confidence; `Room.jsx`
+passes the command's confidence through; Firestore round-trips it with no repo
+change. The Energy lens renders a dashed needs-confirm ring on low-confidence
+chips. `npm run verify:confidence` 9/9; offline suite 16/16.
+
 ## 2026-06-04 - Pass 2 Phase B: auto-surfaced the strategist
 
 Made the strategic read the centerpiece without a new lens or model path. Added

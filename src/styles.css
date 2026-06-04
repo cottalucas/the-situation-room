@@ -376,6 +376,18 @@ code {
 .dot-neutral { background: var(--neutral); }
 .dot-unknown { background: transparent; border: 2px dashed var(--unknown); }
 .legend-dot { position: static; border-color: var(--bg); }
+
+/* Low-confidence placement: a needs-confirm ring around the chip, lighter, dashed.
+   The product showing it is uncertain rather than faking precision. */
+.chip-needs-confirm { opacity: 0.92; }
+.chip-needs-confirm::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px dashed var(--ink-faint);
+  border-radius: inherit;
+  pointer-events: none;
+}
 .chip-step {
   position: absolute;
   top: -8px;

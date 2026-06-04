@@ -14,6 +14,7 @@
  */
 
 import { peopleBase, seedObservations, seedRooms, seedDecisions, DEFAULT_PLACEMENT } from "../data/seed.js";
+import { buildPlacement } from "./placement.js";
 import { saveCache, loadCache, clearCache } from "./cache.js";
 import { isConfigured } from "./firebase.js";
 import * as repo from "./firestore-repo.js";
@@ -422,15 +423,15 @@ export function setPosition(decisionId, personId, position) {
   commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, positions } : x)) });
   if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { positions });
 }
-export function setPlacement(decisionId, personId, power, interest) {
+export function setPlacement(decisionId, personId, power, interest, confidence) {
   const d = getDecision(decisionId);
   if (!d) return;
-  const placements = { ...d.placements, [personId]: { power, interest } };
+  const placements = { ...d.placements, [personId]: buildPlacement(power, interest, confidence) };
   commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, placements } : x)) });
   if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { placements });
 }
-export function movePerson(decisionId, personId, power, interest) {
-  setPlacement(decisionId, personId, power, interest);
+export function movePerson(decisionId, personId, power, interest, confidence) {
+  setPlacement(decisionId, personId, power, interest, confidence);
 }
 export function addParticipant(decisionId, personId) {
   const d = getDecision(decisionId);

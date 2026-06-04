@@ -358,7 +358,7 @@ export default function Room({ onExit }) {
             currentDecision = store.getDecision(decision.id);
             return;
           }
-          store.setPlacement(decision.id, id, item.power, item.interest);
+          store.setPlacement(decision.id, id, item.power, item.interest, item.confidence);
           placements += 1;
           if (item.confidence === "low" && !confirmQuestions.length) {
             confirmQuestions.push(softGridConfirm(store.getPerson(id) || item, item.power, item.interest));

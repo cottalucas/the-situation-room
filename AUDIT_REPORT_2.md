@@ -142,3 +142,42 @@ Build clean; offline + threshold tests pass. A signed-in browser smoke of the
 live card was not run here because the app gates on real Firebase Auth (no
 interactive sign-in available in this environment); the live strategist path
 itself is exercised in Phase D.
+
+---
+
+## PHASE C — Low-confidence visual honesty
+
+Timestamp: 2026-06-04
+
+Persisted the interpretation-layer `confidence` onto the stored placement and
+surfaced it on the Energy lens, so the product shows when it is uncertain instead
+of faking precision.
+
+### Changes
+- `src/lib/placement.js` (new, pure): `buildPlacement(power, interest, confidence)`
+  returns `{ power, interest, confidence }` with `normalizeConfidence` defaulting
+  anything missing or invalid to `"high"`. `placementNeedsConfirm` is true only for
+  `"low"`.
+- `store.setPlacement` now takes an optional `confidence` and stores it via
+  `buildPlacement`. `decision.placements[id]` is now
+  `{ power, interest, confidence }`. Additive and backward compatible: legacy
+  placements with no confidence read as high, so no migration. A manual grid drag
+  (no confidence passed) resets to high, which is the right "I confirmed this"
+  signal.
+- `Room.jsx` passes the command's `item.confidence` into `setPlacement`, so a
+  low-confidence read from `@energy`/`@map` is both placed and flagged.
+- `firestore-repo` needed no change: placements are stored and read as a plain
+  map, so `confidence` round-trips to Firestore automatically.
+- Energy lens: `GridTab` passes `needsConfirm` to `Chip`, which renders a dashed
+  lighter ring and a "low confidence, confirm" tooltip on low-confidence chips.
+
+### Offline check
+`npm run verify:confidence` (`scripts/verify-phase-c.mjs`): 9/9 — low confidence is
+carried into the stored shape with power/interest intact, explicit high stays
+high, missing/garbage confidence defaults to high, legacy `{power,interest}` reads
+as confident, and only `"low"` needs confirm.
+
+### Constraint check
+Haiku untouched (no model change), encryption intact (placements stay plaintext,
+as they must to render and query — the encrypted fields are unchanged), rules
+unchanged. Build clean; offline suite 16/16; A/B/C verify 24/10/9.

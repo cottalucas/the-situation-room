@@ -15,7 +15,7 @@ Decision        rooms/{roomId}/decisions/{decId}
                 decisionNotes[{text,ts}], derivedSummary,
                 deadline, status(active|archived), participantIds[],
                 externalIds[], positions{personId: stance},
-                placements{personId:{power,interest}}, createdAt
+                placements{personId:{power,interest,confidence}}, createdAt
   belongs to a room. Pulls participants from the roster, may add externals.
   Positions and placements are per decision, so a person can be against on one
   topic and for on another.
@@ -271,7 +271,11 @@ absolutes. Every grid value and edge carries a `confidence` of high, medium, or
 low. The validator rejects out-of-range values rather than clamping a stray 150
 into a fake near-max. If a changed value lands at an extreme, `Room.jsx` holds
 the placement and asks one calibration question; if a placed value has low
-confidence, it commits the value but appends one non-blocking soft confirm.
+confidence, it commits the value but appends one non-blocking soft confirm. The
+confidence is persisted on `placements[id]` (additive, defaults to high for
+existing data, no migration) and the Energy lens renders a dashed needs-confirm
+ring on low-confidence chips. `lib/placement.js` holds the pure helpers
+(`buildPlacement`, `placementNeedsConfirm`).
 
 Conversation context window. `compactRoomCommandContext` attaches `recentTurns`,
 the last eight persisted user and assistant turns (each trimmed to 240 chars),
