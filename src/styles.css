@@ -716,6 +716,7 @@ code {
 /* Framework info tooltip + empty states (frameworks are always present) */
 .vfw-label { display: inline-flex; align-items: center; gap: 6px; }
 .vfw-info {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -729,13 +730,50 @@ code {
   font-style: normal;
   letter-spacing: 0;
   text-transform: none;
-  cursor: help;
+  cursor: pointer;
 }
 .vfw-info:hover { color: var(--ink); border-color: var(--ink-faint); }
+/* Small concise popover, shown on hover or keyboard focus. */
+.vfw-tip {
+  display: none;
+  position: absolute;
+  top: 22px;
+  left: -6px;
+  width: 220px;
+  padding: 9px 11px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-float);
+  font-size: 12px;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+  white-space: normal;
+  z-index: 50;
+}
+.vfw-info:hover .vfw-tip,
+.vfw-info:focus .vfw-tip,
+.vfw-info:focus-within .vfw-tip { display: block; }
 .vfw-empty .vfw-tag { opacity: 0.9; }
 .tki-empty { background: var(--line-strong) !important; color: var(--ink-faint) !important; }
 .cialdini-empty, .fu-empty { color: var(--ink-faint); font-style: normal; }
-.fw-empty-top { font-size: 13px; color: var(--ink-soft); line-height: 1.55; margin-bottom: var(--s3); }
+.fw-empty-top {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin: var(--s2) 0 var(--s4);
+}
+.fw-empty-top code {
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
 
 .fw-fresh { padding: 14px 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
 .fw-fresh p { font-size: 14px; color: var(--ink-soft); line-height: 1.55; }

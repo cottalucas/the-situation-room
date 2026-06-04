@@ -3,15 +3,13 @@ import { SCARF_ALL, SCARF_COLORS, TKI_COLORS } from "../lib/frameworks.js";
 
 // Concise "what it is + how to use it" for each lens, shown on the info tooltip
 // and when an empty framework is expanded.
+// Very short "what it is, how to read it" per lens. Shown in the hover tooltip
+// and when an empty framework is expanded.
 const FRAMEWORK_INFO = {
-  scarf:
-    "SCARF: what threatens or rewards someone socially. Status, Certainty, Autonomy, Relatedness, Fairness. Frame your ask so they feel safe, not threatened.",
-  tki:
-    "Thomas-Kilmann: their default conflict style. Competing, Collaborating, Compromising, Avoiding, or Accommodating. Use it to predict how they negotiate.",
-  cialdini:
-    "Cialdini: which influence levers move them. Reciprocity, commitment, social proof, authority, liking, scarcity. Lead with the lever they respond to.",
-  fisherUry:
-    "Fisher & Ury: their stated position versus their real interest. Solve for the interest underneath, not the position on the surface.",
+  scarf: "What feels safe or threatening to them, across Status, Certainty, Autonomy, Relatedness, Fairness. Read which one is at stake.",
+  tki: "Their default conflict style. Read how they push or yield under pressure.",
+  cialdini: "Which influence levers move them. Read which one to lead with.",
+  fisherUry: "Their stated position versus their real interest. Read what they actually need.",
 };
 
 function Row({ label, info, hasData, children, body }) {
@@ -21,8 +19,11 @@ function Row({ label, info, hasData, children, body }) {
       <button className="vfw-head" onClick={() => setOpen((v) => !v)}>
         <span className="vfw-label">
           {label}
-          <span className="vfw-info" title={info} aria-label={info} onClick={(e) => e.stopPropagation()}>
+          <span className="vfw-info" tabIndex={0} aria-label={info} onClick={(e) => e.stopPropagation()}>
             i
+            <span className="vfw-tip" role="tooltip">
+              {info}
+            </span>
           </span>
         </span>
         <span className="vfw-tag">{children}</span>

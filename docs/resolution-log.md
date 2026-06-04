@@ -5,6 +5,15 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Fix: framework empty-state spacing + concise tooltip
+
+Fixed the cramped frameworks empty-state message (proper 8px-rhythm margins, top
+and bottom; styled the inline @note code chip). Replaced the framework info icon's
+native title + "?" help cursor with a small custom hover/focus popover (pointer
+cursor, no question-mark cursor) and shortened each framework explanation to one
+concise "what it is, how to read it" line. Client-only; deployed to hosting. A
+signed-in visual confirmation is recommended since the profile is auth-gated.
+
 ## 2026-06-04 - Fix: The Read fires only on explicit decision selection
 
 The passive arrival effect could fire a strategist call during load churn, when a
