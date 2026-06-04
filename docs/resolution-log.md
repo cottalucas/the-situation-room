@@ -5,6 +5,19 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-04 - Pass 3 Step 2: robust person resolution
+
+Fixed the @note bug where "@note the head of sales is..." matched only the first
+word ("the") and failed. `@note` now uses `splitLeadingPersonRef`: the longest
+leading phrase that resolves exactly (name or role) is the target, the rest is the
+note. Generalized `resolvePersonRef`: bidirectional role abbreviations (CPO <->
+chief product officer), trailing-noun aliases ("head of sales" answers to
+"sales"), generic leader phrases ("the boss"/"person in charge" -> the CEO), and
+conservative typo tolerance (Levenshtein, unique only: "Roven" -> Rouven). An
+`exactOnly` mode keeps sentence splitting from being swallowed by substring role
+matches. `npm run verify:resolution` 19/19; offline 16/16; persistence 24/24.
+Client-side only; deployed to hosting.
+
 ## 2026-06-04 - Pass 3 Step 1: docs consolidated, LLM pipeline documented
 
 Retired the audit-report pattern. Consolidated the two passes into a single concise

@@ -316,10 +316,16 @@ reads, `@grid` may update placement and stance, `@network` may update edges,
 and broad `@map` or `@create` may touch multiple surfaces. If the model returns
 extra fields outside the command scope, the app ignores them.
 
-`Room.jsx` resolves command people against ids, names, first names, and unique
-role matches before creating anyone. This keeps role language such as CEO, CPO,
-Head of Product, Head of Sales, and PM of Web attached to existing people when
-the room already has them.
+`Room.jsx` resolves command people through `src/lib/person-ref.js`
+(`resolvePersonRef`) against ids, names, first names, role and title aliases,
+generic leader phrases, and conservative typos before creating anyone. So "Chad",
+"the CEO", "head of sales", "the person in charge", and a near miss like "Roven"
+all attach to the existing person. `@note` uses `splitLeadingPersonRef`, which
+takes the longest leading phrase that resolves exactly (name or role) as the
+target and the rest as the note, so multi-word names and titles work
+("@note head of sales keeps asking for updates"). Substring and typo matching are
+used for direct references but not for splitting a sentence, so a note body is
+never swallowed by a role match.
 
 `NetworkTab.jsx` uses the seeded network positions only when every visible
 participant belongs to the seeded preview scenario. Real rooms use a

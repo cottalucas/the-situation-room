@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
 import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
-import { resolvePersonRef } from "../lib/person-ref.js";
+import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, autoReadSignature, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 
 import { TheRead } from "../components/TheRead.jsx";
@@ -418,12 +418,14 @@ export default function Room({ onExit }) {
       const priorMessages = store.getChat(decision.id);
       store.pushMessage(decision.id, { type: "user", body: q });
 
-      const note = q.match(/^@note(?:s)?\s+(\S+)\s+([\s\S]+)$/i);
+      const note = q.match(/^@notes?\s+([\s\S]+)$/i);
       if (note) {
-        const token = note[1];
-        const body = note[2].trim();
-        const target = findPersonRef(token);
-        if (target) {
+        const remainder = note[1].trim();
+        const { person: target, body } = splitLeadingPersonRef(remainder, [
+          participants,
+          Object.values(store.getAllPeople()),
+        ]);
+        if (target && body) {
           setDraft("");
           setIsGenerating(true);
           try {
@@ -449,7 +451,16 @@ export default function Room({ onExit }) {
           } finally {
             setIsGenerating(false);
           }
-        } else store.pushMessage(decision.id, { type: "fallback", body: `No one named ${note[1]} is in this decision.` });
+        } else if (target && !body) {
+          setDraft("");
+          store.pushMessage(decision.id, { type: "fallback", body: `Add the note after ${target.name}. Try "@note ${target.name.split(/\\s+/)[0]} <what you observed>".` });
+        } else {
+          setDraft("");
+          store.pushMessage(decision.id, {
+            type: "fallback",
+            body: "I could not match that person. Use a name, first name, or a role like CEO, head of sales, or PM of web.",
+          });
+        }
         return;
       }
       const add = q.match(/^@add\s+([^,]+)(?:,\s*([\s\S]+))?$/i);
