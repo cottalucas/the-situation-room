@@ -5,6 +5,8 @@ an acceptance criterion to a tap-path. The whole pass is meant to run in one go.
 
 ## Setup
 - Sign in on a phone-width browser, or run local preview at 375px.
+- In local preview, enter through Get started and confirm the URL carries `#/`
+  before testing refresh behavior.
 - Start on a room that has a roster and at least one active decision.
 
 ## Tasks 1 to 4: shell
@@ -29,7 +31,7 @@ an acceptance criterion to a tap-path. The whole pass is meant to run in one go.
 
 | # | Criterion | Tap-path | Pass when |
 |---|-----------|----------|-----------|
-| 5 | Reload returns to last room and decision | Open room A / decision X, reload | The app reopens room A and decision X directly |
+| 5 | Reload returns to last room, decision, and lens | Open room A / decision X, tap Energy, reload; repeat on Network. Then select a second active decision and reload from its `#/decision/:decisionId` URL | The app reopens room A and decision X directly and keeps the active lens instead of snapping back to People or the room's first decision |
 | 5 | Room selected but no decision stays quiet | Archive/delete the open decision so none is selected | The main workspace shows no center card and no "Nothing open right now" prompt; chat owns the missing-decision copy |
 | 5 | No room selected uses mobile recovery | Clear the selected room or arrive with no room selected | A centered "Select your room" card appears with "Open rooms" and guided setup because the rail is hidden on mobile |
 | 5 | No rooms routes to guided setup | Use a fresh account / delete all rooms | The guided setup entry is shown (first-run opens it automatically) |

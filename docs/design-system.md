@@ -144,7 +144,11 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   draggable. Desktop keeps the rail plus chat column three-pane layout; the
   burger, drawer, and companion are mobile only. The chat input autofocuses on
   desktop only; on mobile it focuses on explicit tap, so the keyboard never opens
-  the product out of view on load. Mobile route pages (`#/person/:id`,
+  the product out of view on load. A hard refresh preserves the active room,
+  active decision, and current People/Energy/Network lens when those saved ids
+  are still valid. Selected decisions use `#/decision/:decisionId` as the app
+  route so refresh can restore the exact decision before async storage returns.
+  Mobile route pages (`#/person/:id`,
   `#/person/:id/notes`, `#/frameworks`) keep the same app header with brand and
   burger, then show a separate back row below it.
 - Missing-decision state: the chat column owns the copy (`No decision open` and

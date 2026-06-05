@@ -29,6 +29,11 @@ let uid = null;
 let remoteUnsubscribe = null;
 let connectionToken = 0;
 let connectingUid = null;
+const DEFAULT_PREFS = { railCollapsed: false, userSettingsReady: !isConfigured, remoteReady: false };
+
+function withDefaultPrefs(prefs = {}) {
+  return { ...DEFAULT_PREFS, ...prefs };
+}
 
 /* ------------------------------------------------------------------ */
 /* Initial mirror (seed)                                               */
@@ -54,7 +59,7 @@ function buildLocalState() {
       edges: d.edges.map((e) => ({ ...e })),
     })),
     chats,
-    prefs: { railCollapsed: false },
+    prefs: withDefaultPrefs(),
     profile: {},
   };
 }
@@ -62,8 +67,8 @@ function buildLocalState() {
 let state = buildLocalState();
 const listeners = new Set();
 
-function emptyState(prefs = { railCollapsed: false }) {
-  return { people: {}, rooms: [], decisions: [], chats: {}, prefs, profile: {} };
+function emptyState(prefs = DEFAULT_PREFS) {
+  return { people: {}, rooms: [], decisions: [], chats: {}, prefs: withDefaultPrefs(prefs), profile: {} };
 }
 
 let persistTimer = null;
@@ -118,7 +123,8 @@ export function getSnapshot() {
 export async function hydrate() {
   if (mode === "firestore") return;
   const cached = await loadCache();
-  if (cached?.rooms && cached?.people) commit({ ...buildLocalState(), ...cached });
+  const readyPrefs = withDefaultPrefs({ ...(cached?.prefs || {}), userSettingsReady: true, remoteReady: true });
+  commit(cached?.rooms && cached?.people ? { ...buildLocalState(), ...cached, prefs: readyPrefs } : { ...buildLocalState(), prefs: readyPrefs });
 }
 
 /** Firestore mode: load the account into the mirror. New accounts start empty. */
@@ -131,19 +137,23 @@ export async function connect(authedUid) {
   mode = "firestore";
   uid = authedUid;
   connectingUid = authedUid;
-  const prefs = state.prefs || { railCollapsed: false };
+  const prefs = withDefaultPrefs({ ...(state.prefs || {}), userSettingsReady: false, remoteReady: false });
   const cached = await loadCache();
   if (token !== connectionToken) return;
-  commit(cached?.rooms && cached?.people ? { ...emptyState(prefs), ...cached, prefs: cached.prefs || prefs } : emptyState(prefs));
+  const cachedPrefs = withDefaultPrefs({ ...(cached?.prefs || prefs), userSettingsReady: false, remoteReady: false });
+  commit(cached?.rooms && cached?.people ? { ...emptyState(prefs), ...cached, prefs: cachedPrefs } : emptyState(prefs));
   // Restore the user's synced UI settings (last room and decision) so a reload
   // lands where they left off, even on a fresh device with a cold cache.
   repo
     .getUserSettings(authedUid)
     .then((settings) => {
-      if (token !== connectionToken || !settings) return;
-      commit({ ...state, prefs: { ...state.prefs, ...settings } });
+      if (token !== connectionToken) return;
+      commit({ ...state, prefs: withDefaultPrefs({ ...state.prefs, ...(settings || {}), userSettingsReady: true }) });
     })
-    .catch(() => {});
+    .catch(() => {
+      if (token !== connectionToken) return;
+      commit({ ...state, prefs: withDefaultPrefs({ ...state.prefs, userSettingsReady: true }) });
+    });
   // Account profile (name, email, position) for the account menu and profile view.
   repo
     .getUserProfile(authedUid)
@@ -160,7 +170,7 @@ export async function connect(authedUid) {
         commit({
           ...loaded,
           chats: chatsFor(loaded.decisions, loaded.chats),
-          prefs: state.prefs || prefs,
+          prefs: withDefaultPrefs({ ...(state.prefs || prefs), remoteReady: true }),
           profile: state.profile || {},
         });
       },

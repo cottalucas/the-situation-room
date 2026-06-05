@@ -5,6 +5,68 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-05 - Selected decision survives refresh
+
+Follow up to the browser refresh persistence pass after live QA showed that the
+room restored but the selected decision fell back after refresh. No Firestore
+schema, encryption, prompt, command contract, or Functions backend changed.
+
+What changed:
+- Selecting a decision now writes `#/decision/:decisionId` into the app route,
+  giving refresh a synchronous selected-decision source before localStorage,
+  IndexedDB cache, or Firestore settings return.
+- Decision selection persists the selected decision's own `roomId`, so a stale
+  active room value cannot pair the right decision with the wrong room.
+- Automatic fallback to the first active decision now waits for the encrypted
+  cache in local preview, or for both Firestore user settings and the first room
+  snapshot in production. This prevents early default fallback from overwriting
+  the selected decision.
+- Source-of-truth docs and QA checklists now include the `#/decision/:decisionId`
+  reload path.
+
+Verification: `git diff --check` clean; build clean with the existing bundle
+size warning; offline eval 19/19, onboarding 52/52, persistence 24/24,
+resolution 19/19, guard 12/12, autoread 10/10, confidence 9/9. Browser QA
+passed on clean local preview `http://localhost:5186/#/`: created a second
+active decision, confirmed selection changed the URL to
+`#/decision/deci-1780694727411-a8365820`, hard reloaded, and the second decision
+still showed `Position unknown` participant state instead of falling back to the
+Salesforce decision. Console errors were zero.
+
+Deployment: Firebase Hosting released
+`https://the-situation-room-708c6.web.app`. Direct checks returned HTTP 200 for
+the new live assets `/assets/index-YBVObzf1.js` and
+`/assets/index-C1BrEGO8.css`.
+
+## 2026-06-05 - Browser refresh restores active room view
+
+Follow up from product review on refresh persistence. No Firestore schema,
+encryption, prompt, command contract, or Functions backend changed.
+
+What changed:
+- Room view now writes same-browser UI state under
+  `situation-room-ui-state-v1`: active room, active decision, and active lens
+  (People, Energy, Network).
+- On hard refresh, valid same-browser state wins before synced user settings
+  finish loading; synced `lastRoomId` and `lastDecisionId` remain the fallback
+  for a fresh browser/device.
+- Deleted, missing, or archived ids still fall back to the first active decision
+  or a quiet no-decision state, and that fallback updates the persisted setting.
+- Local preview entry now uses `#/` as the app route, so localhost refreshes stay
+  inside the room instead of returning to the landing page. Person and framework
+  route hashes continue to reopen directly.
+- Source-of-truth docs and QA checklists now include active-lens refresh and
+  local-preview route persistence.
+
+Verification: `git diff --check` clean; build clean with the existing bundle
+size warning; offline eval 19/19, onboarding 52/52, persistence 24/24,
+resolution 19/19, guard 12/12, autoread 10/10, confidence 9/9. Browser QA
+passed on clean local preview `http://localhost:5185/#/`: local preview enters
+with the app hash and hard reload stays inside the room, Energy reload restores
+`app-tab-grid`, Network reload restores `app-tab-network`, the same Network
+reload passes at 390px mobile with the burger present, `#/person/marco` reloads
+directly to Marco's profile, and console errors were zero.
+
 ## 2026-06-05 - Empty decision and guided setup polish
 
 Follow up from product review after the mobile command release. No prompt,

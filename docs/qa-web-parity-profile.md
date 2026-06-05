@@ -2,7 +2,7 @@
 
 Date: 2026-06-05
 
-Local URL used: `http://localhost:5181/`
+Local URL used: `http://localhost:5185/#/`
 
 ## Desktop viewport
 
@@ -16,11 +16,15 @@ Local URL used: `http://localhost:5181/`
   every decision, then `Show less` to collapse. Select `Overflow test 1`, collapse
   again, and confirm the active older decision stays visible above the recent
   four.
-- Persistence and empty voice: select decisions, reload, and confirm the last
-  local selection is restored from cache. With no decision open, the main
-  workspace has no center card or "Nothing open right now" prompt. The chat panel
-  alone says `No decision open`, and the locked input placeholder reads
-  `Open a decision first`.
+- Persistence and empty voice: in local preview, confirm entry lands on `#/` and
+  a hard reload stays inside the app. Select decisions, switch to Energy,
+  reload, and confirm the same room, decision, and Energy lens are restored from
+  browser state. Create or select a second active decision, confirm the URL is
+  `#/decision/:decisionId`, reload, and confirm the second decision is still
+  selected rather than falling back to the room's first decision. Repeat on
+  Network. With no decision open, the main workspace has no center card or
+  "Nothing open right now" prompt. The chat panel alone says `No decision open`,
+  and the locked input placeholder reads `Open a decision first`.
 - Account menu: click the name and avatar at top-right. Confirm item order:
   `Signed in as`, `Profile`, `Frameworks`, `Sign out`, with a divider after
   `Signed in as`.

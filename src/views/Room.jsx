@@ -59,18 +59,66 @@ const TABS = [
   { id: "grid", label: "Energy", hint: "Who to spend energy on" },
   { id: "network", label: "Network", hint: "Who moves whom" },
 ];
+const TAB_IDS = new Set(TABS.map((tab) => tab.id));
+const BROWSER_UI_STATE_KEY = "situation-room-ui-state-v1";
+const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
+function readBrowserUiState() {
+  if (typeof window === "undefined") return {};
+  try {
+    const storage = window.localStorage;
+    if (!storage) return {};
+    const raw = storage.getItem(BROWSER_UI_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const state = {};
+    if (typeof parsed.activeRoomId === "string" || parsed.activeRoomId === null) state.activeRoomId = parsed.activeRoomId;
+    if (typeof parsed.activeDecisionId === "string" || parsed.activeDecisionId === null) {
+      state.activeDecisionId = parsed.activeDecisionId;
+    }
+    if (TAB_IDS.has(parsed.activeTab)) state.activeTab = parsed.activeTab;
+    return state;
+  } catch {
+    return {};
+  }
+}
+
+function writeBrowserUiState(patch) {
+  if (typeof window === "undefined") return;
+  try {
+    const storage = window.localStorage;
+    if (!storage) return;
+    const next = { ...readBrowserUiState(), ...patch };
+    storage.setItem(BROWSER_UI_STATE_KEY, JSON.stringify(next));
+  } catch {
+    // Browser persistence is a convenience. The account settings restore still
+    // works when localStorage is unavailable.
+  }
+}
 
 /* Hash routes for the linkable person, person notes, and frameworks pages. */
 function parseHash(hash) {
   if (hash === "#/frameworks") return { view: "frameworks", personId: null };
+  if (hash.startsWith("#/decision/")) {
+    const decisionId = decodeURIComponent(hash.slice("#/decision/".length));
+    return { view: "lenses", personId: null, decisionId };
+  }
   if (hash.startsWith("#/person/")) {
     const rest = hash.slice("#/person/".length);
     if (rest.endsWith("/notes")) {
-      return { view: "personNotes", personId: rest.slice(0, -"/notes".length) };
+      return { view: "personNotes", personId: rest.slice(0, -"/notes".length), decisionId: null };
     }
-    return { view: "person", personId: rest };
+    return { view: "person", personId: rest, decisionId: null };
   }
-  return { view: "lenses", personId: null };
+  return { view: "lenses", personId: null, decisionId: null };
+}
+
+function replaceDecisionHash(decisionId) {
+  if (typeof window === "undefined" || !decisionId) return;
+  const nextHash = `#/decision/${encodeURIComponent(decisionId)}`;
+  if (window.location.hash === nextHash) return;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
 }
 
 function gridValueIsExtreme(value) {
@@ -127,17 +175,26 @@ function mergePersonPatch(person, profilePatch) {
 export default function Room({ onExit, userId, userName, userEmail }) {
   const store = useStore();
   const isMobile = useIsMobile();
+  const [initialBrowserUi] = useState(readBrowserUiState);
+  const [initialRoute] = useState(() =>
+    typeof window === "undefined" ? { view: "lenses", personId: null, decisionId: null } : parseHash(window.location.hash)
+  );
+  const browserStartedWithRoom = hasOwn(initialBrowserUi, "activeRoomId");
+  const browserStartedWithDecision = hasOwn(initialBrowserUi, "activeDecisionId");
+  const routeStartedWithDecision = Boolean(initialRoute.decisionId);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const [activeRoomId, setActiveRoomId] = useState("mobile");
-  const [activeDecisionId, setActiveDecisionId] = useState("salesforce");
-  const [activeTab, setActiveTab] = useState("people");
+  const [activeRoomId, setActiveRoomId] = useState(() =>
+    browserStartedWithRoom ? initialBrowserUi.activeRoomId : "mobile"
+  );
+  const [activeDecisionId, setActiveDecisionId] = useState(() =>
+    routeStartedWithDecision ? initialRoute.decisionId : browserStartedWithDecision ? initialBrowserUi.activeDecisionId : "salesforce"
+  );
+  const [activeTab, setActiveTab] = useState(() => initialBrowserUi.activeTab || "people");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [companionOpen, setCompanionOpen] = useState(false);
   const [nodeSummaryId, setNodeSummaryId] = useState(null);
-  const [route, setRoute] = useState(() =>
-    typeof window === "undefined" ? { view: "lenses", personId: null } : parseHash(window.location.hash)
-  );
+  const [route, setRoute] = useState(initialRoute);
   const [draft, setDraft] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPath, setShowPath] = useState(false);
@@ -168,6 +225,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const lastPlay = [...messages].reverse().find((m) => m.type === "play");
   const sequence = lastPlay?.response?.sequence;
   const roomHasPeople = (room?.rosterIds?.length || 0) > 0;
+  const userSettingsReady = store.getPref("userSettingsReady") !== false;
+  const remoteReady = store.getPref("remoteReady") !== false;
   /* The Read: a grounded read of the room. It runs only from the explicit @read
      command, so selecting a room or decision never reads by surprise. */
   const generateRead = useCallback(
@@ -262,6 +321,19 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     return () => window.removeEventListener("hashchange", apply);
   }, []);
 
+  // Same-browser restore happens before Firestore/user settings finish loading,
+  // so a hard refresh returns to the room, decision, and lens that were visible.
+  useEffect(() => {
+    const ready = userSettingsReady && remoteReady;
+    if (!ready && !browserStartedWithRoom) return;
+    if (activeRoomId && !store.getRoom(activeRoomId)) return;
+    if (activeDecisionId) {
+      const currentDecision = store.getDecision(activeDecisionId);
+      if (!currentDecision || currentDecision.status !== "active") return;
+    }
+    writeBrowserUiState({ activeRoomId, activeDecisionId, activeTab });
+  }, [activeRoomId, activeDecisionId, activeTab, browserStartedWithRoom, remoteReady, store, userSettingsReady]);
+
   // Guided setup owns the screen, so close the mobile drawer whenever it
   // activates (e.g. "+ New room" started from inside the drawer).
   useEffect(() => {
@@ -332,50 +404,106 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         store.ensureChat(first.id);
         setActiveDecisionId(first.id);
         store.setUserSetting("lastDecisionId", first.id);
+        replaceDecisionHash(first.id);
       } else {
         setActiveDecisionId(null);
         store.setUserSetting("lastDecisionId", null);
       }
       setShowPath(false);
       setActiveTab("people");
+      writeBrowserUiState({ activeRoomId: id, activeDecisionId: first?.id || null, activeTab: "people" });
     },
     [store]
   );
   const selectDecision = useCallback(
     (id) => {
+      const selected = store.getDecision(id);
+      const selectedRoomId = selected?.roomId || activeRoomId;
       store.ensureChat(id);
+      if (selected?.roomId && selected.roomId !== activeRoomId) setActiveRoomId(selected.roomId);
       setActiveDecisionId(id);
-      store.setUserSetting("lastRoomId", activeRoomId);
+      store.setUserSetting("lastRoomId", selectedRoomId);
       store.setUserSetting("lastDecisionId", id);
       setShowPath(false);
       setActiveTab("people");
+      replaceDecisionHash(id);
+      writeBrowserUiState({ activeRoomId: selectedRoomId, activeDecisionId: id, activeTab: "people" });
     },
     [store, activeRoomId]
   );
+  const selectTab = useCallback((id) => {
+    if (!TAB_IDS.has(id)) return;
+    setActiveTab(id);
+    setNodeSummaryId(null);
+  }, []);
 
-  // Restore the last room and decision once the synced settings load, so a
-  // reload returns the user where they left off (Task 5). Runs once when a
-  // valid stored room becomes available.
+  // Restore the last browser-visible room and decision once data is available.
+  // Same-browser state wins; synced settings are the fallback for cold devices.
   const restoredSelection = useRef(false);
   const storedRoomId = store.getPref("lastRoomId");
   const storedDecisionId = store.getPref("lastDecisionId");
   useEffect(() => {
     if (restoredSelection.current || !rooms.length) return;
-    if (!storedRoomId || !store.getRoom(storedRoomId)) return;
+    const routeDecision = routeStartedWithDecision ? store.getDecision(initialRoute.decisionId) : null;
+    if (routeStartedWithDecision && !routeDecision && !remoteReady) return;
+    const browserRoomId = browserStartedWithRoom ? initialBrowserUi.activeRoomId : null;
+    const browserRoom = browserRoomId ? store.getRoom(browserRoomId) : null;
+    if (browserStartedWithRoom && !browserRoom && !remoteReady) return;
+    const canUseSyncedSettings = userSettingsReady && remoteReady;
+    const syncedRoom = canUseSyncedSettings && storedRoomId ? store.getRoom(storedRoomId) : null;
+    const restoredRoomId =
+      routeDecision && routeDecision.status === "active"
+        ? routeDecision.roomId
+        : browserRoom
+          ? browserRoomId
+          : syncedRoom
+            ? storedRoomId
+            : null;
+    const browserDecisionId = browserRoom && browserStartedWithDecision ? initialBrowserUi.activeDecisionId : undefined;
+    if (browserDecisionId && !store.getDecision(browserDecisionId) && !remoteReady) return;
+    if (!restoredRoomId) {
+      if (!canUseSyncedSettings) return;
+      restoredSelection.current = true;
+      return;
+    }
     restoredSelection.current = true;
-    setActiveRoomId(storedRoomId);
-    const stored = storedDecisionId ? store.getDecision(storedDecisionId) : null;
-    if (stored && stored.roomId === storedRoomId && stored.status === "active") {
+    setActiveRoomId(restoredRoomId);
+    store.setUserSetting("lastRoomId", restoredRoomId);
+
+    const restoredDecisionId = routeDecision && routeDecision.status === "active" ? routeDecision.id : browserDecisionId !== undefined ? browserDecisionId : storedDecisionId;
+    if (restoredDecisionId === null) {
+      setActiveDecisionId(null);
+      store.setUserSetting("lastDecisionId", null);
+      return;
+    }
+    const stored = restoredDecisionId ? store.getDecision(restoredDecisionId) : null;
+    if (stored && stored.roomId === restoredRoomId && stored.status === "active") {
       store.ensureChat(stored.id);
       setActiveDecisionId(stored.id);
+      store.setUserSetting("lastDecisionId", stored.id);
     } else {
-      const first = store.getDecisions(storedRoomId).find((d) => d.status === "active") || null;
+      const first = store.getDecisions(restoredRoomId).find((d) => d.status === "active") || null;
       setActiveDecisionId(first?.id || null);
       if (first) store.ensureChat(first.id);
+      store.setUserSetting("lastDecisionId", first?.id || null);
     }
-  }, [rooms, storedRoomId, storedDecisionId, store]);
+  }, [
+    browserStartedWithDecision,
+    browserStartedWithRoom,
+    initialBrowserUi.activeDecisionId,
+    initialBrowserUi.activeRoomId,
+    initialRoute.decisionId,
+    remoteReady,
+    routeStartedWithDecision,
+    rooms,
+    storedDecisionId,
+    storedRoomId,
+    store,
+    userSettingsReady,
+  ]);
 
   useEffect(() => {
+    if (!restoredSelection.current && (!userSettingsReady || !remoteReady)) return;
     if (!rooms.length) {
       if (activeRoomId !== null) setActiveRoomId(null);
       if (activeDecisionId !== null) setActiveDecisionId(null);
@@ -387,6 +515,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       setActiveRoomId(firstRoom.id);
       setActiveDecisionId(firstDecision?.id || null);
       if (firstDecision) store.ensureChat(firstDecision.id);
+      store.setUserSetting("lastRoomId", firstRoom.id);
+      store.setUserSetting("lastDecisionId", firstDecision?.id || null);
       setShowPath(false);
       setActiveTab("people");
       return;
@@ -396,10 +526,11 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const firstDecision = store.getDecisions(activeRoomId).find((d) => d.status === "active") || null;
       setActiveDecisionId(firstDecision?.id || null);
       if (firstDecision) store.ensureChat(firstDecision.id);
+      store.setUserSetting("lastDecisionId", firstDecision?.id || null);
       setShowPath(false);
       setActiveTab("people");
     }
-  }, [rooms, activeRoomId, activeDecisionId, store]);
+  }, [rooms, activeRoomId, activeDecisionId, remoteReady, store, userSettingsReady]);
 
   const newRoom = useCallback(() => {
     const id = store.createRoom();
@@ -951,8 +1082,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   );
   const showOnNetwork = useCallback(() => {
     setShowPath(true);
-    setActiveTab("network");
-  }, []);
+    selectTab("network");
+  }, [selectTab]);
 
   const modalRoom = modal?.id ? store.getRoom(modal.id) : null;
   const modalDecision = modal?.id ? store.getDecision(modal.id) : null;
@@ -1125,10 +1256,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                           <button
                             key={t.id}
                             className={`tab ${activeTab === t.id ? "tab-active" : ""}`}
-                            onClick={() => {
-                              setActiveTab(t.id);
-                              setNodeSummaryId(null);
-                            }}
+                            onClick={() => selectTab(t.id)}
                           >
                             <span className="tab-label">{t.label}</span>
                             <span className="tab-hint">{t.hint}</span>

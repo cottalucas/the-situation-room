@@ -90,8 +90,18 @@ user in Firestore under `users/{uid}.settings` and mirror into the local prefs
 for synchronous reads. `store.setUserSetting(key, value)` writes both;
 `connect(uid)` fetches `repo.getUserSettings(uid)` once and merges it into prefs
 so a reload restores the last room and decision, even on a cold cache or a fresh
-device. Only non-sensitive ids and flags live there, so settings stay plaintext.
-`railCollapsed` stays a local-only pref (cache, not synced).
+device. Same-browser view state also writes synchronously to localStorage under
+`situation-room-ui-state-v1`: active room, active decision, and active lens
+(People, Energy, Network). Selecting a decision also writes a stable app route,
+`#/decision/:decisionId`, so a hard refresh has a synchronous selected-decision
+source before localStorage, IndexedDB, or Firestore finish loading. Route state
+wins first, then same-browser state, then synced settings for a fresh
+browser/device. Automatic fallback waits until the encrypted cache has hydrated
+in local preview, or until Firestore user settings and the first room snapshot
+are both ready in production. Invalid, deleted, or archived ids fall back to the
+first active decision or a quiet no-decision state. Only non-sensitive ids and
+flags live there, so settings stay plaintext. `railCollapsed` stays a local-only
+pref (cache, not synced).
 
 The account profile also lives on `users/{uid}`. `name` and `position` are
 editable but optional through the shared Profile modal. `position` may be empty
@@ -114,7 +124,9 @@ writes are optimistic, then the snapshot listener confirms the source of record.
 Firebase env vars are present, landing stays public and the room view requires
 Firebase Auth. If Firebase env vars are absent, auth forms show a clear config
 error and do not enter the app. Local preview mode is available only when
-`VITE_ENABLE_LOCAL_PREVIEW=true` is set.
+`VITE_ENABLE_LOCAL_PREVIEW=true` is set. Entering local preview writes the app
+route to `#/`, so hard refreshes on localhost stay inside the room view; signing
+out clears that route and returns to landing.
 
 Auth lives in `src/lib/auth.js` and `src/hooks/useAuth.js`:
 

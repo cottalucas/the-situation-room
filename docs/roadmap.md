@@ -36,9 +36,14 @@
   chat-column three-pane layout. The chat input autofocuses on desktop only; on
   mobile it focuses on tap so the keyboard never opens the product out of view on
   load. Last room and decision persist to the user in Firestore and restore on
-  reload. The main workspace stays quiet when a room has no decision open because
-  chat already owns that state; no-room-selected uses a mobile-only "Select your
-  room" card, and no rooms routes into guided setup.
+  reload; same-browser state also remembers the visible room, decision, and
+  active lens before synced settings finish loading. Selecting a decision writes
+  `#/decision/:decisionId`, so hard refresh keeps the selected decision even
+  before browser storage or Firestore has rehydrated. Local preview entry uses
+  the `#/` app route so localhost refreshes stay inside the room. The main
+  workspace stays quiet when a room has no decision open because chat already
+  owns that state; no-room-selected uses a mobile-only "Select your room" card,
+  and no rooms routes into guided setup.
 - Account menu on web and mobile. It shows Signed in as, Profile, Frameworks,
   and Sign out in the same order, with a divider after Signed in as. The shared
   Profile modal persists name and a fixed optional position select under the
