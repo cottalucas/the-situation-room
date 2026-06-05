@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
 import { interpretRoomCommand, askStrategist } from "../lib/context.js";
 import { trackEvent } from "../lib/firebase.js";
+import { EXAMPLE_PROMPTS } from "../lib/reasoning.js";
 import { consumeOnboardingPending } from "../lib/auth.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
@@ -210,6 +211,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             cites: resp.answer.cites,
             grounded: resp.answer.grounded,
           });
+          if (typeof window !== "undefined" && window.pendo) {
+            window.pendo.trackAgent("agent_response", {
+              agentId: "WkiKqyltqL9FcGinfGf0CpxLkls",
+              conversationId: id,
+              messageId: crypto.randomUUID(),
+              content: resp.answer.answer,
+            });
+          }
         } else if (!auto) {
           store.pushMessage(id, { type: "fallback", body: resp.body });
         }
@@ -779,6 +788,16 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const priorMessages = store.getChat(decision.id);
       store.pushMessage(decision.id, { type: "user", body: q });
 
+      if (typeof window !== "undefined" && window.pendo) {
+        window.pendo.trackAgent("prompt", {
+          agentId: "WkiKqyltqL9FcGinfGf0CpxLkls",
+          conversationId: decision.id,
+          messageId: crypto.randomUUID(),
+          content: q,
+          suggestedPrompt: EXAMPLE_PROMPTS.includes(q),
+        });
+      }
+
       const note = q.match(/^@notes?\s+([\s\S]+)$/i);
       if (note) {
         const remainder = note[1].trim();
@@ -804,6 +823,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
               const message = applyRoomUpdate(resp.update, "note") || { label: "Note saved", body: `Updated ${target.name}.` };
               trackEvent("observation_create", { source: "chat_note" });
               store.pushMessage(decision.id, { type: "updated", ...message });
+              if (typeof window !== "undefined" && window.pendo) {
+                window.pendo.trackAgent("agent_response", {
+                  agentId: "WkiKqyltqL9FcGinfGf0CpxLkls",
+                  conversationId: decision.id,
+                  messageId: crypto.randomUUID(),
+                  content: message.body,
+                });
+              }
             } else {
               const text = cleanShortNote(body);
               store.addObservation(target.id, { text, source: "note", decisionId: decision.id });
@@ -858,6 +885,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             const message = applyRoomUpdate(resp.update, command) || { label: "Map updated", body: "Updated the room." };
             trackEvent("room_map_update", { command });
             store.pushMessage(decision.id, { type: "updated", ...message });
+            if (typeof window !== "undefined" && window.pendo) {
+              window.pendo.trackAgent("agent_response", {
+                agentId: "WkiKqyltqL9FcGinfGf0CpxLkls",
+                conversationId: decision.id,
+                messageId: crypto.randomUUID(),
+                content: message.body,
+              });
+            }
           } else {
             store.pushMessage(decision.id, { type: "fallback", body: resp.body });
           }
@@ -889,6 +924,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
               cites: resp.answer.cites,
               grounded: resp.answer.grounded,
             });
+            if (typeof window !== "undefined" && window.pendo) {
+              window.pendo.trackAgent("agent_response", {
+                agentId: "WkiKqyltqL9FcGinfGf0CpxLkls",
+                conversationId: decision.id,
+                messageId: crypto.randomUUID(),
+                content: resp.answer.answer,
+              });
+            }
           } else {
             store.pushMessage(decision.id, { type: "fallback", body: resp.body });
           }
@@ -940,6 +983,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             cites: resp.answer.cites,
             grounded: resp.answer.grounded,
           });
+          if (typeof window !== "undefined" && window.pendo) {
+            window.pendo.trackAgent("agent_response", {
+              agentId: "WkiKqyltqL9FcGinfGf0CpxLkls",
+              conversationId: decision.id,
+              messageId: crypto.randomUUID(),
+              content: resp.answer.answer,
+            });
+          }
         } else {
           store.pushMessage(decision.id, { type: "fallback", body: resp.body });
         }
