@@ -5,6 +5,40 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-05 - Empty decision and guided setup polish
+
+Follow up from product review after the mobile command release. No prompt,
+command contract, Firestore rules, data model, or Functions backend changed.
+
+What changed:
+- Person profile Driver now renders as a read-only sentence block. It no longer
+  opens a textarea or inline editor on click.
+- The main workspace no longer duplicates the chat when a room has no decision
+  open. The workspace stays blank, the command companion stays hidden on mobile,
+  and the chat column owns the `No decision open` copy and locked input.
+- The old "Nothing open right now" prompt and the no-decision center card were
+  removed. The `Select your room` card is reserved for mobile no-room-selected
+  recovery, where the rail is hidden.
+- Account menus on desktop and mobile now draw a divider after the Signed in as
+  identity block, before Profile and Frameworks.
+- Guided Setup now enters with a soft chat-expansion animation from New room, so
+  it feels like the chat surface opening into setup instead of a hard panel swap.
+- Restoring a saved archived decision now falls back to the first active decision
+  or no-decision state, so an archived id cannot reopen as if it were active.
+
+Verification: `git diff --check` clean; build clean with the existing bundle
+size warning; offline eval 19/19, onboarding 52/52, persistence 24/24,
+resolution 19/19, guard 12/12, autoread 10/10, confidence 9/9. Browser QA
+passed on clean local preview `http://localhost:5181/`: Driver has no input or
+textarea, desktop and mobile no-decision workspaces are blank with no "Nothing
+open right now" prompt, chat shows `No decision open` and `Open a decision
+first`, mobile hides the command pill without a decision, desktop and drawer
+account menus have the Signed in as divider, Guided Setup uses
+`guided-chat-expand` and `guided-panel-fade`, and console errors were zero.
+
+QA checklist updated: `docs/qa-mobile-revamp.md` and
+`docs/qa-web-parity-profile.md`.
+
 ## 2026-06-05 - Mobile command and route chrome polish
 
 Follow up from mobile review. This keeps the command system, prompts,

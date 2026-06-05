@@ -3,7 +3,7 @@ import { quadrantFor, SCARF_ALL, SCARF_COLORS, TKI_COLORS } from "../lib/framewo
 import { Avatar, PositionBadge, QuadChip } from "./primitives.jsx";
 
 /* Inline editor for the person's own fields. Read-only until clicked. */
-function EditableField({ value, placeholder, editable, onSave, multiline }) {
+function EditableField({ value, placeholder, editable, onSave }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || "");
   useEffect(() => setDraft(value || ""), [value]);
@@ -14,9 +14,7 @@ function EditableField({ value, placeholder, editable, onSave, multiline }) {
       onSave(draft.trim());
       setEditing(false);
     };
-    return multiline ? (
-      <textarea className="inline-edit" value={draft} rows={3} onChange={(e) => setDraft(e.target.value)} onBlur={commit} />
-    ) : (
+    return (
       <input
         className="inline-edit"
         value={draft}
@@ -168,14 +166,8 @@ export function PersonPage({ person, position, placement, onBack, onSave, onDele
 
         <section className="person-page-block">
           <span className="section-label">Driver</span>
-          <p className="profile-goal">
-            <EditableField
-              value={person.goal}
-              placeholder="What are they actually trying to achieve?"
-              editable
-              multiline
-              onSave={(v) => onSave?.({ goal: v })}
-            />
+          <p className="profile-goal profile-goal-readonly">
+            {person.goal || <span className="muted-text">No driver recorded yet.</span>}
           </p>
         </section>
 

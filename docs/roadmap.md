@@ -36,18 +36,20 @@
   chat-column three-pane layout. The chat input autofocuses on desktop only; on
   mobile it focuses on tap so the keyboard never opens the product out of view on
   load. Last room and decision persist to the user in Firestore and restore on
-  reload; rooms-but-none-selected shows a "Select your room" overlay, and no
-  rooms routes into guided setup.
+  reload. The main workspace stays quiet when a room has no decision open because
+  chat already owns that state; no-room-selected uses a mobile-only "Select your
+  room" card, and no rooms routes into guided setup.
 - Account menu on web and mobile. It shows Signed in as, Profile, Frameworks,
-  and Sign out in the same order. The shared Profile modal persists name and a
-  fixed optional position select under the signed-in user document, keeps email
-  read-only, allows empty fields, and uses the saved name in the greeting when
-  present.
+  and Sign out in the same order, with a divider after Signed in as. The shared
+  Profile modal persists name and a fixed optional position select under the
+  signed-in user document, keeps email read-only, allows empty fields, and uses
+  the saved name in the greeting when present.
 - Single person profile route plus framework reference. `#/person/:id` combines
-  driver, recent encrypted notes, history, and mapped framework state with visual
-  chips; `#/person/:id/notes` holds the long encrypted notes list; `#/frameworks`
-  is generic framework reference with no person data. Tapping a graph node shows
-  a floating node summary that opens the person profile page.
+  a read-only driver sentence, recent encrypted notes, history, and mapped
+  framework state with visual chips; `#/person/:id/notes` holds the long
+  encrypted notes list; `#/frameworks` is generic framework reference with no
+  person data. Tapping a graph node shows a floating node summary that opens the
+  person profile page.
 - Visual first frameworks (SCARF, Thomas Kilmann, Cialdini, Fisher and Ury),
   rendered as state-label chips on the person and explained generically on the
   shared /frameworks page.
@@ -95,8 +97,9 @@
   the existing @create, @energy, and @network command pipeline. First-run opens
   by default with the rooms rail collapsed and never shows to a user who already
   has real content; "Skip, I'll set it up myself" drops into the manual Room
-  Settings modal. Building force-creates every extracted person (never "No
-  participants") while apply-time resolution dedupes role mentions, and the
+  Settings modal. New room enters with a soft chat-expansion transition instead
+  of a hard panel swap. Building force-creates every extracted person (never
+  "No participants") while apply-time resolution dedupes role mentions, and the
   closing names what it built specifically.
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase

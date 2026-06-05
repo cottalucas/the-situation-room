@@ -2,7 +2,7 @@
 
 Date: 2026-06-05
 
-Local URL used: `http://localhost:5179/`
+Local URL used: `http://localhost:5181/`
 
 ## Desktop viewport
 
@@ -17,11 +17,13 @@ Local URL used: `http://localhost:5179/`
   again, and confirm the active older decision stays visible above the recent
   four.
 - Persistence and empty voice: select decisions, reload, and confirm the last
-  local selection is restored from cache. With no decision open, the center card
-  and chat panel both say `No decision open` and use the same instruction. The
-  locked input placeholder reads `Open a decision first`.
+  local selection is restored from cache. With no decision open, the main
+  workspace has no center card or "Nothing open right now" prompt. The chat panel
+  alone says `No decision open`, and the locked input placeholder reads
+  `Open a decision first`.
 - Account menu: click the name and avatar at top-right. Confirm item order:
-  `Signed in as`, `Profile`, `Frameworks`, `Sign out`.
+  `Signed in as`, `Profile`, `Frameworks`, `Sign out`, with a divider after
+  `Signed in as`.
 - Frameworks route: choose Frameworks from the account menu. Confirm the URL hash
   is `#/frameworks` and the visible page contains generic framework text only.
 - Profile: choose Profile from the account menu. Clear Name, choose
@@ -36,13 +38,16 @@ Local URL used: `http://localhost:5179/`
 - Person page: open Marco from People, Energy, or Network. Confirm the page bar
   still shows `The Situation Room`, recent activity shows two encrypted notes,
   `View all notes (15)` opens `#/person/marco/notes`, and the back button returns
-  to `#/person/marco`.
+  to `#/person/marco`. Driver renders as static sentence text, not an editable
+  textarea.
 - Framework visuals: on Marco's page, confirm SCARF dots, Thomas-Kilmann badge,
   Cialdini chips, and Fisher and Ury teaser text render in the framework rows.
   The `Understand the frameworks` link opens the generic reference page and the
   product name remains visible in the page bar.
-- Center spacing: with no decision open, confirm the center card uses normal panel
-  spacing and does not leave a large empty well below the content.
+- No-decision center: with no decision open, confirm the main workspace is quiet
+  and the right chat panel is the only surface carrying the no-decision copy.
+- Guided setup entrance: click `+ New room`. Confirm the guided setup surface
+  eases in like an expanded chat panel rather than appearing as a hard swap.
 
 ## Mobile viewport
 
@@ -59,7 +64,7 @@ Local URL used: `http://localhost:5179/`
   overlap graph points, labels, axes, legends, or node summaries.
 - Drawer account menu: tap the burger. Confirm Rooms and Decisions are still in
   the drawer. Confirm the account section shows `Signed in as`, then Profile,
-  Frameworks, and Sign out in that order.
+  Frameworks, and Sign out in that order, with a divider after `Signed in as`.
 - Mobile Profile: tap Profile in the drawer. The drawer closes and the same
   Profile modal opens with Name, disabled read-only Email, and Position. The saved
   name and position match desktop.

@@ -617,6 +617,7 @@ code {
   display: flex;
   justify-content: center;
   padding-bottom: var(--s5);
+  animation: guided-panel-fade 0.22s ease both;
 }
 .onboarding-chat {
   width: min(760px, 100%);
@@ -628,6 +629,21 @@ code {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
+  transform-origin: right bottom;
+  animation: guided-chat-expand 0.32s cubic-bezier(0.2, 0.78, 0.2, 1) both;
+}
+@keyframes guided-panel-fade {
+  from { opacity: 0; }
+}
+@keyframes guided-chat-expand {
+  from {
+    opacity: 0.35;
+    transform: translateX(180px) translateY(18px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
 }
 .onboarding-head {
   display: grid;
@@ -814,6 +830,9 @@ code {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px 14px;
+}
+.profile-goal-readonly {
+  max-width: 64ch;
 }
 .profile-danger {
   margin-top: var(--s5);
@@ -1759,6 +1778,8 @@ code {
   flex-direction: column;
   gap: 2px;
   padding: 9px 10px 12px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--line);
 }
 .account-head-label {
   font-size: 10px;
@@ -1795,6 +1816,11 @@ code {
   border-radius: 0 0 8px 8px;
   padding-top: 11px;
   color: var(--against);
+}
+
+.workspace-blank {
+  flex: 1;
+  min-height: 0;
 }
 
 .chat {
@@ -2036,9 +2062,23 @@ code {
   .people-tab {
     padding-bottom: 96px;
   }
+  .onboarding-panel {
+    padding-bottom: 0;
+  }
   .onboarding-chat {
     min-height: 0;
     height: 100%;
+    animation-name: guided-chat-mobile-in;
+  }
+  @keyframes guided-chat-mobile-in {
+    from {
+      opacity: 0.2;
+      transform: translateY(24px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
   .onboarding-head {
     grid-template-columns: 1fr;
@@ -2523,23 +2563,9 @@ code {
   padding: 28px 26px;
   text-align: center;
 }
-.select-room-close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: none;
-  border: none;
-  font-size: 14px;
-  color: var(--ink-faint);
-  padding: 4px 6px;
-  border-radius: 6px;
-}
-.select-room-close:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
 .select-room-title { font-family: var(--serif); font-size: 24px; font-weight: 600; margin: 0; }
 .select-room-sub { font-size: 14.5px; line-height: 1.55; color: var(--ink-soft); margin: 10px 0 20px; }
 .select-room .empty-actions { justify-content: center; }
-.select-min { margin: auto; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.select-min-text { font-size: 14px; color: var(--ink-faint); }
 
 /* Task 6: a clearly clickable skip link on onboarding. */
 .onboarding-skip {

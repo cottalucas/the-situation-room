@@ -135,7 +135,6 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [companionOpen, setCompanionOpen] = useState(false);
   const [nodeSummaryId, setNodeSummaryId] = useState(null);
-  const [selectDismissed, setSelectDismissed] = useState(false);
   const [route, setRoute] = useState(() =>
     typeof window === "undefined" ? { view: "lenses", personId: null } : parseHash(window.location.hash)
   );
@@ -337,7 +336,6 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         setActiveDecisionId(null);
         store.setUserSetting("lastDecisionId", null);
       }
-      setSelectDismissed(false);
       setShowPath(false);
       setActiveTab("people");
     },
@@ -349,7 +347,6 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       setActiveDecisionId(id);
       store.setUserSetting("lastRoomId", activeRoomId);
       store.setUserSetting("lastDecisionId", id);
-      setSelectDismissed(false);
       setShowPath(false);
       setActiveTab("people");
     },
@@ -394,7 +391,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       setActiveTab("people");
       return;
     }
-    if (activeDecisionId && !store.getDecision(activeDecisionId)) {
+    const currentDecision = activeDecisionId ? store.getDecision(activeDecisionId) : null;
+    if (activeDecisionId && (!currentDecision || currentDecision.status !== "active")) {
       const firstDecision = store.getDecisions(activeRoomId).find((d) => d.status === "active") || null;
       setActiveDecisionId(firstDecision?.id || null);
       if (firstDecision) store.ensureChat(firstDecision.id);
@@ -1014,42 +1012,21 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     openChat: OPEN_CHAT,
   };
 
-  // Rooms exist but nothing is open. Show one calm empty-state voice in the
-  // workspace and chat column instead of two competing explanations.
-  const noDecisionOpen = roomHasPeople && !decision;
+  // The chat column already explains a missing decision. Keep the main
+  // workspace quiet unless mobile has no visible rail and no room is selected.
+  const quietWorkspace = <div className="workspace-blank" aria-hidden="true" />;
   const selectCard = (
     <div className="select-room">
-      <button type="button" className="select-room-close" onClick={() => setSelectDismissed(true)} aria-label="Close">
-        ✕
-      </button>
-      <h2 className="select-room-title">{noDecisionOpen ? "No decision open" : "Select your room"}</h2>
-      <p className="select-room-sub">
-        {noDecisionOpen
-          ? "Open a decision in this room, or start a new one."
-          : "Open a room to pick up where you left off, or set one up."}
-      </p>
+      <h2 className="select-room-title">Select your room</h2>
+      <p className="select-room-sub">Open a room to pick up where you left off, or set one up.</p>
       <div className="empty-actions">
         <button className="btn-primary" onClick={() => setDrawerOpen(true)}>
           Open rooms
         </button>
-        {roomHasPeople && !decision ? (
-          <button className="btn-secondary" onClick={newDecision}>
-            New decision
-          </button>
-        ) : (
-          <button className="btn-secondary" onClick={() => startOnboarding({ auto: false })}>
-            Start guided setup
-          </button>
-        )}
+        <button className="btn-secondary" onClick={() => startOnboarding({ auto: false })}>
+          Start guided setup
+        </button>
       </div>
-    </div>
-  );
-  const minimalPrompt = (
-    <div className="select-min">
-      <p className="select-min-text">Nothing open right now.</p>
-      <button className="btn-secondary" onClick={() => { setSelectDismissed(false); setDrawerOpen(true); }}>
-        Open rooms
-      </button>
     </div>
   );
 
@@ -1124,7 +1101,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                       </div>
                     </div>
                   ) : !room ? (
-                    selectDismissed ? minimalPrompt : selectCard
+                    isMobile ? selectCard : quietWorkspace
                   ) : !roomHasPeople ? (
                     <div className="empty-state">
                       <div className="empty-icon">◦</div>
@@ -1140,7 +1117,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                       </div>
                     </div>
                   ) : !decision ? (
-                    selectDismissed ? minimalPrompt : selectCard
+                    quietWorkspace
                   ) : (
                     <>
                       <div className="tabs">

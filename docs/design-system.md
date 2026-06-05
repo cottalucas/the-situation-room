@@ -85,7 +85,8 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
 - The account layer is a menu, not a settings page. Desktop opens it from the
   top-right name and avatar. Mobile shows the same section in the right drawer
   below Rooms and Decisions. Item order is always Signed in as name, Profile,
-  Frameworks, Sign out. Sign out does not live in the desktop rail.
+  Frameworks, Sign out. A divider sits after the Signed in as block so identity
+  and actions read as separate groups. Sign out does not live in the desktop rail.
 - Profile is a shared modal surface on web and mobile. It contains editable
   Name, read-only Email with a small read-only badge, and optional Position as
   one fixed select: empty, PM, Engineering, Design, Exec, Other. Empty fields are
@@ -100,7 +101,9 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
 - First-run onboarding uses a chat-like panel, not a modal. Assistant prompts
   sit in raised bubbles, user answers sit in ink bubbles, and the form uses one
   primary action. The panel asks three fixed questions and keeps skip as the
-  secondary action.
+  secondary action. When launched from New room it should feel like the chat
+  surface expanding into Guided Setup, with a soft entrance instead of an abrupt
+  hard swap.
 - Position shown as a colored dot (chip) and a pill badge.
 - Network and grid chips show a three character first-name label such as Cha,
   Cla, Rou, or Ral. Full name and role stay available through hover labels and
@@ -114,8 +117,10 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   all four framework mappings. Framework mappings use the same visual language
   as the earlier profile chips: SCARF dimension dots, Thomas-Kilmann mode badge,
   Cialdini lever chips, and Fisher and Ury teaser text, with stored rationale
-  beside the visual. `PersonNotesPage` (`#/person/:id/notes`) is the long notes
-  list for that person. `FrameworksPage` (`#/frameworks`) is generic,
+  beside the visual. Driver is display text, not an adjustable textarea; changes
+  should come from notes and reads, not inline editing on the profile page.
+  `PersonNotesPage` (`#/person/:id/notes`) is the long notes list for that
+  person. `FrameworksPage` (`#/frameworks`) is generic,
   person-independent reference content, one plain section per framework, no
   tooltips or nested modals. Litmus test: a screenshot of any framework
   explanation contains no person name. Framework explanation content lives solely
@@ -142,6 +147,11 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   the product out of view on load. Mobile route pages (`#/person/:id`,
   `#/person/:id/notes`, `#/frameworks`) keep the same app header with brand and
   burger, then show a separate back row below it.
+- Missing-decision state: the chat column owns the copy (`No decision open` and
+  the locked input). The main workspace stays quiet and does not duplicate that
+  message with a center card or a "Nothing open right now" prompt. If no room is
+  selected on mobile, show the `Select your room` card because the rail is hidden;
+  desktop relies on the visible rail.
 
 ## Tooling
 

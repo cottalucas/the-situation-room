@@ -30,8 +30,8 @@ an acceptance criterion to a tap-path. The whole pass is meant to run in one go.
 | # | Criterion | Tap-path | Pass when |
 |---|-----------|----------|-----------|
 | 5 | Reload returns to last room and decision | Open room A / decision X, reload | The app reopens room A and decision X directly |
-| 5 | Rooms but none selected shows the overlay | Archive/delete the open decision so none is selected | A centered "Select your room" card appears with "Open rooms" and a guided/new-decision action, never a blank screen |
-| 5 | Overlay is closeable to a prompt | Tap the card's X | A minimal centered prompt with "Open rooms" shows, not a dead screen |
+| 5 | Room selected but no decision stays quiet | Archive/delete the open decision so none is selected | The main workspace shows no center card and no "Nothing open right now" prompt; chat owns the missing-decision copy |
+| 5 | No room selected uses mobile recovery | Clear the selected room or arrive with no room selected | A centered "Select your room" card appears with "Open rooms" and guided setup because the rail is hidden on mobile |
 | 5 | No rooms routes to guided setup | Use a fresh account / delete all rooms | The guided setup entry is shown (first-run opens it automatically) |
 
 ## Task 6: onboarding
@@ -40,6 +40,7 @@ an acceptance criterion to a tap-path. The whole pass is meant to run in one go.
 |---|-----------|----------|-----------|
 | 6 | Title not clipped | Start guided setup on mobile | "Build your first room" sits fully below the header, not under the browser bar |
 | 6 | Skip is visibly clickable | Look at "Skip, I'll set it up myself" | It is an underlined colored link with a comfortable tap target, not faint ghost text |
+| 6 | New room transition is soft | Tap `+ New room` in the drawer | Guided setup eases in like the command/chat surface expanding, not a hard page swap |
 
 ## Tasks 7 and 8: condensed overlay and node summary
 
@@ -58,6 +59,7 @@ an acceptance criterion to a tap-path. The whole pass is meant to run in one go.
 |---|-----------|----------|-----------|
 | 9 | People tap opens the person page | On People, tap a person row | A full-screen person page opens at `#/person/:id` |
 | 9 | Route chrome stays standard | On a person page, notes page, and frameworks page | The top row keeps `The Situation Room` and the burger; the back button sits in a separate row below |
+| 9 | Driver is read-only | Open a person page and tap the Driver block | It remains sentence text, not a textarea or inline editor |
 | 9 | Person data only, no generic prose | Read the page | Full notes history and four framework mappings with that person's state and rationale; no generic framework explanation inline |
 | 9 | Back navigation | Tap the back control | Returns to the People tab |
 | 10 | /frameworks renders all four | Open `#/frameworks` (via either quiet link) | SCARF, Thomas-Kilmann, Cialdini, Fisher and Ury each render generically |
