@@ -36,6 +36,13 @@ first`, mobile hides the command pill without a decision, desktop and drawer
 account menus have the Signed in as divider, Guided Setup uses
 `guided-chat-expand` and `guided-panel-fade`, and console errors were zero.
 
+Deployment: Firebase Hosting released `https://the-situation-room-708c6.web.app`
+and a direct `curl` check returned HTTP 200 for the fresh assets
+`/assets/index-D_LjZQhE.js` and `/assets/index-C1BrEGO8.css`. The Firebase CLI
+again printed `Deploy complete!` and then exited nonzero because its local
+auth/update-check state is stale; the release itself completed and the live URL
+is serving.
+
 QA checklist updated: `docs/qa-mobile-revamp.md` and
 `docs/qa-web-parity-profile.md`.
 
