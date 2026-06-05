@@ -159,5 +159,6 @@ export async function signOutUser() {
   trackEvent("logout");
   clearUserKey();
   setAnalyticsUser(null);
+  pendo.clearSession();
   if (isConfigured) await signOut(auth);
 }

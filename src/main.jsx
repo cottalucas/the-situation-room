@@ -14,6 +14,10 @@ if (isLoopbackIp) {
   // Load the encrypted local cache, then let it re render. Best effort.
   hydrate();
 
+  // Boot Pendo SDK once with an anonymous visitor.
+  // Empty id lets the SDK resolve from cookies/localStorage if available.
+  pendo.initialize({ visitor: { id: '' } });
+
   ReactDOM.createRoot(document.getElementById("root")).render(
     <React.StrictMode>
       <App />
