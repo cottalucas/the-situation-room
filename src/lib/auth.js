@@ -90,12 +90,12 @@ async function ensureUserDoc(user, name) {
   const ref = doc(db, "users", user.uid);
   const snap = await getDoc(ref);
   const isNew = !snap.exists();
-  const data = {
-    name: name || user.displayName || "",
-    email: user.email || "",
-  };
-  if (isNew) data.createdAt = serverTimestamp();
-  if (isNew) data.settings = {};
+  const data = { email: user.email || "" };
+  if (isNew) {
+    data.name = name || user.displayName || "";
+    data.createdAt = serverTimestamp();
+    data.settings = {};
+  }
   await setDoc(ref, data, { merge: true });
   return isNew;
 }

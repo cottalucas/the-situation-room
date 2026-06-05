@@ -4,7 +4,7 @@
 
 ```
 User            users/{uid}
-                name, email, createdAt, settings
+                name, email, position, createdAt, settings
 
 Room            rooms/{roomId}
                 ownerId, name, rosterIds[], createdAt
@@ -75,14 +75,31 @@ The seed exists only for explicit local preview.
 - `subscribe(fn)` to listen for mirror changes.
 - `getSnapshot()` for `useSyncExternalStore`.
 - queries: `getRooms`, `getRoom`, `getDecisions`, `getDecision`, `getPerson`,
-  `getAllPeople`, `getParticipants`, `getEdges`, `getChat`, `getPlacement`.
+  `getAllPeople`, `getParticipants`, `getEdges`, `getChat`, `getPlacement`,
+  `getProfile`.
 - mutations: `savePerson`, `createPerson`, `updatePerson`, `addObservation`,
   `addNote`, `createRoom`, `updateRoom`, `addToRoster`, `removeFromRoster`,
   `createDecision`, `updateDecision`, `archiveDecision`, `deleteDecision`,
   `deleteRoom`, `deletePerson` as roster removal, `addDecisionNote`, `setPosition`, `setPlacement`,
   `movePerson` as a placement alias, `addParticipant`, `removeParticipant`,
   `addExternal`, `addEdge`, `removeEdge`, `pushMessage`, `ensureChat`,
-  `savePlay`.
+  `savePlay`, `setUserSetting`, `saveProfile`.
+
+User settings (the last-selected room and decision) persist to the signed-in
+user in Firestore under `users/{uid}.settings` and mirror into the local prefs
+for synchronous reads. `store.setUserSetting(key, value)` writes both;
+`connect(uid)` fetches `repo.getUserSettings(uid)` once and merges it into prefs
+so a reload restores the last room and decision, even on a cold cache or a fresh
+device. Only non-sensitive ids and flags live there, so settings stay plaintext.
+`railCollapsed` stays a local-only pref (cache, not synced).
+
+The account profile also lives on `users/{uid}`. `name` and `position` are
+editable but optional through the shared Profile modal. `position` may be empty
+or one fixed value from PM, Engineering, Design, Exec, or Other. `email` is
+read-only and comes from Firebase Auth. When present, the saved profile name
+wins over the Auth display name for the account greeting. In local preview the
+same fields persist through the encrypted cache; in Firebase mode
+`store.saveProfile` writes them to the signed-in user's document.
 
 Components never touch raw data. They call store functions. `useStore()` in
 `src/hooks/useStore.js` subscribes a component to changes.
@@ -157,7 +174,8 @@ stay plaintext so the app can query and render the map.
 ## Firestore mapping
 
 ```
-users/{uid}                                      { name, email, createdAt, settings }
+users/{uid}                                      { name, email, position, createdAt,
+                                                  settings }
 people/{personId}                               { ownerId, name, role, goal, context,
                                                   baseRead, visualTags, relationships,
                                                   fresh, external, createdAt }
@@ -362,14 +380,13 @@ decline.
 The Read. A grounded read of the room lives inside the chat thread, not as a
 separate card, so the lenses (People, Energy, Network) stay the primary view.
 `lib/auto-read.js` holds `autoReadEligible` (needs >= 4 participants and >= 2
-edges) and the fixed `AUTO_READ_QUESTION`. `Room.jsx` generates the read once per
-decision on arrival (only when eligible and no read is already in the persisted
-thread) and pushes it as a `read` message, which persists like any chat message.
-It is not regenerated on every landing; the user refreshes with the `@read`
-command, which always regenerates. Below threshold `@read` returns a short "basic
-insights, need more information" message with no model call, so cost stays near
-zero. The read reuses the strategist endpoint, grounding, and banned-trait guard
-(no new model path), renders with clickable "Grounded in" person chips, and emits
+edges) and the fixed `AUTO_READ_QUESTION`. `Room.jsx` runs The Read only from
+the explicit `@read` command and pushes it as a `read` message, which persists
+like any chat message. Selecting or restoring a room or decision never triggers
+a read. Below threshold `@read` returns a short "basic insights, need more
+information" message with no model call, so cost stays near zero. The read
+reuses the strategist endpoint, grounding, and banned-trait guard (no new model
+path), renders with clickable "Grounded in" person chips, and emits
 `read_generated`, `read_shown`, `read_chip_clicked`.
 
 Command application is scoped by command. `@note` may save notes and profile
@@ -469,6 +486,7 @@ src/
   hooks/
     useAuth.js            Firebase auth state
     useStore.js           subscribe a component to the store
+    useIsMobile.js        the < 768px breakpoint hook for the mobile shell
   types/
     models.js             JSDoc typedefs
   components/
@@ -477,8 +495,12 @@ src/
     Chip.jsx              person token for grid and network
     OverflowMenu.jsx      hover overflow menu for rail edit and delete
     OnboardingChat.jsx    first-run guided setup conversation
-    FrameworkVisuals.jsx  visual first framework display
-    PersonProfile.jsx     floating profile, variant compact | full
+    PersonPage.jsx        single person profile page, that person's full data
+    PersonNotesPage.jsx   full encrypted notes history for one person
+    FrameworksPage.jsx    generic frameworks reference
+    NodeSummary.jsx       floating graph node summary card
+    MobileDrawer.jsx      right-side mobile nav drawer (rooms, decisions, sign out)
+    CommandCompanion.jsx  mobile command companion wrapping Chat full-screen
     Rail.jsx              rooms and decisions navigation
     Chat.jsx              the conversation
     tabs/                 PeopleTab, GridTab, NetworkTab
@@ -496,5 +518,15 @@ firebase.json             hosting, Firestore rules, and function source
 firestore.rules           owner-scoped Firestore access rules
 ```
 
-UI state (which room, which decision, which tab, the open profile, modal flags)
-lives in `Room.jsx`. Domain data lives in the store. That split is deliberate.
+UI state (which room, which decision, which tab, the selected graph node
+summary, the drawer and command-companion open flags, modal flags) lives in
+`Room.jsx`. Domain data lives in the store. That split is deliberate. The person
+page, person notes page, and frameworks page are driven by the URL hash
+(`#/person/:id`, `#/person/:id/notes`, `#/frameworks`), so they are linkable and
+the browser back button works; `Room.jsx` parses the hash into a `route` state
+and navigates by setting `window.location.hash`. On mobile those route pages keep
+the standard app header with the brand and burger, then render a separate back
+row below the header so the company name no longer shifts into the back control.
+While a route page is open it replaces the lens shell instead of layering over
+People/Energy/Network content; the mobile drawer remains mounted so the route
+header burger still works.

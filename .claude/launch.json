@@ -6,6 +6,22 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "the-room-preview",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_FIREBASE_API_KEY=",
+        "VITE_FIREBASE_AUTH_DOMAIN=",
+        "VITE_FIREBASE_PROJECT_ID=",
+        "VITE_FIREBASE_APP_ID=",
+        "VITE_ENABLE_LOCAL_PREVIEW=true",
+        "npx",
+        "vite",
+        "--port",
+        "5199"
+      ],
+      "port": 5199
     }
   ]
 }

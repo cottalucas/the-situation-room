@@ -17,7 +17,7 @@ const GROUPS = [
   {
     title: "Read the room",
     items: [
-      { cmd: "@read", desc: "Get the strategist’s read of the whole room: what you are missing and who to move first. Refreshes the read in the chat." },
+      { cmd: "@read", desc: "Get the strategist’s read of the whole room only when you ask for it: what you are missing and who to move first. The result appears in the chat." },
       { cmd: "@ask <question>", desc: "Ask the strategist one question about this room, like who to talk to first or where the risk is. It cites the people it reasons from." },
     ],
   },

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { useIsMobile } from "../hooks/useIsMobile.js";
 
 /**
  * The single Guided Setup view, driven entirely by props from the engine in
@@ -26,6 +27,10 @@ export function OnboardingChat({
   headline,
 }) {
   const endRef = useRef(null);
+  // Task 1: do not autofocus on mobile, where it forces the keyboard open on
+  // load and hides the product. Desktop keeps autofocus.
+  const isMobile = useIsMobile();
+  const focusOnDesktop = !isMobile;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -46,7 +51,7 @@ export function OnboardingChat({
       <header className="onboarding-head">
         <span className="msg-label">Guided setup</span>
         <h2>{headline || "Build your first room"}</h2>
-        <button type="button" className="btn-ghost" onClick={onSkip} disabled={busy}>
+        <button type="button" className="onboarding-skip" onClick={onSkip} disabled={busy}>
           Skip, I'll set it up myself
         </button>
       </header>
@@ -98,7 +103,7 @@ export function OnboardingChat({
             onKeyDown={onKeyDown}
             placeholder="Short name for the decision"
             disabled={busy}
-            autoFocus
+            autoFocus={focusOnDesktop}
           />
           <div className="onboarding-actions">
             <button type="submit" className="btn-primary" disabled={busy || !nameDraft.trim()}>
@@ -120,7 +125,7 @@ export function OnboardingChat({
             placeholder={question?.prompt || ""}
             disabled={busy || thinking}
             rows={4}
-            autoFocus
+            autoFocus={focusOnDesktop}
           />
           <div className="onboarding-actions">
             <button type="submit" className="btn-primary" disabled={busy || thinking || !canSubmitQuestion}>

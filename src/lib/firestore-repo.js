@@ -15,6 +15,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -544,6 +545,53 @@ export async function removeEdgeDoc(roomId, decId, edgeId) {
     await deleteDoc(doc(decRef(roomId, decId), "edges", edgeId));
   } catch (e) {
     log(e);
+  }
+}
+
+/* User settings. Holds non-sensitive UI state under the signed-in user, such as
+   the last-selected room and decision so a reload returns the user where they
+   left off. Ids and flags only, no personal free text, so it stays plaintext
+   alongside the user document. */
+export async function getUserSettings(uid) {
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    return (snap.exists() && snap.data().settings) || {};
+  } catch (e) {
+    log(e);
+    return {};
+  }
+}
+
+export async function putUserSettings(uid, settings) {
+  try {
+    await setDoc(doc(db, "users", uid), { settings }, { merge: true });
+  } catch (e) {
+    log(e);
+  }
+}
+
+/* Account profile, held on the user document. Name and position are editable;
+   email stays read-only and comes from Auth. Plaintext: no personal free text,
+   just the account identity and a fixed-vocabulary role. */
+export async function getUserProfile(uid) {
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    if (!snap.exists()) return {};
+    const data = snap.data();
+    return { name: data.name || "", email: data.email || "", position: data.position || "" };
+  } catch (e) {
+    log(e);
+    return {};
+  }
+}
+
+export async function putUserProfile(uid, profile) {
+  try {
+    await setDoc(doc(db, "users", uid), profile, { merge: true });
+    return true;
+  } catch (e) {
+    log(e);
+    return false;
   }
 }
 

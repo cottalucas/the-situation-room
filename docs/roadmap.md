@@ -21,11 +21,36 @@
   placements.
 - Three lenses: People, Energy (the draggable power/interest map, command
   @energy with @grid as a hidden alias), Network (typed edges, sequence path).
-- Mobile navigation pins People, Energy, Network, and Chat to the bottom of the
-  viewport. Rooms and decisions stack vertically above the active work surface,
-  while Chat runs as its own fixed-height conversation tab.
-- Floating person profile, compact from grid and network, full from People.
-- Visual first frameworks (SCARF, Thomas Kilmann, Cialdini, Fisher and Ury).
+- Desktop rail cleanup. Rooms and Decisions stay in the rail, selected rows use
+  one quiet treatment, decision rows are plain and indented, New room and New
+  decision share the same plus affordance, and rooms with many active decisions
+  collapse to the recent four with inline Show all and Show less controls that
+  never hide the active decision.
+- Mobile shell: slim header with a right-side burger drawer (rooms, decisions,
+  account menu), a top tab row as the primary lens switcher (People, Energy,
+  Network), full-screen graph, no bottom bar, and a command companion replacing
+  chat-as-a-tab. The companion opens as a full-screen mobile command view; its
+  graph-lens entry compresses to a slash button beside the header actions so it
+  does not cover the map. Mobile person, notes, and framework route pages keep
+  the app header plus a separate back row. Desktop keeps the rail plus
+  chat-column three-pane layout. The chat input autofocuses on desktop only; on
+  mobile it focuses on tap so the keyboard never opens the product out of view on
+  load. Last room and decision persist to the user in Firestore and restore on
+  reload; rooms-but-none-selected shows a "Select your room" overlay, and no
+  rooms routes into guided setup.
+- Account menu on web and mobile. It shows Signed in as, Profile, Frameworks,
+  and Sign out in the same order. The shared Profile modal persists name and a
+  fixed optional position select under the signed-in user document, keeps email
+  read-only, allows empty fields, and uses the saved name in the greeting when
+  present.
+- Single person profile route plus framework reference. `#/person/:id` combines
+  driver, recent encrypted notes, history, and mapped framework state with visual
+  chips; `#/person/:id/notes` holds the long encrypted notes list; `#/frameworks`
+  is generic framework reference with no person data. Tapping a graph node shows
+  a floating node summary that opens the person profile page.
+- Visual first frameworks (SCARF, Thomas Kilmann, Cialdini, Fisher and Ury),
+  rendered as state-label chips on the person and explained generically on the
+  shared /frameworks page.
 - Command-first chat. Send is enabled only for `@` commands while open play
   coaching is parked. Sent prompts appear in the thread as user bubbles before
   structured assistant results.
@@ -59,10 +84,9 @@
   room, cites the people it uses, declines off-topic requests, and never
   diagnoses or assigns traits. Haiku only, additive to the commands. First-class
   prompt chips, and "The Read": a grounded read of the room rendered inside the
-  chat, generated once per decision on arrival (>= 4 people and >= 2 edges) and
-  refreshed on demand with the @read command. It persists as a chat message, so it
-  is not regenerated on every landing; below threshold it returns basic insights
-  and asks for more information with no model call.
+  chat only when the user sends `@read`. It persists as a chat message. Selecting
+  or restoring a room or decision never triggers it; below threshold it returns
+  basic insights and asks for more information with no model call.
 - Global person memory: observations and cross decision history.
 - Guided Setup, one engine behind three doors (first-run, "+ New room", and
   manual). A warm three-question conversation (decision and outcome, make-or-break

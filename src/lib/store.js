@@ -55,6 +55,7 @@ function buildLocalState() {
     })),
     chats,
     prefs: { railCollapsed: false },
+    profile: {},
   };
 }
 
@@ -62,7 +63,7 @@ let state = buildLocalState();
 const listeners = new Set();
 
 function emptyState(prefs = { railCollapsed: false }) {
-  return { people: {}, rooms: [], decisions: [], chats: {}, prefs };
+  return { people: {}, rooms: [], decisions: [], chats: {}, prefs, profile: {} };
 }
 
 let persistTimer = null;
@@ -134,12 +135,34 @@ export async function connect(authedUid) {
   const cached = await loadCache();
   if (token !== connectionToken) return;
   commit(cached?.rooms && cached?.people ? { ...emptyState(prefs), ...cached, prefs: cached.prefs || prefs } : emptyState(prefs));
+  // Restore the user's synced UI settings (last room and decision) so a reload
+  // lands where they left off, even on a fresh device with a cold cache.
+  repo
+    .getUserSettings(authedUid)
+    .then((settings) => {
+      if (token !== connectionToken || !settings) return;
+      commit({ ...state, prefs: { ...state.prefs, ...settings } });
+    })
+    .catch(() => {});
+  // Account profile (name, email, position) for the account menu and profile view.
+  repo
+    .getUserProfile(authedUid)
+    .then((profile) => {
+      if (token !== connectionToken || !profile) return;
+      commit({ ...state, profile: { ...state.profile, ...profile } });
+    })
+    .catch(() => {});
   try {
     remoteUnsubscribe = repo.watchAll(
       uid,
       (loaded) => {
         if (token !== connectionToken) return;
-        commit({ ...loaded, chats: chatsFor(loaded.decisions, loaded.chats), prefs: state.prefs || prefs });
+        commit({
+          ...loaded,
+          chats: chatsFor(loaded.decisions, loaded.chats),
+          prefs: state.prefs || prefs,
+          profile: state.profile || {},
+        });
       },
       (e) => console.error("[store] listen failed", e)
     );
@@ -221,6 +244,38 @@ export function getPref(key) {
 
 export function setPref(key, value) {
   commit({ ...state, prefs: { ...state.prefs, [key]: value } });
+}
+
+/* Settings synced to the signed-in user in Firestore (last room and decision),
+   so the app restores them on reload and across devices. They also live in the
+   local prefs mirror for synchronous reads and fast cold load. */
+const USER_SETTING_KEYS = ["lastRoomId", "lastDecisionId"];
+
+export function setUserSetting(key, value) {
+  const prefs = { ...state.prefs, [key]: value };
+  commit({ ...state, prefs });
+  if (fs() && uid) {
+    const synced = {};
+    USER_SETTING_KEYS.forEach((k) => {
+      synced[k] = prefs[k] ?? null;
+    });
+    repo.putUserSettings(uid, synced);
+  }
+}
+
+/* Account profile. Name and position are editable and persist to the user
+   document under the signed-in uid; email is read-only and sourced from Auth. */
+export function getProfile() {
+  return state.profile || {};
+}
+
+export async function saveProfile({ name, position } = {}) {
+  const profile = { ...state.profile, name, position };
+  commit({ ...state, profile });
+  if (fs() && uid) {
+    const ok = await repo.putUserProfile(uid, { name, position });
+    if (!ok) throw new Error("Profile could not be saved.");
+  }
 }
 
 /* ------------------------------------------------------------------ */

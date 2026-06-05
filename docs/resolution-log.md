@@ -5,6 +5,199 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-05 - Mobile command and route chrome polish
+
+Follow up from mobile review. This keeps the command system, prompts,
+Firestore rules, and Functions backend unchanged; it is a local UI, docs, and
+Hosting release batch.
+
+What changed:
+- Mobile command expands to a full-screen command view instead of a bottom sheet.
+  Sent prompts render as right-side chat bubbles, assistant results render as
+  left-side bubbles, and the temporary thinking state now says `Working on it`
+  with animated dots.
+- The chat resting state stays conversational and `@read` remains explicit. No
+  room, decision, or route selection triggers The Read.
+- On Energy and Network, the command entry compresses to a slash-only control
+  beside the header actions so it does not cover nodes, axes, legends, or node
+  summaries.
+- Person, long-notes, and frameworks route pages keep the mobile app header
+  (`The Situation Room` plus burger) and render the back control in a separate
+  row below it.
+- Route pages now replace the lens shell while open instead of layering over
+  People/Energy/Network content, so the frameworks page no longer exposes
+  person data behind it and the transition is calmer.
+- The mobile QA and source-of-truth docs were updated to match the full-screen
+  command view, graph-safe command entry, and route chrome behavior.
+
+Verification: `git diff --check` clean; build clean with the existing bundle
+size warning; offline eval 19/19, onboarding 52/52, persistence 24/24,
+resolution 19/19, guard 12/12, autoread 10/10, confidence 9/9. Browser QA
+passed on clean local preview `http://localhost:5179/` at 375px: command panel
+fills the viewport, thinking animation appears during send, note result lands as
+a left-side chat bubble, no read card appears unless `@read` is sent, Energy and
+Network command entries do not overlap graph information, person route chrome is
+stable, the drawer opens over route pages, Marco's notes page shows the 15-note
+list, frameworks route is generic with no person data in the visible body, and
+console errors were zero.
+
+Deployment: Firebase Hosting released `https://the-situation-room-708c6.web.app`
+and a direct `curl` check returned HTTP 200 for the fresh asset
+`/assets/index-_-8hohjF.js`. The Firebase CLI printed `Deploy complete!` and
+then exited nonzero because its local auth/update-check state is stale; the
+release itself completed and the live URL is serving.
+
+QA checklist updated: `docs/qa-mobile-revamp.md` and
+`docs/qa-web-parity-profile.md`.
+
+## 2026-06-05 - Profile, chat, and person notes follow up
+
+Small local follow up from product review. No prompt, command contract,
+Firestore rules, or destructive data behavior changed.
+
+What changed:
+- Profile fields are optional. Name can be empty, Position can stay unselected,
+  and Email is shown with a small `Read-only` badge instead of helper copy.
+- Chat no longer starts as a `Read the room` card. The resting state is a
+  conversation prompt with command examples. Selecting or restoring rooms and
+  decisions does not trigger The Read. `@read` remains the explicit command that
+  runs the grounded read.
+- The rail archive disclosure was tightened so it reads as a quiet section, not
+  a focused selected row.
+- Person surfaces now use one primary profile page. People rows, read chips, and
+  graph node summaries open `#/person/:id` directly. The old condensed overlay
+  is no longer wired into `Room.jsx`.
+- Person pages keep `The Situation Room` visible in the page bar, show the
+  driver, the latest two encrypted notes, and visual framework mappings. A new
+  `#/person/:id/notes` page holds the long encrypted notes list and returns to
+  the profile.
+- Local seed data gives Marco 15 notes so the long notes route can be tested.
+
+Verification: build clean; offline eval 19/19, onboarding 52/52, persistence
+24/24, resolution 19/19, guard 12/12, autoread 10/10, confidence 9/9. Browser QA
+passed on local preview `http://localhost:5177/`: blank Profile saves with no
+validation, read-only email badge appears, chat starts as a conversation prompt
+with no auto-read message on load, Marco opens as a full person page with the
+brand in the page bar, recent notes show two of 15, all notes route shows 15
+notes, framework visuals render on desktop and mobile, frameworks reference is
+generic, mobile has no horizontal overflow, and console errors were zero.
+
+QA checklist updated: `docs/qa-web-parity-profile.md`.
+
+## 2026-06-05 - Web parity rail cleanup and account profile
+
+Second additive batch on top of the mobile UX revamp. No command model, prompt,
+function, trace, privacy, eval fixture, or destructive account action changed.
+The goal was parity between web and mobile account access while keeping the web
+rail useful.
+
+What changed:
+- Desktop rail keeps Rooms and Decisions but now uses one quiet selected-row
+  treatment, plain indented decision rows with status dots, and one shared plus
+  affordance for New decision and New room. Sign out moved out of the rail.
+- Active decisions collapse to the four most recent rows with inline `Show all
+  (N)` and `Show less`. If the active decision is older, it remains visible while
+  collapsed.
+- Web empty states now use one voice: `No decision open` in both the center card
+  and chat panel. The locked chat placeholder is short enough to avoid clipping.
+  The no-decision card uses normal panel spacing instead of a full-height empty
+  well.
+- Added a desktop account menu and reused the same account section in the mobile
+  drawer: Signed in as, Profile, Frameworks, Sign out. Frameworks routes to
+  `#/frameworks` from both platforms.
+- Added the shared Profile modal. Name is editable, Email is disabled and
+  read-only, Position is required with PM, Engineering, Design, Exec, and Other.
+  `store.saveProfile` writes name and position under `users/{uid}` in Firebase
+  mode and persists through the encrypted cache in local preview. The saved name
+  wins over the Auth display name for greetings.
+- Hardened persistence details: live Firestore room snapshots preserve the loaded
+  account profile in the store mirror, user settings write nulls when the last
+  decision is cleared, and sign-in no longer overwrites an existing saved profile
+  name with the Auth display name.
+
+Verification: build clean; offline eval 19/19, onboarding 52/52, persistence
+24/24, resolution 19/19, guard 12/12, autoread 10/10, confidence 9/9. Browser QA
+passed at desktop and 375px mobile on local preview `http://localhost:5175/`:
+rail cleanup, overflow expand/collapse, older active decision visibility,
+account menus, Frameworks route, Profile validation/save/reload persistence,
+read-only email, mobile drawer parity, and zero console errors.
+
+QA checklist: `docs/qa-web-parity-profile.md`.
+
+## 2026-06-05 - Mobile UX revamp (Tasks 1 to 10)
+
+One batch reworking the mobile surface, with a three-tier person and framework
+information architecture applied on every viewport. No change to the LLM command
+model (`@note`, `@grid`/`@energy`, `@network`, `@map`, `@create`, `@ask`,
+`@read`), the offline eval setup, or trace/privacy defaults. `functions/index.js`
+and all prompts/contracts were untouched, so the src/functions mirror stays in
+sync.
+
+Conflict resolved (flagged before building, per orchestration step 2): this batch
+supersedes two `design-system.md` sections. The mobile bottom-nav with Chat as a
+fourth tab is replaced by a slim header, a right burger drawer, a top tab row,
+and a floating command companion. The per-row framework "i" popovers and the
+"What are these?" disclosure are removed; framework explanation content now lives
+only on the Tier 3 /frameworks page. `design-system.md`, `architecture.md`, and
+`roadmap.md` were rewritten to match. Scope decision (confirmed with the user):
+the new nav chrome is mobile-only (desktop keeps the rail plus chat-column
+three-pane layout); the content tiers (Tasks 7 to 10) apply on both viewports.
+Tasks 9 and 10 shipped fully, no feature flag.
+
+What changed by task:
+1. Autofocus is desktop-only. `useIsMobile` gates the onboarding textareas and the
+   companion input; on mobile nothing focuses on load, so the keyboard stays shut.
+2. Slim mobile header with a right burger opening `MobileDrawer` (rooms,
+   decisions, sign out, via the shared `Rail`). Lens tabs moved to a top row;
+   bottom bar removed. Header top-spacing fixed with safe-area padding.
+3. Graph fills the full content height below the tab row on its lens.
+4. `CommandCompanion`: a fixed (not draggable) bottom-right pill, "Command the
+   room", expanding to a bottom sheet that wraps the existing command-first chat
+   (placeholder "Command the room, or type /"). All chat behavior and the
+   "Grounded in" chips are preserved. Reads as a command surface, not support
+   chat. Desktop still uses the chat column.
+5. Last room and decision persist to `users/{uid}.settings` via
+   `store.setUserSetting` and `repo.getUserSettings`/`putUserSettings`, restored
+   once on load. Rooms-but-none-selected shows a closeable "Select your room"
+   overlay (drawer or guided setup), then a minimal prompt, never a dead screen;
+   no rooms shows the guided-setup entry.
+6. Onboarding "Build your first room" top spacing fixed; the skip control is now
+   a clearly clickable underlined link (`.onboarding-skip`) with a 40px target.
+7. `PersonProfile` is now the Tier 1 condensed overlay only: centered on mobile,
+   header plus driver plus last two notes plus state-label framework chips, a
+   single quiet /frameworks link, and "View full profile". No per-row "i", no
+   tooltip, no popover. `FrameworkVisuals.jsx` (the old per-row "i" component) was
+   deleted as dead code.
+8. `NodeSummary`: tapping a graph node shows a floating summary (name, decision
+   touched, last notes, Power/Interest and SCARF state); tapping it opens Tier 1.
+9. `PersonPage` (`#/person/:id`): that person's extended data only, framework
+   mappings with the person's mapped state and stored rationale, single quiet
+   /frameworks link, no generic prose. Reached from the People tab and "View full
+   profile".
+10. `FrameworksPage` (`#/frameworks`): generic, person-independent reference for
+    all four frameworks. No person data (litmus test passes).
+
+Routing for Tiers 2 and 3 uses the URL hash (no router dependency), so both pages
+are linkable and the browser back button works.
+
+Verification: build clean; offline eval 19/19, onboarding 52/52, persistence
+24/24, resolution 19/19, guard 12/12, autoread 10/10, confidence 9/9 (all
+unchanged). Browser-verified in local preview at 375px: slim header, top tabs, no
+bottom bar, full-screen graph, burger drawer with rooms/decisions/sign out, node
+summary then condensed overlay (state chips, no "i"), /frameworks and person page
+via hash with the back button, command companion opens and closes with the
+correct placeholder; zero console errors. Confirmed desktop at 1280px still shows
+the rail plus chat-column layout with burger/pill/mobile sign-out hidden. Manual
+QA tap-paths in `docs/qa-mobile-revamp.md`.
+
+Files: `src/hooks/useIsMobile.js` (new), `src/components/PersonPage.jsx`,
+`FrameworksPage.jsx`, `NodeSummary.jsx`, `MobileDrawer.jsx`,
+`CommandCompanion.jsx` (new), `src/components/PersonProfile.jsx` (rewritten),
+`FrameworkVisuals.jsx` (deleted), `Chat.jsx`, `OnboardingChat.jsx`,
+`src/views/Room.jsx`, `src/lib/store.js`, `src/lib/firestore-repo.js`,
+`src/lib/frameworks.js`, `src/styles.css`, the docs set, and
+`docs/qa-mobile-revamp.md` (new).
+
 ## 2026-06-04 - Mobile shell and Safari sign-in hardened
 
 Changed the mobile app shell from a stacked desktop layout into a fixed-height

@@ -1,68 +1,39 @@
 import React, { useState, useRef, useEffect } from "react";
-import { quadrantFor, POSITION_META } from "../lib/frameworks.js";
+import { quadrantFor, frameworkChips, POSITION_META } from "../lib/frameworks.js";
 import { Avatar, PositionBadge, QuadChip } from "./primitives.jsx";
-import { FrameworkVisuals } from "./FrameworkVisuals.jsx";
+import { useIsMobile } from "../hooks/useIsMobile.js";
 
-/* A field that shows text and, in full variant, edits inline. */
-function EditableField({ value, placeholder, editable, onSave, multiline }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value || "");
-  useEffect(() => setDraft(value || ""), [value]);
-
-  if (!editable) {
-    return value ? <span>{value}</span> : <span className="muted-text">{placeholder}</span>;
-  }
-  if (editing) {
-    const commit = () => {
-      onSave(draft.trim());
-      setEditing(false);
-    };
-    return multiline ? (
-      <textarea
-        className="inline-edit"
-        value={draft}
-        rows={3}
-        autoFocus
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-      />
-    ) : (
-      <input
-        className="inline-edit"
-        value={draft}
-        autoFocus
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && commit()}
-      />
-    );
-  }
-  return (
-    <button className="editable-text" onClick={() => setEditing(true)} title="Click to edit">
-      {value || <span className="muted-text">{placeholder}</span>}
-      <span className="edit-pencil">edit</span>
-    </button>
-  );
+function truncate(text, max = 130) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  return clean.length > max ? `${clean.slice(0, max - 1).trim()}…` : clean;
 }
 
 /**
- * Draggable, dismissible person profile.
- *   variant="compact"  the quick read from Grid or Network.
- *   variant="full"     the rich, editable view from the People tab.
+ * Tier 1: the condensed person overlay. A quick glance only, never the full
+ * record. Header (name, role, position-status, quadrant, Power/Interest), the
+ * driver in one line, the last two notes, and the mapped frameworks as compact
+ * state-label chips. The chips are entry points, not content: no tooltip, no
+ * popover. The only explainer is the single quiet link to /frameworks. "View
+ * full profile" opens the person page (Tier 2). Centered on mobile, floating on
+ * desktop.
  */
-export function PersonProfile({ person, position, placement, variant = "compact", onClose, onSave, onDelete }) {
-  const full = variant === "full";
+export function PersonProfile({ person, position, placement, onClose, onViewFull, onOpenFrameworks }) {
+  const mobile = useIsMobile();
   const ref = useRef(null);
   const drag = useRef(null);
   const [pos, setPos] = useState(null);
 
-  // Center on first mount, then stay where dragged.
+  // Desktop floats to the right and can be dragged; mobile is centered by CSS.
   useEffect(() => {
-    const w = full ? 460 : 380;
-    setPos({ x: Math.max(24, window.innerWidth - w - 40), y: 96 });
-  }, [full]);
+    if (mobile) {
+      setPos(null);
+      return;
+    }
+    setPos({ x: Math.max(24, window.innerWidth - 384 - 40), y: 96 });
+  }, [mobile]);
 
   useEffect(() => {
+    if (mobile) return undefined;
     const move = (e) => {
       if (!drag.current) return;
       setPos({ x: e.clientX - drag.current.ox, y: e.clientY - drag.current.oy });
@@ -74,126 +45,104 @@ export function PersonProfile({ person, position, placement, variant = "compact"
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     };
-  }, []);
+  }, [mobile]);
 
   const startDrag = (e) => {
+    if (mobile) return;
     const rect = ref.current.getBoundingClientRect();
     drag.current = { ox: e.clientX - rect.left, oy: e.clientY - rect.top };
     e.preventDefault();
   };
 
-  if (!pos) return null;
   const stance = position || "unknown";
   const pi = placement || { power: 50, interest: 55 };
   const quad = quadrantFor(pi.power, pi.interest);
-  const observations = person.observations || [];
-  const notes = observations.filter((o) => o.source !== "history");
-  const history = observations.filter((o) => o.source === "history");
+  const chips = frameworkChips(person);
+  const recentNotes = (person.observations || [])
+    .filter((o) => o.source !== "history")
+    .slice(-2)
+    .reverse();
 
-  return (
+  const card = (
     <div
       ref={ref}
-      className={`profile profile-${variant}`}
-      style={{ left: pos.x, top: pos.y }}
+      className={`profile profile-condensed ${mobile ? "profile-centered" : ""}`}
+      style={mobile || !pos ? undefined : { left: pos.x, top: pos.y }}
     >
       <div className="profile-grip" onMouseDown={startDrag}>
-        <span className="grip-dots">. . .</span>
+        {!mobile && <span className="grip-dots">. . .</span>}
         <button className="profile-close" onClick={onClose} aria-label="Close">
           ✕
         </button>
       </div>
 
       <div className="profile-body">
-        <div className="profile-head">
+        <div className="condensed-head">
           <Avatar name={person.name} size="lg" />
-          <div className="profile-id">
-            <h2 className="profile-name">{person.name}</h2>
-            <div className="profile-role">
-              <EditableField
-                value={person.role}
-                placeholder="Add a role"
-                editable={full}
-                onSave={(v) => onSave?.({ role: v })}
-              />
-            </div>
+          <h2 className="profile-name">{person.name}</h2>
+          {person.role && <p className="condensed-role">{person.role}</p>}
+          <div className="condensed-meta">
+            <PositionBadge position={stance} />
+            <QuadChip quad={quad} />
           </div>
-          <PositionBadge position={stance} />
+          <p className="condensed-scores">
+            Power {pi.power} · Interest {pi.interest}
+          </p>
         </div>
 
-        <div className="profile-meta">
-          <QuadChip quad={quad} />
-          <span className="muted-text">
-            Power {pi.power}, Interest {pi.interest}
-          </span>
-        </div>
-
-        {(person.goal || full) && (
-          <div className="profile-block">
-            <span className="section-label">Driver</span>
-            <p className="profile-goal">
-              <EditableField
-                value={person.goal}
-                placeholder="What are they actually trying to achieve?"
-                editable={full}
-                multiline
-                onSave={(v) => onSave?.({ goal: v })}
-              />
-            </p>
-          </div>
+        {person.goal && (
+          <p className="condensed-driver">
+            <span className="condensed-driver-label">Driver</span>
+            {truncate(person.goal, 110)}
+          </p>
         )}
 
-        <div className="profile-block">
-          <span className="section-label">Frameworks</span>
-          <FrameworkVisuals person={person} />
-        </div>
-
-        <div className="profile-block">
-          <span className="section-label">
-            Notes <span className="privacy-tag">Encrypted</span>
-          </span>
-          {notes.length ? (
-            <ul className="notes-list">
-              {notes.map((o, i) => (
-                <li key={i} className="note-item">
-                  {o.text}
-                </li>
+        <div className="condensed-section">
+          <span className="section-label">Recent activity</span>
+          {recentNotes.length ? (
+            <ul className="condensed-notes">
+              {recentNotes.map((o, i) => (
+                <li key={i}>{truncate(o.text)}</li>
               ))}
             </ul>
           ) : (
-            <p className="muted-text small">
-              None yet. Add one from the chat: <code>@note {person.name.split(" ")[0]} ...</code>
-            </p>
+            <p className="muted-text small">No notes yet.</p>
           )}
         </div>
 
-        {full && (
-          <div className="profile-block">
-            <span className="section-label">History across decisions</span>
-            {history.length ? (
-              <ul className="history-list">
-                {history.map((o, i) => (
-                  <li key={i} className="history-item">
-                    <span className="history-dot dot-neutral" />
-                    <div>
-                      <span className="history-note">{o.text}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="muted-text small">No past decisions recorded yet.</p>
-            )}
-          </div>
-        )}
+        <div className="condensed-section">
+          <span className="section-label">Frameworks</span>
+          {chips.length ? (
+            <div className="condensed-chips">
+              {chips.map((c) => (
+                <span key={c.key} className="fw-state-chip" style={{ "--accent": c.accent }}>
+                  <span className="fw-state-name">{c.framework}</span>
+                  <span className="fw-state-label">{c.label}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-text small">Not mapped yet. Add notes to build the read.</p>
+          )}
+          <button type="button" className="fw-quiet-link" onClick={onOpenFrameworks}>
+            Understand the frameworks
+          </button>
+        </div>
 
-        {full && onDelete && (
-          <div className="profile-danger">
-            <button className="btn-danger" onClick={() => onDelete(person.id)}>
-              Remove from roster
-            </button>
-          </div>
-        )}
+        <button type="button" className="btn-secondary condensed-full" onClick={() => onViewFull(person.id)}>
+          View full profile
+        </button>
       </div>
     </div>
   );
+
+  if (mobile) {
+    return (
+      <div className="profile-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+        {card}
+      </div>
+    );
+  }
+  if (!pos) return null;
+  return card;
 }

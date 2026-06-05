@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import { highlight, RichText } from "./highlight.jsx";
-import { Avatar, PositionBadge } from "./primitives.jsx";
 import { EXAMPLE_PROMPTS } from "../lib/reasoning.js";
 
 function PlayMessage({ response, people, latest, onShowNetwork }) {
@@ -126,44 +125,32 @@ function UserMessage({ body, latest }) {
 
 function LoadingMessage() {
   return (
-    <SimpleMessage label="Reading the room" variant="chat-loading" latest>
-      <p>Updating the room from this command.</p>
+    <SimpleMessage label="Thinking" variant="chat-loading" latest>
+      <div className="typing-line" aria-live="polite">
+        <span>Working on it</span>
+        <span className="typing-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      </div>
     </SimpleMessage>
   );
 }
 
-/* The resting state: a framed card that reads the room at a glance. */
-function RestingCard({ participants, decision, onOpenProfile }) {
-  const counts = participants.reduce((a, p) => {
-    const s = decision?.positions?.[p.id] || "unknown";
-    a[s] = (a[s] || 0) + 1;
-    return a;
-  }, {});
-  const decided = (counts.for || 0) + (counts.against || 0);
-  const sub =
-    participants.length === 0
-      ? "Add participants to start reading the room."
-      : `${decided} have a clear stance. ${participants.length - decided} are still open. Ask below for the play.`;
-
+/* The resting state: an open conversation prompt, not a generated room read. */
+function ConversationStart() {
   return (
-    <div className="resting-card">
-      <span className="msg-label">Read the room</span>
-      <h3 className="resting-headline">
-        {participants.length} {participants.length === 1 ? "person decides" : "people decide"} this.
-      </h3>
-      <p className="resting-sub">{sub}</p>
-      <ul className="resting-list">
-        {participants.map((p) => (
-          <li key={p.id} className="resting-row" onClick={() => onOpenProfile(p.id)}>
-            <Avatar name={p.name} size="sm" />
-            <div className="resting-row-main">
-              <span className="resting-row-name">{p.name}</span>
-              <span className="resting-row-role">{p.role}</span>
-            </div>
-            <PositionBadge position={decision?.positions?.[p.id] || "unknown"} size="xs" />
-          </li>
-        ))}
-      </ul>
+    <div className="resting-card chat-start-card">
+      <span className="msg-label">Conversation</span>
+      <h3 className="resting-headline">What is on your mind today?</h3>
+      <p className="resting-sub">
+        Tell me what changed in the room, add a note, or ask a specific question. Use <code>@read</code> when you want a grounded read of the room.
+      </p>
+      <div className="chat-start-lines">
+        <p>Try <code>@note Marco says the drain is getting worse</code></p>
+        <p>Or <code>@ask who should I talk to first?</code></p>
+      </div>
     </div>
   );
 }
@@ -172,9 +159,9 @@ function EmptyConversation() {
   return (
     <div className="conversation-empty">
       <span className="msg-label">Conversation</span>
-      <h3 className="resting-headline">The play lives here.</h3>
+      <h3 className="resting-headline">No decision open.</h3>
       <p className="resting-sub">
-        Create or select a decision, then ask what to do before the next conversation.
+        Open a decision in this room, or start a new one.
       </p>
     </div>
   );
@@ -184,7 +171,7 @@ function EmptyConversation() {
  * The conversation. User prompts and assistant command confirmations alternate
  * in the thread. Person reads live in the floating profile, never in this stream.
  */
-export function Chat({ messages, participants, decision, onShowNetwork, onOpenProfile, onCiteClick, onOpenCommands, draft, setDraft, onSubmit, isGenerating, openChat }) {
+export function Chat({ messages, participants, decision, onShowNetwork, onCiteClick, onOpenCommands, draft, setDraft, onSubmit, isGenerating, openChat, placeholder, autoFocusInput }) {
   const endRef = useRef(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -202,7 +189,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
         {locked ? (
           <EmptyConversation />
         ) : resting ? (
-          <RestingCard participants={participants} decision={decision} onOpenProfile={onOpenProfile} />
+          <ConversationStart />
         ) : (
           messages.map((m, i) => {
             const latest = i === last;
@@ -254,8 +241,9 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
             className="chat-input"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder={locked ? "Create a decision to start the conversation" : openChat ? "Ask about the room, or type @ for a command" : "Type @network, @energy, @map, @note, or /"}
+            placeholder={locked ? "Open a decision first" : placeholder || (openChat ? "What changed in the room?" : "Type @network, @energy, @map, @note, or /")}
             disabled={locked || isGenerating}
+            autoFocus={autoFocusInput}
           />
           <button className="chat-send" type="submit" disabled={locked || isGenerating || !commandReady}>
             {isGenerating ? "Reading" : "Send"}
@@ -263,9 +251,9 @@ export function Chat({ messages, participants, decision, onShowNetwork, onOpenPr
         </form>
         <p className="chat-hint">
           {openChat ? (
-            <>Ask about the room in plain language, or use a command. <code>@energy</code>, <code>@network</code>, <code>@note</code>, <code>@map</code> build it; <code>@read</code> and <code>@ask</code> read it. Tap <code>/</code> for all.</>
+            <>Ask about the room in plain language, or use a command. <code>@energy</code>, <code>@network</code>, <code>@note</code>, and <code>@map</code> build it. <code>@read</code> runs only when you send it. Tap <code>/</code> for all.</>
           ) : (
-            <>Only commands run here. <code>@energy</code>, <code>@network</code>, <code>@note</code>, and <code>@map</code> build the room. <code>@read</code> and <code>@ask</code> get a strategic read. Tap <code>/</code> for all commands.</>
+            <>Only commands run here. <code>@energy</code>, <code>@network</code>, <code>@note</code>, and <code>@map</code> build the room. <code>@read</code> runs the room read when you ask for it. Tap <code>/</code> for all commands.</>
           )}
         </p>
       </div>

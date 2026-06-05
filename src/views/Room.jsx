@@ -35,7 +35,15 @@ const OPEN_CHAT = LIVE_LLM;
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
 import { OnboardingChat } from "../components/OnboardingChat.jsx";
-import { PersonProfile } from "../components/PersonProfile.jsx";
+import { PersonPage } from "../components/PersonPage.jsx";
+import { PersonNotesPage } from "../components/PersonNotesPage.jsx";
+import { FrameworksPage } from "../components/FrameworksPage.jsx";
+import { NodeSummary } from "../components/NodeSummary.jsx";
+import { MobileDrawer } from "../components/MobileDrawer.jsx";
+import { CommandCompanion } from "../components/CommandCompanion.jsx";
+import { AccountMenu } from "../components/AccountMenu.jsx";
+import { ProfileModal } from "../components/ProfileModal.jsx";
+import { useIsMobile } from "../hooks/useIsMobile.js";
 import { PeopleTab } from "../components/tabs/PeopleTab.jsx";
 import { GridTab } from "../components/tabs/GridTab.jsx";
 import { NetworkTab } from "../components/tabs/NetworkTab.jsx";
@@ -50,8 +58,20 @@ const TABS = [
   { id: "people", label: "People", hint: "Who you are dealing with" },
   { id: "grid", label: "Energy", hint: "Who to spend energy on" },
   { id: "network", label: "Network", hint: "Who moves whom" },
-  { id: "chat", label: "Chat", hint: "Ask the room", mobileOnly: true },
 ];
+
+/* Hash routes for the linkable person, person notes, and frameworks pages. */
+function parseHash(hash) {
+  if (hash === "#/frameworks") return { view: "frameworks", personId: null };
+  if (hash.startsWith("#/person/")) {
+    const rest = hash.slice("#/person/".length);
+    if (rest.endsWith("/notes")) {
+      return { view: "personNotes", personId: rest.slice(0, -"/notes".length) };
+    }
+    return { view: "person", personId: rest };
+  }
+  return { view: "lenses", personId: null };
+}
 
 function gridValueIsExtreme(value) {
   return value != null && (value <= 10 || value >= 90);
@@ -104,13 +124,21 @@ function mergePersonPatch(person, profilePatch) {
   return { ...next, fresh: false };
 }
 
-export default function Room({ onExit, userId }) {
+export default function Room({ onExit, userId, userName, userEmail }) {
   const store = useStore();
+  const isMobile = useIsMobile();
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const [activeRoomId, setActiveRoomId] = useState("mobile");
   const [activeDecisionId, setActiveDecisionId] = useState("salesforce");
   const [activeTab, setActiveTab] = useState("people");
-  const [profile, setProfile] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [companionOpen, setCompanionOpen] = useState(false);
+  const [nodeSummaryId, setNodeSummaryId] = useState(null);
+  const [selectDismissed, setSelectDismissed] = useState(false);
+  const [route, setRoute] = useState(() =>
+    typeof window === "undefined" ? { view: "lenses", personId: null } : parseHash(window.location.hash)
+  );
   const [draft, setDraft] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPath, setShowPath] = useState(false);
@@ -141,15 +169,8 @@ export default function Room({ onExit, userId }) {
   const lastPlay = [...messages].reverse().find((m) => m.type === "play");
   const sequence = lastPlay?.response?.sequence;
   const roomHasPeople = (room?.rosterIds?.length || 0) > 0;
-  const profilePerson = profile ? store.getPerson(profile.personId) : null;
-  const profilePosition = decision?.positions?.[profile?.personId] || "unknown";
-  const profilePlacement = decision && profile ? store.getPlacement(decision.id, profile.personId) : null;
-
-  /* The Read: a grounded read of the room. It fires ONLY when the user opens a
-     decision (selectDecision / selectRoom) or runs @read, never on bare landing
-     or during load churn, so we never spend a call without a selected decision. */
-  const readAttempted = useRef(new Set());
-
+  /* The Read: a grounded read of the room. It runs only from the explicit @read
+     command, so selecting a room or decision never reads by surprise. */
   const generateRead = useCallback(
     async ({ decisionId, auto } = {}) => {
       const id = decisionId || activeDecisionId;
@@ -200,22 +221,6 @@ export default function Room({ onExit, userId }) {
     [activeDecisionId, store]
   );
 
-  // Auto-read fires on an explicit decision selection only, once per decision,
-  // when the room is rich enough and no read is already in the thread.
-  const maybeAutoRead = useCallback(
-    (decisionId) => {
-      if (!decisionId || !LIVE_LLM) return;
-      const d = store.getDecision(decisionId);
-      if (!d) return;
-      if (!autoReadEligible(store.getParticipants(decisionId).length, store.getEdges(decisionId).length)) return;
-      if (store.getChat(decisionId).some((m) => m.type === "read")) return;
-      if (readAttempted.current.has(decisionId)) return;
-      readAttempted.current.add(decisionId);
-      generateRead({ decisionId, auto: true });
-    },
-    [store, generateRead]
-  );
-
   const startOnboarding = useCallback(
     ({ auto = false, mode = "first-run" } = {}) => {
       store.setPref("onboardingPrompted", true);
@@ -249,20 +254,40 @@ export default function Room({ onExit, userId }) {
     setPendingOnboarding(consumeOnboardingPending(userId));
   }, [userId]);
 
+  // Hash is the single source for the Tier 2 person page and Tier 3 frameworks
+  // page, so they are linkable and the browser back button works.
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const mq = window.matchMedia("(max-width: 760px)");
-    const keepDesktopOnLens = () => {
-      if (!mq.matches && activeTab === "chat") setActiveTab("people");
-    };
-    keepDesktopOnLens();
-    if (mq.addEventListener) {
-      mq.addEventListener("change", keepDesktopOnLens);
-      return () => mq.removeEventListener("change", keepDesktopOnLens);
-    }
-    mq.addListener?.(keepDesktopOnLens);
-    return () => mq.removeListener?.(keepDesktopOnLens);
-  }, [activeTab]);
+    const apply = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, []);
+
+  // Guided setup owns the screen, so close the mobile drawer whenever it
+  // activates (e.g. "+ New room" started from inside the drawer).
+  useEffect(() => {
+    if (onboarding.active) setDrawerOpen(false);
+  }, [onboarding.active]);
+
+  const openPersonPage = useCallback((id) => {
+    setNodeSummaryId(null);
+    window.location.hash = `#/person/${id}`;
+  }, []);
+  const openPersonNotes = useCallback((id) => {
+    setNodeSummaryId(null);
+    window.location.hash = `#/person/${id}/notes`;
+  }, []);
+  const openFrameworks = useCallback(() => {
+    window.location.hash = "#/frameworks";
+  }, []);
+  const openMobileMenu = useCallback(() => {
+    setDrawerOpen(true);
+  }, []);
+  const pageBack = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (window.history.length > 1) window.history.back();
+    else window.location.hash = "#/";
+  }, []);
 
   useEffect(() => {
     if (
@@ -288,7 +313,6 @@ export default function Room({ onExit, userId }) {
     const roomId = emptyRoom?.id || store.createRoom();
     setActiveRoomId(roomId);
     setActiveDecisionId(null);
-    setProfile(null);
     setActiveTab("people");
     setModal({ type: "roomSettings", id: roomId });
   }, [store, onboarding.mode]);
@@ -303,29 +327,56 @@ export default function Room({ onExit, userId }) {
   const selectRoom = useCallback(
     (id) => {
       setActiveRoomId(id);
+      store.setUserSetting("lastRoomId", id);
       const first = store.getDecisions(id).find((d) => d.status === "active");
       if (first) {
         store.ensureChat(first.id);
         setActiveDecisionId(first.id);
-        maybeAutoRead(first.id);
-      } else setActiveDecisionId(null);
-      setProfile(null);
+        store.setUserSetting("lastDecisionId", first.id);
+      } else {
+        setActiveDecisionId(null);
+        store.setUserSetting("lastDecisionId", null);
+      }
+      setSelectDismissed(false);
       setShowPath(false);
       setActiveTab("people");
     },
-    [store, maybeAutoRead]
+    [store]
   );
   const selectDecision = useCallback(
     (id) => {
       store.ensureChat(id);
       setActiveDecisionId(id);
-      setProfile(null);
+      store.setUserSetting("lastRoomId", activeRoomId);
+      store.setUserSetting("lastDecisionId", id);
+      setSelectDismissed(false);
       setShowPath(false);
       setActiveTab("people");
-      maybeAutoRead(id);
     },
-    [store, maybeAutoRead]
+    [store, activeRoomId]
   );
+
+  // Restore the last room and decision once the synced settings load, so a
+  // reload returns the user where they left off (Task 5). Runs once when a
+  // valid stored room becomes available.
+  const restoredSelection = useRef(false);
+  const storedRoomId = store.getPref("lastRoomId");
+  const storedDecisionId = store.getPref("lastDecisionId");
+  useEffect(() => {
+    if (restoredSelection.current || !rooms.length) return;
+    if (!storedRoomId || !store.getRoom(storedRoomId)) return;
+    restoredSelection.current = true;
+    setActiveRoomId(storedRoomId);
+    const stored = storedDecisionId ? store.getDecision(storedDecisionId) : null;
+    if (stored && stored.roomId === storedRoomId && stored.status === "active") {
+      store.ensureChat(stored.id);
+      setActiveDecisionId(stored.id);
+    } else {
+      const first = store.getDecisions(storedRoomId).find((d) => d.status === "active") || null;
+      setActiveDecisionId(first?.id || null);
+      if (first) store.ensureChat(first.id);
+    }
+  }, [rooms, storedRoomId, storedDecisionId, store]);
 
   useEffect(() => {
     if (!rooms.length) {
@@ -339,7 +390,6 @@ export default function Room({ onExit, userId }) {
       setActiveRoomId(firstRoom.id);
       setActiveDecisionId(firstDecision?.id || null);
       if (firstDecision) store.ensureChat(firstDecision.id);
-      setProfile(null);
       setShowPath(false);
       setActiveTab("people");
       return;
@@ -348,7 +398,6 @@ export default function Room({ onExit, userId }) {
       const firstDecision = store.getDecisions(activeRoomId).find((d) => d.status === "active") || null;
       setActiveDecisionId(firstDecision?.id || null);
       if (firstDecision) store.ensureChat(firstDecision.id);
-      setProfile(null);
       setShowPath(false);
       setActiveTab("people");
     }
@@ -359,7 +408,6 @@ export default function Room({ onExit, userId }) {
     trackEvent("room_create");
     setActiveRoomId(id);
     setActiveDecisionId(null);
-    setProfile(null);
     setActiveTab("people");
     setModal({ type: "roomSettings", id });
   }, [store]);
@@ -397,7 +445,6 @@ export default function Room({ onExit, userId }) {
       const firstDec = nextRoom ? store.getDecisions(nextRoom.id).find((d) => d.status === "active") : null;
       setActiveDecisionId(firstDec?.id || null);
       setModal(null);
-      setProfile(null);
     },
     [store]
   );
@@ -419,21 +466,22 @@ export default function Room({ onExit, userId }) {
       store.deletePerson(id, activeRoomId);
       trackEvent("person_roster_remove");
       setModal(null);
-      setProfile(null);
     },
     [store, activeRoomId]
   );
 
-  /* profile */
-  const openCompact = useCallback((id) => setProfile({ personId: id, variant: "compact" }), []);
-  const openFull = useCallback((id) => setProfile({ personId: id, variant: "full" }), []);
+  /* Profile surfaces. Graph taps open the small node summary first; people,
+     read chips, and summary taps open the single person profile page. */
+  const openNodeSummary = useCallback((id) => {
+    setNodeSummaryId(id);
+  }, []);
 
   const openReadChip = useCallback(
     (id) => {
       trackEvent("read_chip_clicked", { personId: id });
-      openCompact(id);
+      openPersonPage(id);
     },
-    [openCompact]
+    [openPersonPage]
   );
 
   const findPersonRef = useCallback(
@@ -583,7 +631,6 @@ export default function Room({ onExit, userId }) {
       setActiveRoomId(roomId);
       setActiveDecisionId(decisionId);
       setActiveTab("people");
-      setProfile(null);
       setShowPath(false);
 
       const plan = buildOnboardingCommandPlan(answers);
@@ -786,7 +833,7 @@ export default function Room({ onExit, userId }) {
         const id = store.addExternal(decision.id, { name, role });
         trackEvent("external_add");
         store.pushMessage(decision.id, { type: "added", body: `${name} added as an external participant. First pass read, sharpen it with notes.` });
-        if (id) setProfile({ personId: id, variant: "compact" });
+        if (id) openPersonPage(id);
         setDraft("");
         return;
       }
@@ -902,7 +949,7 @@ export default function Room({ onExit, userId }) {
         setIsGenerating(false);
       }
     },
-    [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, participants, room, store]
+    [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, room, store]
   );
   const showOnNetwork = useCallback(() => {
     setShowPath(true);
@@ -913,187 +960,318 @@ export default function Room({ onExit, userId }) {
   const modalDecision = modal?.id ? store.getDecision(modal.id) : null;
   const modalPerson = modal?.id ? store.getPerson(modal.id) : null;
 
-  return (
-    <div className={`app ${collapsed ? "app-rail-collapsed" : ""} app-tab-${activeTab}`}>
-      <header className="header">
-        <div className="brand-lockup" aria-label="The Situation Room">
-          <span className="brand">The Situation Room</span>
-        </div>
-        <button className="signout" onClick={onExit} title="Sign out">
-          Sign out
+  const personPagePerson = (route.view === "person" || route.view === "personNotes") && route.personId ? store.getPerson(route.personId) : null;
+  const personPagePosition = personPagePerson ? decision?.positions?.[personPagePerson.id] || "unknown" : "unknown";
+  const personPagePlacement = personPagePerson && decision ? store.getPlacement(decision.id, personPagePerson.id) : null;
+  const summaryPerson = nodeSummaryId ? store.getPerson(nodeSummaryId) : null;
+  const summaryPosition = summaryPerson ? decision?.positions?.[summaryPerson.id] || "unknown" : "unknown";
+  const summaryPlacement = summaryPerson && decision ? store.getPlacement(decision.id, summaryPerson.id) : null;
+  const onGraphLens = activeTab === "grid" || activeTab === "network";
+  const routePageOpen =
+    route.view === "frameworks" ||
+    ((route.view === "person" || route.view === "personNotes") && Boolean(personPagePerson));
+
+  // Account identity: the saved profile name wins over the Auth display name in
+  // the greeting and everywhere the name is shown.
+  const accountProfile = store.getProfile();
+  const accountName = accountProfile.name || userName || (userEmail ? userEmail.split("@")[0] : "") || "Account";
+  const accountEmail = userEmail || accountProfile.email || "";
+  const saveProfile = useCallback(
+    async ({ name, position }) => {
+      await store.saveProfile({ name, position });
+      trackEvent("profile_save");
+    },
+    [store]
+  );
+
+  const railProps = {
+    rooms,
+    activeRoomId,
+    activeDecisionId,
+    onSelectRoom: selectRoom,
+    onNewRoom: startGuidedRoom,
+    onEditRoom: (id) => setModal({ type: "roomSettings", id }),
+    onDeleteRoom: (id) => setModal({ type: "deleteRoom", id }),
+    decisions,
+    onSelectDecision: selectDecision,
+    onNewDecision: newDecision,
+    onEditDecision: (id) => setModal({ type: "decisionSettings", id }),
+    onArchiveDecision: archive,
+    onDeleteDecision: (id) => setModal({ type: "deleteDecision", id }),
+  };
+  const chatProps = {
+    messages,
+    participants,
+    decision,
+    onShowNetwork: showOnNetwork,
+    onOpenProfile: openPersonPage,
+    onCiteClick: openReadChip,
+    onOpenCommands: () => setModal({ type: "commands" }),
+    draft,
+    setDraft,
+    onSubmit,
+    isGenerating,
+    openChat: OPEN_CHAT,
+  };
+
+  // Rooms exist but nothing is open. Show one calm empty-state voice in the
+  // workspace and chat column instead of two competing explanations.
+  const noDecisionOpen = roomHasPeople && !decision;
+  const selectCard = (
+    <div className="select-room">
+      <button type="button" className="select-room-close" onClick={() => setSelectDismissed(true)} aria-label="Close">
+        ✕
+      </button>
+      <h2 className="select-room-title">{noDecisionOpen ? "No decision open" : "Select your room"}</h2>
+      <p className="select-room-sub">
+        {noDecisionOpen
+          ? "Open a decision in this room, or start a new one."
+          : "Open a room to pick up where you left off, or set one up."}
+      </p>
+      <div className="empty-actions">
+        <button className="btn-primary" onClick={() => setDrawerOpen(true)}>
+          Open rooms
         </button>
-      </header>
-
-      <div className="body">
-        <Rail
-          rooms={rooms}
-          activeRoomId={activeRoomId}
-          activeDecisionId={activeDecisionId}
-          collapsed={collapsed}
-          onToggleCollapse={() => store.setPref("railCollapsed", !collapsed)}
-          onSelectRoom={selectRoom}
-          onNewRoom={startGuidedRoom}
-          onEditRoom={(id) => setModal({ type: "roomSettings", id })}
-          onDeleteRoom={(id) => setModal({ type: "deleteRoom", id })}
-          decisions={decisions}
-          onSelectDecision={selectDecision}
-          onNewDecision={newDecision}
-          onEditDecision={(id) => setModal({ type: "decisionSettings", id })}
-          onArchiveDecision={archive}
-          onDeleteDecision={(id) => setModal({ type: "deleteDecision", id })}
-        />
-
-        {onboarding.active ? (
-          <main className="onboarding-panel">
-            <OnboardingChat
-              messages={onboarding.messages}
-              thinking={onboarding.thinking}
-              phase={onboarding.phase}
-              step={onboarding.step}
-              totalSteps={ONBOARDING_QUESTIONS.length}
-              question={ONBOARDING_QUESTIONS[onboarding.step]}
-              skippable={Boolean(ONBOARDING_QUESTIONS[onboarding.step]?.skippable)}
-              draft={onboarding.draft}
-              setDraft={(value) => setOnboarding((current) => ({ ...current, draft: value }))}
-              nameDraft={onboarding.nameDraft}
-              setNameDraft={(value) => setOnboarding((current) => ({ ...current, nameDraft: value }))}
-              busy={onboarding.busy}
-              error={onboarding.error}
-              headline={onboarding.mode === "guided" ? "Set up a new room" : "Build your first room"}
-              onSubmit={submitOnboarding}
-              onSkip={skipOnboarding}
-              onOpenRoom={openOnboardingRoom}
-            />
-          </main>
+        {roomHasPeople && !decision ? (
+          <button className="btn-secondary" onClick={newDecision}>
+            New decision
+          </button>
         ) : (
-          <>
-        <main className="workspace">
-          {!room ? (
-            <div className="empty-state">
-              <div className="empty-icon">◦</div>
-              <p className="empty-title">No room selected</p>
-              <p className="empty-sub">Create a room to begin.</p>
-              <div className="empty-actions">
-                <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
-                  Start guided setup
-                </button>
-                <button className="btn-secondary" onClick={newRoom}>
-                  New room
-                </button>
-              </div>
-            </div>
-          ) : !roomHasPeople ? (
-            <div className="empty-state">
-              <div className="empty-icon">◦</div>
-              <p className="empty-title">No one in this room yet</p>
-              <p className="empty-sub">Add your team to the roster. They become available across every decision in this room.</p>
-              <div className="empty-actions">
-                <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
-                  Start guided setup
-                </button>
-                <button className="btn-secondary" onClick={() => setModal({ type: "roomSettings", id: activeRoomId })}>
-                  Add people
-                </button>
-              </div>
-            </div>
-          ) : !decision ? (
-            <div className="empty-state">
-              <div className="empty-icon">○</div>
-              <p className="empty-title">No decision selected</p>
-              <p className="empty-sub">Start a decision. The whole roster joins by default, and you map positions and the play from there.</p>
-              <div className="empty-actions">
-                <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
-                  Start guided setup
-                </button>
-                <button className="btn-secondary" onClick={newDecision}>
-                  New decision
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="tabs">
-                {TABS.map((t) => (
-                  <button
-                    key={t.id}
-                    className={`tab ${activeTab === t.id ? "tab-active" : ""} ${t.mobileOnly ? "tab-mobile-only" : ""}`}
-                    onClick={() => setActiveTab(t.id)}
-                  >
-                    <span className="tab-label">{t.label}</span>
-                    <span className="tab-hint">{t.hint}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="tab-body">
-                {activeTab === "people" && (
-                  <PeopleTab
-                    participants={participants}
-                    decision={decision}
-                    onOpenProfile={openFull}
-                    onAddExternal={() => setModal({ type: "external" })}
-                    onRemoveParticipant={(id) => {
-                      store.removeParticipant(decision.id, id);
-                      trackEvent("decision_participant_remove");
-                    }}
-                  />
-                )}
-                {activeTab === "grid" && (
-                  <GridTab
-                    participants={participants}
-                    decision={decision}
-                    selectedId={profile?.personId}
-                    onOpenProfile={openCompact}
-                    onMove={(personId, power, interest) => store.setPlacement(decision.id, personId, power, interest)}
-                  />
-                )}
-                {activeTab === "network" && (
-                  <NetworkTab
-                    participants={participants}
-                    decision={decision}
-                    edges={store.getEdges(decision.id)}
-                    onRemoveEdge={(index) => store.removeEdge(decision.id, index)}
-                    selectedId={profile?.personId}
-                    onOpenProfile={openCompact}
-                    sequence={sequence}
-                    showPath={showPath}
-                  />
-                )}
-              </div>
-            </>
-          )}
-        </main>
-
-        <Chat
-          messages={messages}
-          participants={participants}
-          decision={decision}
-          onShowNetwork={showOnNetwork}
-          onOpenProfile={openFull}
-          onCiteClick={openReadChip}
-          onOpenCommands={() => setModal({ type: "commands" })}
-          draft={draft}
-          setDraft={setDraft}
-          onSubmit={onSubmit}
-          isGenerating={isGenerating}
-          openChat={OPEN_CHAT}
-        />
-          </>
+          <button className="btn-secondary" onClick={() => startOnboarding({ auto: false })}>
+            Start guided setup
+          </button>
         )}
       </div>
+    </div>
+  );
+  const minimalPrompt = (
+    <div className="select-min">
+      <p className="select-min-text">Nothing open right now.</p>
+      <button className="btn-secondary" onClick={() => { setSelectDismissed(false); setDrawerOpen(true); }}>
+        Open rooms
+      </button>
+    </div>
+  );
 
-      {profilePerson && (
-        <PersonProfile
-          key={profile.personId + profile.variant}
-          person={profilePerson}
-          position={profilePosition}
-          placement={profilePlacement}
-          variant={profile.variant}
-          onClose={() => setProfile(null)}
+  return (
+    <div className={`app ${collapsed ? "app-rail-collapsed" : ""} app-tab-${activeTab}`}>
+      {!routePageOpen && (
+        <>
+          <header className="header">
+            <div className="brand-lockup" aria-label="The Situation Room">
+              <span className="brand">The Situation Room</span>
+            </div>
+            <div className="account-desktop">
+              <AccountMenu
+                name={accountName}
+                email={accountEmail}
+                onProfile={() => setProfileOpen(true)}
+                onFrameworks={openFrameworks}
+                onSignOut={onExit}
+              />
+            </div>
+            <button className="burger" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
+              <span />
+              <span />
+              <span />
+            </button>
+          </header>
+
+          <div className="body">
+            <Rail
+              {...railProps}
+              collapsed={collapsed}
+              onToggleCollapse={() => store.setPref("railCollapsed", !collapsed)}
+            />
+
+            {onboarding.active ? (
+              <main className="onboarding-panel">
+                <OnboardingChat
+                  messages={onboarding.messages}
+                  thinking={onboarding.thinking}
+                  phase={onboarding.phase}
+                  step={onboarding.step}
+                  totalSteps={ONBOARDING_QUESTIONS.length}
+                  question={ONBOARDING_QUESTIONS[onboarding.step]}
+                  skippable={Boolean(ONBOARDING_QUESTIONS[onboarding.step]?.skippable)}
+                  draft={onboarding.draft}
+                  setDraft={(value) => setOnboarding((current) => ({ ...current, draft: value }))}
+                  nameDraft={onboarding.nameDraft}
+                  setNameDraft={(value) => setOnboarding((current) => ({ ...current, nameDraft: value }))}
+                  busy={onboarding.busy}
+                  error={onboarding.error}
+                  headline={onboarding.mode === "guided" ? "Set up a new room" : "Build your first room"}
+                  onSubmit={submitOnboarding}
+                  onSkip={skipOnboarding}
+                  onOpenRoom={openOnboardingRoom}
+                />
+              </main>
+            ) : (
+              <>
+                <main className="workspace">
+                  {!rooms.length ? (
+                    <div className="empty-state">
+                      <div className="empty-icon">◦</div>
+                      <p className="empty-title">Set up your first room</p>
+                      <p className="empty-sub">Map the people behind a decision in a couple of minutes.</p>
+                      <div className="empty-actions">
+                        <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
+                          Start guided setup
+                        </button>
+                        <button className="btn-secondary" onClick={newRoom}>
+                          New room
+                        </button>
+                      </div>
+                    </div>
+                  ) : !room ? (
+                    selectDismissed ? minimalPrompt : selectCard
+                  ) : !roomHasPeople ? (
+                    <div className="empty-state">
+                      <div className="empty-icon">◦</div>
+                      <p className="empty-title">No one in this room yet</p>
+                      <p className="empty-sub">Add your team to the roster. They become available across every decision in this room.</p>
+                      <div className="empty-actions">
+                        <button className="btn-primary" onClick={() => startOnboarding({ auto: false })}>
+                          Start guided setup
+                        </button>
+                        <button className="btn-secondary" onClick={() => setModal({ type: "roomSettings", id: activeRoomId })}>
+                          Add people
+                        </button>
+                      </div>
+                    </div>
+                  ) : !decision ? (
+                    selectDismissed ? minimalPrompt : selectCard
+                  ) : (
+                    <>
+                      <div className="tabs">
+                        {TABS.map((t) => (
+                          <button
+                            key={t.id}
+                            className={`tab ${activeTab === t.id ? "tab-active" : ""}`}
+                            onClick={() => {
+                              setActiveTab(t.id);
+                              setNodeSummaryId(null);
+                            }}
+                          >
+                            <span className="tab-label">{t.label}</span>
+                            <span className="tab-hint">{t.hint}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="tab-body">
+                        {activeTab === "people" && (
+                          <PeopleTab
+                            participants={participants}
+                            decision={decision}
+                            onOpenProfile={openPersonPage}
+                            onAddExternal={() => setModal({ type: "external" })}
+                            onRemoveParticipant={(id) => {
+                              store.removeParticipant(decision.id, id);
+                              trackEvent("decision_participant_remove");
+                            }}
+                          />
+                        )}
+                        {activeTab === "grid" && (
+                          <GridTab
+                            participants={participants}
+                            decision={decision}
+                            selectedId={nodeSummaryId}
+                            onOpenProfile={openNodeSummary}
+                            onMove={(personId, power, interest) => store.setPlacement(decision.id, personId, power, interest)}
+                          />
+                        )}
+                        {activeTab === "network" && (
+                          <NetworkTab
+                            participants={participants}
+                            decision={decision}
+                            edges={store.getEdges(decision.id)}
+                            onRemoveEdge={(index) => store.removeEdge(decision.id, index)}
+                            selectedId={nodeSummaryId}
+                            onOpenProfile={openNodeSummary}
+                            sequence={sequence}
+                            showPath={showPath}
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
+                </main>
+
+                <Chat {...chatProps} autoFocusInput={!isMobile} />
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Mobile shell: the burger drawer and the floating command companion. */}
+      <MobileDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onSignOut={onExit}
+        onProfile={() => setProfileOpen(true)}
+        onFrameworks={openFrameworks}
+        accountName={accountName}
+        railProps={railProps}
+      />
+      {!routePageOpen && !onboarding.active && decision && (
+        <CommandCompanion
+          open={companionOpen}
+          onOpen={() => setCompanionOpen(true)}
+          onClose={() => setCompanionOpen(false)}
+          chatProps={{ ...chatProps, autoFocusInput: true }}
+        />
+      )}
+
+      {/* Task 8: floating node summary on the graph lens. */}
+      {!routePageOpen && summaryPerson && onGraphLens && (
+        <NodeSummary
+          person={summaryPerson}
+          position={summaryPosition}
+          placement={summaryPlacement}
+          decisionTitle={decision?.title}
+          onOpen={openPersonPage}
+          onClose={() => setNodeSummaryId(null)}
+        />
+      )}
+
+      {/* Person, person notes, and frameworks pages, full-screen and linkable. */}
+      {route.view === "person" && personPagePerson && (
+        <PersonPage
+          key={personPagePerson.id}
+          person={personPagePerson}
+          position={personPagePosition}
+          placement={personPagePlacement}
+          onBack={pageBack}
           onSave={(patch) => {
-            store.updatePerson(profile.personId, patch);
+            store.updatePerson(personPagePerson.id, patch);
             trackEvent("person_update");
           }}
-          onDelete={room?.rosterIds?.includes(profile.personId) ? (id) => setModal({ type: "deletePerson", id }) : null}
+          onDelete={room?.rosterIds?.includes(personPagePerson.id) ? (id) => setModal({ type: "deletePerson", id }) : null}
+          onOpenFrameworks={openFrameworks}
+          onOpenNotes={openPersonNotes}
+          onOpenMenu={openMobileMenu}
+        />
+      )}
+      {route.view === "personNotes" && personPagePerson && (
+        <PersonNotesPage
+          key={`${personPagePerson.id}-notes`}
+          person={personPagePerson}
+          onBack={() => {
+            window.location.hash = `#/person/${personPagePerson.id}`;
+          }}
+          onOpenMenu={openMobileMenu}
+        />
+      )}
+      {route.view === "frameworks" && <FrameworksPage onBack={pageBack} onOpenMenu={openMobileMenu} />}
+
+      {profileOpen && (
+        <ProfileModal
+          name={accountProfile.name || userName || ""}
+          email={accountEmail}
+          position={accountProfile.position || ""}
+          onSave={saveProfile}
+          onClose={() => setProfileOpen(false)}
         />
       )}
 
@@ -1143,7 +1321,7 @@ export default function Room({ onExit, userId }) {
             const id = store.addExternal(decision.id, { name, role });
             trackEvent("external_add");
             setModal(null);
-            if (id) setProfile({ personId: id, variant: "full" });
+            if (id) openPersonPage(id);
           }}
           onClose={() => setModal(null)}
         />
