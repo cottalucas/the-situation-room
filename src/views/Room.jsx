@@ -192,6 +192,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       }
       setIsGenerating(true);
       trackEvent("read_generated", { auto: !!auto });
+      if (typeof pendo !== "undefined") {
+        pendo.track("read_generated", {
+          auto: !!auto,
+          decision_id: id,
+          participant_count: people.length,
+          edge_count: edges.length,
+        });
+      }
       try {
         const resp = await askStrategist({
           question: AUTO_READ_QUESTION,
@@ -203,6 +211,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         });
         if (resp.kind === "coach") {
           trackEvent("read_shown");
+          if (typeof pendo !== "undefined") {
+            pendo.track("read_shown", { decision_id: id });
+          }
           store.pushMessage(id, {
             type: "read",
             body: resp.answer.answer,
@@ -244,6 +255,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         error: "",
       });
       trackEvent("onboarding_started", { auto, mode });
+      if (typeof pendo !== "undefined") {
+        pendo.track("onboarding_started", { auto, mode });
+      }
     },
     [store]
   );
@@ -305,6 +319,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     store.setPref("onboardingPrompted", true);
     store.setPref("railCollapsed", false);
     trackEvent("onboarding_skipped", { mode: onboarding.mode });
+    if (typeof pendo !== "undefined") {
+      pendo.track("onboarding_skipped", { mode: onboarding.mode });
+    }
     setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
     // Connect guided and manual: "I'll set it up myself" drops into the existing
     // Room Settings modal. Reuse an empty room if one exists, else create one.
@@ -404,6 +421,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const newRoom = useCallback(() => {
     const id = store.createRoom();
     trackEvent("room_create");
+    if (typeof pendo !== "undefined") {
+      pendo.track("room_create", { room_id: id });
+    }
     setActiveRoomId(id);
     setActiveDecisionId(null);
     setActiveTab("people");
@@ -425,6 +445,13 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     (id) => {
       store.archiveDecision(id);
       trackEvent("decision_archive");
+      if (typeof pendo !== "undefined") {
+        pendo.track("decision_archive", {
+          decision_id: id,
+          room_id: activeRoomId,
+          participant_count: store.getParticipants(id).length,
+        });
+      }
       if (id === activeDecisionId) {
         const next = store.getDecisions(activeRoomId).find((d) => d.status === "active" && d.id !== id);
         setActiveDecisionId(next ? next.id : null);
@@ -437,6 +464,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     (id) => {
       store.deleteRoom(id);
       trackEvent("room_delete");
+      if (typeof pendo !== "undefined") {
+        pendo.track("room_delete", { room_id: id });
+      }
       const remaining = store.getRooms();
       const nextRoom = remaining[0] || null;
       setActiveRoomId(nextRoom?.id || null);
@@ -451,6 +481,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const wasActive = id === activeDecisionId;
       store.deleteDecision(id);
       trackEvent("decision_delete");
+      if (typeof pendo !== "undefined") {
+        pendo.track("decision_delete", { decision_id: id, room_id: activeRoomId });
+      }
       if (wasActive) {
         const next = store.getDecisions(activeRoomId).find((d) => d.status === "active");
         setActiveDecisionId(next?.id || null);
@@ -463,6 +496,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     (id) => {
       store.deletePerson(id, activeRoomId);
       trackEvent("person_roster_remove");
+      if (typeof pendo !== "undefined") {
+        pendo.track("person_roster_remove", { person_id: id, room_id: activeRoomId });
+      }
       setModal(null);
     },
     [store, activeRoomId]
@@ -477,6 +513,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const openReadChip = useCallback(
     (id) => {
       trackEvent("read_chip_clicked", { personId: id });
+      if (typeof pendo !== "undefined") {
+        pendo.track("read_chip_clicked", { personId: id });
+      }
       openPersonPage(id);
     },
     [openPersonPage]
@@ -505,6 +544,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       store.addToRoster(currentRoom.id, id);
       if (currentDecision) store.addParticipant(currentDecision.id, id);
       trackEvent("person_create", { source: "chat_map" });
+      if (typeof pendo !== "undefined") {
+        pendo.track("person_create", { source: "chat_map", room_id: currentRoom.id, has_role: Boolean(item.role) });
+      }
       return id;
     },
     [findPersonRef, participants, store]
@@ -619,6 +661,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const roomId = emptyRoom?.id || store.createRoom(seed.roomName);
       if (emptyRoom) store.updateRoom(roomId, { name: seed.roomName });
       trackEvent("onboarding_room_created", { reused: Boolean(emptyRoom) });
+      if (typeof pendo !== "undefined") {
+        pendo.track("onboarding_room_created", { reused: Boolean(emptyRoom), room_id: roomId });
+      }
 
       const decisionId = store.createDecision(roomId, {
         title: seed.title,
@@ -668,6 +713,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         body: "Your first map is ready. Run @read for the first room read, or ask @ask who to talk to first.",
       });
       trackEvent("onboarding_completed", { people: finalParticipants.length, edges: edgeCount });
+      if (typeof pendo !== "undefined") {
+        pendo.track("onboarding_completed", {
+          people: finalParticipants.length,
+          edges: edgeCount,
+          room_id: roomId,
+          decision_id: decisionId,
+        });
+      }
 
       return {
         names: finalParticipants.map((p) => p.name),
@@ -803,6 +856,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             if (resp.kind === "update") {
               const message = applyRoomUpdate(resp.update, "note") || { label: "Note saved", body: `Updated ${target.name}.` };
               trackEvent("observation_create", { source: "chat_note" });
+              if (typeof pendo !== "undefined") {
+                pendo.track("observation_create", { source: "chat_note", person_id: target.id, decision_id: decision.id });
+              }
               store.pushMessage(decision.id, { type: "updated", ...message });
             } else {
               const text = cleanShortNote(body);
@@ -830,6 +886,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         const role = (add[2] || "").trim();
         const id = store.addExternal(decision.id, { name, role });
         trackEvent("external_add");
+        if (typeof pendo !== "undefined") {
+          pendo.track("external_add", { decision_id: decision.id, source: "chat", has_role: Boolean(role) });
+        }
         store.pushMessage(decision.id, { type: "added", body: `${name} added as an external participant. First pass read, sharpen it with notes.` });
         if (id) openPersonPage(id);
         setDraft("");
@@ -857,6 +916,15 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           if (resp.kind === "update") {
             const message = applyRoomUpdate(resp.update, command) || { label: "Map updated", body: "Updated the room." };
             trackEvent("room_map_update", { command });
+            if (typeof pendo !== "undefined") {
+              pendo.track("room_map_update", {
+                command,
+                decision_id: decision.id,
+                people_count: resp.update.people?.length || 0,
+                edges_count: resp.update.edges?.length || 0,
+                placements_count: resp.update.people?.filter((p) => p.power != null).length || 0,
+              });
+            }
             store.pushMessage(decision.id, { type: "updated", ...message });
           } else {
             store.pushMessage(decision.id, { type: "fallback", body: resp.body });
@@ -882,6 +950,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           });
           if (resp.kind === "coach") {
             trackEvent("strategist_ask");
+            if (typeof pendo !== "undefined") {
+              pendo.track("strategist_ask", {
+                decision_id: decision.id,
+                participant_count: participants.length,
+                edge_count: store.getEdges(decision.id).length,
+                question_length: question.length,
+              });
+            }
             store.pushMessage(decision.id, {
               type: "coach",
               body: resp.answer.answer,
@@ -918,6 +994,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const screen = screenOpenMessage(q);
       if (screen.blocked) {
         trackEvent("open_chat_blocked", { reason: screen.reason });
+        if (typeof pendo !== "undefined") {
+          pendo.track("open_chat_blocked", { reason: screen.reason, decision_id: decision.id });
+        }
         store.pushMessage(decision.id, { type: "fallback", body: screen.reply });
         return;
       }
@@ -933,6 +1012,13 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         });
         if (resp.kind === "coach") {
           trackEvent("open_chat");
+          if (typeof pendo !== "undefined") {
+            pendo.track("open_chat", {
+              decision_id: decision.id,
+              question_length: q.length,
+              participant_count: participants.length,
+            });
+          }
           store.pushMessage(decision.id, {
             type: "coach",
             body: resp.answer.answer,
@@ -978,6 +1064,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     async ({ name, position }) => {
       await store.saveProfile({ name, position });
       trackEvent("profile_save");
+      if (typeof pendo !== "undefined") {
+        pendo.track("profile_save", { has_name: Boolean(name), has_position: Boolean(position) });
+      }
     },
     [store]
   );
@@ -1145,6 +1234,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                             onRemoveParticipant={(id) => {
                               store.removeParticipant(decision.id, id);
                               trackEvent("decision_participant_remove");
+                              if (typeof pendo !== "undefined") {
+                                pendo.track("decision_participant_remove", { decision_id: decision.id, person_id: id });
+                              }
                             }}
                           />
                         )}
@@ -1223,6 +1315,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           onSave={(patch) => {
             store.updatePerson(personPagePerson.id, patch);
             trackEvent("person_update");
+            if (typeof pendo !== "undefined") {
+              pendo.track("person_update", { person_id: personPagePerson.id, updated_fields: Object.keys(patch).join(",") });
+            }
           }}
           onDelete={room?.rosterIds?.includes(personPagePerson.id) ? (id) => setModal({ type: "deletePerson", id }) : null}
           onOpenFrameworks={openFrameworks}
@@ -1260,20 +1355,32 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           onRename={(name) => {
             store.updateRoom(modalRoom.id, { name });
             trackEvent("room_update");
+            if (typeof pendo !== "undefined") {
+              pendo.track("room_update", { room_id: modalRoom.id });
+            }
           }}
           onCreatePerson={(person) => {
             const id = store.createPerson(person);
             store.addToRoster(modalRoom.id, id);
             trackEvent("person_create");
+            if (typeof pendo !== "undefined") {
+              pendo.track("person_create", { source: "roster_modal", room_id: modalRoom.id, has_role: Boolean(person.role) });
+            }
             return id;
           }}
           onAddToRoster={(id) => {
             store.addToRoster(modalRoom.id, id);
             trackEvent("room_roster_add");
+            if (typeof pendo !== "undefined") {
+              pendo.track("room_roster_add", { room_id: modalRoom.id, person_id: id });
+            }
           }}
           onRemoveFromRoster={(id) => {
             store.removeFromRoster(modalRoom.id, id);
             trackEvent("room_roster_remove");
+            if (typeof pendo !== "undefined") {
+              pendo.track("room_roster_remove", { room_id: modalRoom.id, person_id: id });
+            }
           }}
         />
       )}
@@ -1284,6 +1391,13 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           onSave={(patch) => {
             store.updateDecision(modalDecision.id, patch);
             trackEvent("decision_update");
+            if (typeof pendo !== "undefined") {
+              pendo.track("decision_update", {
+                decision_id: modalDecision.id,
+                has_deadline: Boolean(patch.deadline),
+                has_context: Boolean(patch.context),
+              });
+            }
             setModal(null);
           }}
           onArchive={() => {
@@ -1297,6 +1411,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           onAdd={(name, role) => {
             const id = store.addExternal(decision.id, { name, role });
             trackEvent("external_add");
+            if (typeof pendo !== "undefined") {
+              pendo.track("external_add", { decision_id: decision.id, source: "modal", has_role: Boolean(role) });
+            }
             setModal(null);
             if (id) openPersonPage(id);
           }}
@@ -1309,6 +1426,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           onCreate={({ title, context }) => {
             const id = store.createDecision(activeRoomId, { title, context });
             trackEvent("decision_create", { roster_count: room.rosterIds.length });
+            if (typeof pendo !== "undefined") {
+              pendo.track("decision_create", {
+                roster_count: room.rosterIds.length,
+                room_id: activeRoomId,
+                decision_id: id,
+                has_context: Boolean(context),
+              });
+            }
             setModal(null);
             selectDecision(id);
           }}

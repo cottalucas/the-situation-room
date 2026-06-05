@@ -106,6 +106,9 @@ async function finishGoogleCredential(cred) {
   const isNew = await ensureUserDoc(cred.user);
   if (isNew) markOnboardingPending(cred.user.uid);
   trackEvent("login", { method: "google" });
+  if (typeof pendo !== "undefined") {
+    pendo.track("login", { method: "google" });
+  }
   return cred.user;
 }
 
@@ -124,6 +127,9 @@ export async function registerEmail({ name, email, password }) {
   await ensureUserDoc(cred.user, name);
   markOnboardingPending(cred.user.uid);
   trackEvent("sign_up", { method: "password" });
+  if (typeof pendo !== "undefined") {
+    pendo.track("sign_up", { method: "password", has_display_name: Boolean(name) });
+  }
   return cred.user;
 }
 
@@ -133,6 +139,9 @@ export async function signInEmail({ email, password }) {
   setUserKey(cred.user.uid);
   await ensureUserDoc(cred.user);
   trackEvent("login", { method: "password" });
+  if (typeof pendo !== "undefined") {
+    pendo.track("login", { method: "password" });
+  }
   return cred.user;
 }
 
@@ -157,6 +166,9 @@ export async function signInGoogle() {
 
 export async function signOutUser() {
   trackEvent("logout");
+  if (typeof pendo !== "undefined") {
+    pendo.track("logout");
+  }
   clearUserKey();
   setAnalyticsUser(null);
   if (isConfigured) await signOut(auth);
