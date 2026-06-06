@@ -82,9 +82,10 @@ function commit(next) {
   listeners.forEach((fn) => fn());
 }
 
-/** Message types persisted to Firestore and rehydrated on load. Welcome, play,
- * and loading cards stay transient UI only. */
-const PERSISTED_MESSAGE_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach", "read"]);
+/** Message types persisted to Firestore and rehydrated on load. Welcome and
+ * loading cards stay transient UI only. A generated play persists as a pinned,
+ * immutable card (its frozen snapshot rides in the encrypted body). */
+const PERSISTED_MESSAGE_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach", "read", "play"]);
 
 function welcomeMessage() {
   return [{ id: mid(), type: "welcome", body: WELCOME }];
@@ -259,7 +260,7 @@ export function setPref(key, value) {
 /* Settings synced to the signed-in user in Firestore (last room and decision),
    so the app restores them on reload and across devices. They also live in the
    local prefs mirror for synchronous reads and fast cold load. */
-const USER_SETTING_KEYS = ["lastRoomId", "lastDecisionId"];
+const USER_SETTING_KEYS = ["lastRoomId", "lastDecisionId", "selfSeeded"];
 
 export function setUserSetting(key, value) {
   const prefs = { ...state.prefs, [key]: value };
@@ -286,6 +287,61 @@ export async function saveProfile({ name, position } = {}) {
     const ok = await repo.putUserProfile(uid, { name, position });
     if (!ok) throw new Error("Profile could not be saved.");
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Self participant                                                    */
+/* ------------------------------------------------------------------ */
+
+/** The one self record that represents the signed-in operator, or null. */
+export function getSelf() {
+  return Object.values(state.people).find((p) => p?.isSelf) || null;
+}
+export function getSelfId() {
+  return getSelf()?.id || null;
+}
+
+/**
+ * Make the signed-in user a first-class participant. Idempotent.
+ *  1. Ensure exactly one self person exists, keyed to the uid (never duplicated).
+ *  2. Once per account (selfSeeded flag), attach self to every existing room
+ *     roster and every active decision. After that one migration, removal sticks,
+ *     so a user can take themselves off a room without it reappearing.
+ * Local preview seeds self in data/seed.js, so this only runs in Firestore mode.
+ */
+export function ensureSelf({ name, position } = {}) {
+  if (!fs() || !uid) return null;
+  let self = getSelf();
+  if (!self) {
+    const id = `${uid}_self`;
+    self = {
+      id,
+      name: name || "You",
+      role: position || "",
+      goal: "",
+      context: "",
+      isSelf: true,
+      fresh: false,
+      external: false,
+      baseRead: { scarf: "", tki: "", cialdini: "", fisherUry: "" },
+      visualTags: { scarfDimensions: [], tkiStyle: "", cialdiniLever: "", fuTeaser: "" },
+      relationships: [],
+      observations: [],
+    };
+    savePerson(self);
+  }
+  if (!state.prefs?.selfSeeded) {
+    state.rooms.forEach((room) => {
+      if (!(room.rosterIds || []).includes(self.id)) addToRoster(room.id, self.id);
+    });
+    state.decisions.forEach((d) => {
+      if (d.status !== "archived" && ![...(d.participantIds || []), ...(d.externalIds || [])].includes(self.id)) {
+        addParticipant(d.id, self.id);
+      }
+    });
+    setUserSetting("selfSeeded", true);
+  }
+  return self.id;
 }
 
 /* ------------------------------------------------------------------ */
@@ -369,7 +425,9 @@ function peopleWithout(idsToDelete) {
 
 export function createRoom(name = "New room") {
   const id = makeId(fs() && uid ? `${uid}_room` : "room");
-  const room = { id, name, rosterIds: [] };
+  // Self is a first-class member of every room by default. Removable later.
+  const selfId = getSelfId();
+  const room = { id, name, rosterIds: selfId ? [selfId] : [] };
   commit({ ...state, rooms: [...state.rooms, room] });
   if (fs()) repo.putRoom(uid, room);
   return id;

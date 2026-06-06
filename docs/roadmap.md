@@ -58,8 +58,9 @@
 - Visual first frameworks (SCARF, Thomas Kilmann, Cialdini, Fisher and Ury),
   rendered as state-label chips on the person and explained generically on the
   shared /frameworks page.
-- Command-first chat. Send is enabled only for `@` commands while open play
-  coaching is parked. Sent prompts appear in the thread as user bubbles before
+- Command-first chat. Send is enabled for `@` commands (and for a free-text reply
+  to a `@play` coaching question). Open non-command plain-text chat stays parked
+  behind the live flag. Sent prompts appear in the thread as user bubbles before
   structured assistant results.
 - Local-only Claude connection test bridge behind `VITE_ENABLE_LIVE_LLM=true`.
   It uses Vite dev server endpoints, keeps the Anthropic key server-side,
@@ -95,17 +96,33 @@
   or restoring a room or decision never triggers it; below threshold it returns
   basic insights and asks for more information with no model call.
 - Global person memory: observations and cross decision history.
-- Guided Setup, one engine behind three doors (first-run, "+ New room", and
-  manual). A warm three-question conversation (decision and outcome, make-or-break
-  people, relationships) reflects back the user's own words between answers,
-  shows one short naming confirm with a derived title, and builds the room through
-  the existing @create, @energy, and @network command pipeline. First-run opens
-  by default with the rooms rail collapsed and never shows to a user who already
-  has real content; "Skip, I'll set it up myself" drops into the manual Room
-  Settings modal. New room enters with a soft chat-expansion transition instead
-  of a hard panel swap. Building force-creates every extracted person (never
-  "No participants") while apply-time resolution dedupes role mentions, and the
-  closing names what it built specifically.
+- Guided Setup, one engine behind two doors (first-run and "+ New room"). A warm
+  three-question conversation (decision and outcome, make-or-break people,
+  relationships) reflects back the user's own words between answers, shows one
+  short naming confirm with a derived title, and builds the room through the
+  existing @create, @energy, and @network command pipeline. First-run opens by
+  default with the rooms rail collapsed and never shows to a user who already has
+  real content. Guided chat is the only setup entry: the "Skip, I'll set it up
+  myself" link is gone, replaced by a quiet close affordance that dismisses into
+  the live empty room (no modal), with manual room editing still reachable through
+  room settings. Both doors share one calm entrance animation. Building
+  force-creates every extracted person (never "No participants") while apply-time
+  resolution dedupes role mentions, and the closing names what it built
+  specifically.
+- @play, the gated terminal play. A deterministic client-side readiness check
+  (you plus at least one other, every stance set, every non-self participant
+  placed on Energy, no network requirement) decides whether to generate. Below
+  threshold it coaches the user with conversational, person-specific questions and
+  parses the free-text reply back through @map, emitting play_blocked with a reason
+  code (missing_people, missing_stance, missing_grid). At threshold it generates a
+  grounded, sequenced play and pins it as an immutable card labeled PLAY with a
+  timestamp, frozen at generation time, encrypted at rest, persisting across
+  reload. Offline eval: npm run verify:play.
+- Self as participant. The signed-in operator is a first-class person (isSelf),
+  seeded once per account and migrated into existing rooms and active decisions,
+  rendered as "You" across the roster, People, Energy, and network, removable,
+  never duplicated, and excluded from "Add from directory". First-person
+  references resolve to the self record. Offline eval: npm run verify:self.
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase
   Function syntax check.

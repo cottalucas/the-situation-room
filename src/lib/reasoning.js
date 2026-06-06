@@ -130,6 +130,7 @@ export function getResponse(question, participants, context) {
 }
 
 export const EXAMPLE_PROMPTS = [
+  "@play",
   "@read",
   "@ask who should I talk to first?",
   "@ask what am I missing?",

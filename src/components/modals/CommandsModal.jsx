@@ -17,6 +17,7 @@ const GROUPS = [
   {
     title: "Read the room",
     items: [
+      { cmd: "@play", desc: "Generate the strategic play: who to engage first, the lever per person, and the key risk. It runs only when the room is ready, with you plus at least one other person, every stance set, and the others placed on Energy. Otherwise it coaches you to close the gap. The play pins as a card." },
       { cmd: "@read", desc: "Get the strategist’s read of the whole room only when you ask for it: what you are missing and who to move first. The result appears in the chat." },
       { cmd: "@ask <question>", desc: "Ask the strategist one question about this room, like who to talk to first or where the risk is. It cites the people it reasons from." },
     ],

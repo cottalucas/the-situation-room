@@ -73,6 +73,10 @@ function findUniquePerson(list, predicate) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+// First-person references resolve to the one self record, so "I", "me", and "my"
+// attach to the operator instead of creating a duplicate person.
+const FIRST_PERSON = new Set(["i", "me", "myself", "my", "mine", "im", "i m"]);
+
 // Small Levenshtein for conservative typo tolerance on names.
 function editDistance(a, b) {
   if (a === b) return 0;
@@ -109,6 +113,12 @@ export function resolvePersonRef(ref, pools = [], { exactOnly = false } = {}) {
   const token = normalizeRef(ref);
   if (!token) return null;
   for (const pool of pools) {
+    // 0. first-person -> the self record (the signed-in operator)
+    if (FIRST_PERSON.has(token) || FIRST_PERSON.has(rawToken)) {
+      const self = findUniquePerson(pool, (p) => p.isSelf);
+      if (self) return self;
+    }
+
     // 1. exact id / name / first name
     const exact = findUniquePerson(
       pool,

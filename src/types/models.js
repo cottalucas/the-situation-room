@@ -64,6 +64,9 @@
  * @property {Observation[]} observations
  * @property {boolean} [fresh]         True for a just added person with little data.
  * @property {boolean} [external]      True if created as a decision external.
+ * @property {boolean} [isSelf]        True for the one self record that represents
+ *                                     the signed-in operator. Rendered as "You",
+ *                                     never duplicated, excluded from the directory.
  */
 
 /**

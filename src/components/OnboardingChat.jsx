@@ -22,7 +22,7 @@ export function OnboardingChat({
   busy,
   error,
   onSubmit,
-  onSkip,
+  onDismiss,
   onOpenRoom,
   headline,
 }) {
@@ -51,8 +51,8 @@ export function OnboardingChat({
       <header className="onboarding-head">
         <span className="msg-label">Guided setup</span>
         <h2>{headline || "Build your first room"}</h2>
-        <button type="button" className="onboarding-skip" onClick={onSkip} disabled={busy}>
-          Skip, I'll set it up myself
+        <button type="button" className="onboarding-close" onClick={onDismiss} disabled={busy} aria-label="Close guided setup">
+          ✕
         </button>
       </header>
 

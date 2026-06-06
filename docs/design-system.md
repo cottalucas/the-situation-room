@@ -100,10 +100,26 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   only; selecting a room or decision must not trigger The Read.
 - First-run onboarding uses a chat-like panel, not a modal. Assistant prompts
   sit in raised bubbles, user answers sit in ink bubbles, and the form uses one
-  primary action. The panel asks three fixed questions and keeps skip as the
-  secondary action. When launched from New room it should feel like the chat
-  surface expanding into Guided Setup, with a soft entrance instead of an abrupt
-  hard swap.
+  primary action. The panel asks three fixed questions. Guided chat is the only
+  setup entry; there is no "Skip, I'll set it up myself" link. The panel carries a
+  quiet close affordance (the `onboarding-close` square in the header), and
+  dismissing lands the user in the live empty room with the rail and command
+  surface visible, never in a settings modal. Manual room editing stays reachable
+  through the existing room-settings entry point. The entrance is one calm,
+  uniform animation (a soft fade and slight rise, no lateral jump) on both
+  first-run and "+ New room", and it respects reduced-motion.
+- A generated play (`@play`) is a pinned, immutable card, visually distinct from
+  chat bubbles: a raised card with an ink top rule, labeled `PLAY · <timestamp>`
+  with a pin marker. It is frozen at generation time (the generating inputs are
+  snapshotted in), re-openable through the reasoning toggle, and persists across
+  reload. It is not a chat bubble and never restyles as one.
+- The signed-in operator is rendered as "You", visually distinct from directory
+  people: a tinted self tag and avatar in the roster and People lens, and a
+  self-marked chip (`chip-self`) on the Energy grid and network. "You" is present
+  in every room by default, removable, and never offered in "Add from directory".
+- "Add from directory" rows are roomy, never crammed: a vertical list with 8px
+  gaps, 14 by 16px row padding, and a 60px minimum row height, with a one-line
+  helper above the list.
 - Position shown as a colored dot (chip) and a pill badge.
 - Network and grid chips show a three character first-name label such as Cha,
   Cla, Rou, or Ral. Full name and role stay available through hover labels and

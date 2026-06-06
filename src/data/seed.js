@@ -10,6 +10,7 @@
 
 /* Base power and interest used only to seed decision placements. */
 const BASE_PI = {
+  self: { power: 42, interest: 95 },
   dana: { power: 78, interest: 92 },
   raj: { power: 90, interest: 35 },
   lin: { power: 55, interest: 88 },
@@ -29,6 +30,17 @@ function placementsFor(ids) {
 /* ------------------------------------------------------------------ */
 
 export const peopleBase = [
+  {
+    id: "self",
+    name: "You",
+    role: "Product Manager",
+    isSelf: true,
+    goal: "Get the legacy Salesforce integration sunset through the leadership review.",
+    context: "The operator working this decision. Owns the play, but not the final call.",
+    baseRead: { scarf: "", tki: "", cialdini: "", fisherUry: "" },
+    visualTags: { scarfDimensions: [], tkiStyle: "", cialdiniLever: "", fuTeaser: "" },
+    relationships: [],
+  },
   {
     id: "dana",
     name: "Dana Olsson",
@@ -200,6 +212,7 @@ export const seedObservations = {
 /* ------------------------------------------------------------------ */
 
 export const networkPositions = {
+  self: { x: 50, y: 90 },
   priya: { x: 50, y: 14 },
   raj: { x: 80, y: 40 },
   dana: { x: 20, y: 40 },
@@ -228,7 +241,7 @@ const SALESFORCE_EDGES = [
 /* ------------------------------------------------------------------ */
 
 export const seedRooms = [
-  { id: "mobile", name: "Mobile app team", rosterIds: ["dana", "raj", "lin", "marco", "priya", "chad"] },
+  { id: "mobile", name: "Mobile app team", rosterIds: ["self", "dana", "raj", "lin", "marco", "priya", "chad"] },
 ];
 
 export const seedDecisions = [
@@ -245,10 +258,10 @@ export const seedDecisions = [
     derivedSummary: "",
     deadline: "2026-06-04",
     status: "active",
-    participantIds: ["dana", "raj", "lin", "marco", "priya"],
+    participantIds: ["self", "dana", "raj", "lin", "marco", "priya"],
     externalIds: [],
-    positions: { dana: "against", raj: "neutral", lin: "against", marco: "for", priya: "unknown" },
-    placements: placementsFor(["dana", "raj", "lin", "marco", "priya"]),
+    positions: { self: "for", dana: "against", raj: "neutral", lin: "against", marco: "for", priya: "unknown" },
+    placements: placementsFor(["self", "dana", "raj", "lin", "marco", "priya"]),
     edges: SALESFORCE_EDGES,
   },
   {

@@ -24,8 +24,10 @@ Person          people/{personId}
                 ownerId, name, role, goal, context,
                 baseRead{scarf,tki,cialdini,fisherUry},
                 visualTags{scarfDimensions,tkiStyle,cialdiniLever,fuTeaser},
-                relationships[{personId,type}], fresh, external, createdAt
-  a global profile that compounds across decisions and rooms.
+                relationships[{personId,type}], fresh, external, isSelf, createdAt
+  a global profile that compounds across decisions and rooms. Exactly one person
+  per account carries isSelf true: the signed-in operator, rendered as "You",
+  never duplicated, excluded from the directory.
 
 Observation     people/{personId}/observations/{obsId}
                 text, source(note|chat|history), decisionId?, ts
@@ -76,8 +78,8 @@ The seed exists only for explicit local preview.
 - `getSnapshot()` for `useSyncExternalStore`.
 - queries: `getRooms`, `getRoom`, `getDecisions`, `getDecision`, `getPerson`,
   `getAllPeople`, `getParticipants`, `getEdges`, `getChat`, `getPlacement`,
-  `getProfile`.
-- mutations: `savePerson`, `createPerson`, `updatePerson`, `addObservation`,
+  `getProfile`, `getSelf`, `getSelfId`.
+- mutations: `ensureSelf`, `savePerson`, `createPerson`, `updatePerson`, `addObservation`,
   `addNote`, `createRoom`, `updateRoom`, `addToRoster`, `removeFromRoster`,
   `createDecision`, `updateDecision`, `archiveDecision`, `deleteDecision`,
   `deleteRoom`, `deletePerson` as roster removal, `addDecisionNote`, `setPosition`, `setPlacement`,
@@ -208,8 +210,9 @@ Chat messages persist per decision under the owning room. Free text (body, text,
 questions) is encrypted before write and decrypted on read; role, type, label,
 personName, command, and ts stay plaintext so the thread renders and sorts
 without decrypting structure. Only meaningful turns are stored (user commands and
-assistant confirmations: user, updated, note, added, fallback). Welcome, loading,
-and parked play cards stay transient UI state. The store keeps optimistic chat in
+assistant confirmations: user, updated, note, added, fallback, coach, read, and
+play). A generated play persists as a pinned card; its frozen snapshot rides in
+the encrypted body. Welcome and loading cards stay transient UI state. The store keeps optimistic chat in
 its mirror and seeds from this history on load, so the conversation survives
 reload and sign-in on another device.
 
@@ -243,7 +246,8 @@ authenticated HTTPS function, `api`, with two same-origin endpoints:
 - `/api/interpret-room-command` for `@note`, `@energy` (alias `@grid`),
   `@network`, `@map`, and `@create`.
 - `/api/strategist` for the grounded `@ask` stakeholder coach.
-- `/api/generate-play` for the parked play generator and future play evals.
+- `/api/generate-play` for the `@play` generator, behind the deterministic
+  readiness gate, and play evals.
 
 The browser sends the Firebase Auth id token in the `Authorization` header.
 The function verifies the token, checks the per-user daily request and cost
@@ -267,14 +271,14 @@ trace collection for deeper review.
 - recent observations only, capped at the newest five per participant.
 - decision edges.
 
-Open play chat is parked in the UI while mapping gets sharper. The chat input
-only enables Send when the draft starts with `@`; normal text does not call
-Claude. Sent prompts are stored as user messages before the command result, so
-the thread reads like a chat instead of an event log. `generatePlay()` and
-`/api/generate-play` remain as development plumbing for future play evals, but
-`Room.jsx` no longer calls them from the input box. This keeps local testing
-focused on deterministic commands and avoids spending tokens on vague coaching
-prompts.
+Open (non-command) plain-text chat is parked in the UI while mapping gets
+sharper. The chat input only enables Send when the draft starts with `@` (or for
+plain text when open chat is on, or when answering a `@play` coaching question).
+Sent prompts are stored as user messages before the command result, so the thread
+reads like a chat instead of an event log. `generatePlay()` and
+`/api/generate-play` are now called by the `@play` command behind the
+deterministic readiness gate (see the `@play` section above), so play generation
+only spends tokens when the room is ready.
 
 The local Vite bridge and production Firebase Function use the same contracts
 and prompt shape. In production, `src/lib/context.js` adds the signed-in user's
@@ -339,10 +343,10 @@ strategist prompt is `strategist-v2`. Venting that carries real room content is
 allowed through and neutralized by the model. Analytics: `open_chat`,
 `open_chat_blocked {reason}`.
 
-Guided Setup (one engine, three doors). New account creation marks a one-shot
+Guided Setup (one engine, two doors). New account creation marks a one-shot
 local onboarding flag. The conversation engine lives in `src/lib/onboarding.js`
 (questions, reflection, naming, command plan, closing, trigger guards) and renders
-through the single `OnboardingChat` view. Three doors share it:
+through the single `OnboardingChat` view. Two doors share it:
 
 - First-run: on first login with no usable room (`hasUsableRoom === false`,
   pending marker, not yet prompted) Room opens Guided Setup by default and
@@ -350,9 +354,16 @@ through the single `OnboardingChat` view. Three doors share it:
   expands the rail and lands in the populated room.
 - "+ New room": the rail's new-room action opens the same engine with
   returning-user framing (no product intro).
-- Manual: "Skip, I'll set it up myself" drops into the existing Room Settings
-  modal, reusing an empty room or creating one, so guided and manual are
-  connected.
+
+Guided chat is the only setup entry point. There is no "Skip, I'll set it up
+myself" link. The panel carries a quiet close affordance (`onboarding-close`);
+dismissing expands the rail and lands the user in the live empty room (a reused
+or fresh empty room, never a modal), with the rail and command surface visible.
+Manual room editing stays reachable through the existing room-settings entry
+point (rail edit, empty-state actions), unchanged. The entrance uses one calm,
+uniform animation (`guided-chat-expand`, a soft fade and rise) on both doors,
+with no lateral jump and no abrupt swap to a settings modal. Analytics:
+`onboarding_dismissed` replaces the old `onboarding_skipped`.
 
 The three plain-language questions are the decision and a good outcome, the few
 make-or-break people, and the relationships (skippable). Between answers the
@@ -372,6 +383,59 @@ never yields "No participants"), while apply-time `resolvePersonRef` resolution
 still dedupes role mentions to existing roster members. No new model path or
 calibration logic exists for onboarding. Analytics: `onboarding_started`,
 `onboarding_completed`, `onboarding_skipped`, `onboarding_room_created`.
+
+Self as participant. The signed-in operator is a first-class participant.
+`store.ensureSelf({name, position})` runs once the account has loaded
+(`Room.jsx`, gated on `remoteReady` and a uid). It is idempotent: it guarantees
+exactly one person with `isSelf` true keyed to `${uid}_self`, and on the first
+run (the `selfSeeded` user setting) attaches self to every existing room roster
+and every active decision, migrating older accounts. After that one migration,
+removal sticks, so a user can take themselves off a room without it reappearing.
+`store.createRoom` seeds self into every new room roster by default; new
+decisions pull self in through the roster. Self is removable and never
+duplicated: re-adding resolves to the same record because the id is
+deterministic. `person-ref.js` resolves first-person references (I, me, my,
+myself) to the self record before any create, so the apply path attaches updates
+to the operator instead of creating a duplicate. The command context
+(`compactRoomCommandContext`) flags the self person with `isSelf`, and the
+command system prompt instructs the model to bind first-person to that id and
+never create a new person for the operator (prompt version
+`room-command-v4-self-2026-06-06`, mirrored in `functions/index.js`). Self
+renders distinctly as "You" in the People lens, roster, Energy grid
+(`chip-self`), and network, and is excluded from the "Add from directory" list
+so neither the user nor the model can create a duplicate. Local preview seeds one
+self person in `data/seed.js`; Firestore mode seeds it through `ensureSelf`.
+Eval: `npm run verify:self`.
+
+@play (gated terminal output). `@play` runs a deterministic, client-side
+readiness check before any model call (`src/lib/play-readiness.js`,
+`checkPlayReadiness`). Readiness requires at least two participants with self
+counting as one, every participant on a real stance (for, against, neutral),
+and every non-self participant placed on the Energy grid. Network edges are not
+required at any count. Reason codes for the `play_blocked` event, in priority
+order: `missing_people`, `missing_stance`, `missing_grid`. The model never judges
+sufficiency; it is computed from existing structural data.
+
+If readiness fails, `@play` generates no play. It pushes a conversational
+coaching turn (`buildPlayCoaching`, deterministic) that names what is missing in
+plain language and asks one or two coach-style questions about the biggest gap
+("How does Chad feel about this one, behind it or pushing back?"), never raw
+framework questions. The free-text reply is parsed back through the same `@map`
+command path and `applyRoomUpdate`, then readiness is re-checked. It emits
+`play_blocked` with the reason code.
+
+If readiness passes, `@play` calls `/api/generate-play` (the existing grounded
+play generator, Haiku, no new model path) and persists the result as a pinned,
+immutable card: a chat message of type `play` labeled `PLAY · <timestamp>`,
+visually distinct from chat bubbles (`chat-play-pinned`), re-openable, and frozen
+at generation time. The generating inputs (participant names, situation) are
+snapshotted into the card so it stays readable after the room changes or a
+reload. The play body is encrypted client-side like other free text (it rides in
+the message `body`, and `store.savePlay` also writes the durable Play doc);
+analytics logs the `play_generated` event only, never play content. The play
+message is persisted and rehydrated (`PERSISTED_MESSAGE_TYPES`), so the card
+survives reload and stays readable after further chat. Eval: `npm run
+verify:play`.
 
 Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
 stakeholder coach that reasons only over the room snapshot and `recentTurns`. It
@@ -461,8 +525,17 @@ so credit-spending runs are deliberate. Eval traces write to
 
 Onboarding has its own mocked fixture at `evals/fixtures/onboarding.json` and a
 deterministic verifier, `npm run verify:onboarding`. It checks the fixed
-question flow, one-shot trigger guard, command plan, skip path, and normalized
-mock outputs without calling a live model.
+question flow, one-shot trigger guard, command plan, and normalized mock outputs
+without calling a live model.
+
+`@play` has a deterministic verifier, `npm run verify:play`: readiness reason
+codes (under-threshold rooms never produce a play), the you+1 floor with no
+network requirement, the three-or-more case, the coaching turn copy, the coaching
+reply parse (a fixed "Chad's against it" reply extracts the against stance through
+the `@map` contract), and the generated play shape (all four sections). Self as
+participant has `npm run verify:self`: first-person references resolve to the self
+record so the apply path attaches instead of creating a duplicate, and the room
+context flags exactly one self. Both run offline with no credits.
 
 ## Folder structure
 

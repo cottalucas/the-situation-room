@@ -296,6 +296,25 @@ code {
   padding: 2px 7px;
 }
 
+/* Self ("You"): the operator rendered distinctly from directory people. */
+.self-tag {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--informed);
+  background: color-mix(in srgb, var(--informed) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--informed) 28%, var(--line));
+  border-radius: 5px;
+  padding: 2px 7px;
+  margin-left: var(--s2);
+}
+.person-row-self { border-color: color-mix(in srgb, var(--informed) 28%, var(--line)); background: color-mix(in srgb, var(--informed) 4%, var(--bg-raised)); }
+.roster-row-self { border-color: color-mix(in srgb, var(--informed) 28%, var(--line)); }
+.avatar-self { background: color-mix(in srgb, var(--informed) 14%, var(--bg-raised)); color: var(--informed); font-size: 10px; font-weight: 600; letter-spacing: 0.02em; }
+.chip-self .chip-dot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--informed) 45%, transparent); }
+.chip-self .chip-initials { color: var(--informed); }
+
 /* ================================================================== */
 /* GRID                                                                */
 /* ================================================================== */
@@ -629,21 +648,26 @@ code {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
-  transform-origin: right bottom;
-  animation: guided-chat-expand 0.32s cubic-bezier(0.2, 0.78, 0.2, 1) both;
+  transform-origin: center bottom;
+  animation: guided-chat-expand 0.34s cubic-bezier(0.22, 0.7, 0.25, 1) both;
 }
 @keyframes guided-panel-fade {
   from { opacity: 0; }
 }
+/* A calm, uniform entrance that reads the same on first-run and "+ New room":
+   a soft fade with a small rise and settle, no lateral jump. */
 @keyframes guided-chat-expand {
   from {
-    opacity: 0.35;
-    transform: translateX(180px) translateY(18px) scale(0.86);
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
+    transform: translateY(0) scale(1);
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-panel, .onboarding-chat { animation: none; }
 }
 .onboarding-head {
   display: grid;
@@ -1051,6 +1075,17 @@ code {
 }
 .chat-play { border: 1px solid var(--line); background: var(--bg-raised); box-shadow: var(--shadow); padding: 18px 20px 20px; }
 
+/* A generated play: a pinned, immutable card, visually distinct from chat bubbles. */
+.chat-play-pinned {
+  align-self: stretch;
+  border: 1px solid var(--line-strong);
+  border-top: 3px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--bg-overlay);
+}
+.play-pin-label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.play-pin { font-size: 12px; line-height: 1; }
+
 /* The Read: a grounded read of the room, rendered inside the chat thread. */
 .chat-read {
   border-left: 2px solid var(--ink);
@@ -1254,10 +1289,15 @@ code {
   width: 100%;
   text-align: left;
 }
-.add-row { transition: border-color 0.13s; font-family: var(--sans); }
-.add-row:hover { border-color: var(--ink-faint); }
+.add-row { transition: border-color 0.13s, background 0.13s; font-family: var(--sans); }
+.add-row:hover { border-color: var(--ink-faint); background: var(--bg-raised); }
+/* Add from directory: roomier rows so the list never reads as crammed. */
+.directory-list { display: flex; flex-direction: column; gap: var(--s2); }
+.directory-list .add-row { padding: 14px 16px; gap: var(--s4); min-height: 60px; }
+.directory-list .roster-name { font-size: 15px; }
+.directory-list .roster-role { font-size: 13px; margin-top: 2px; }
 .roster-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.roster-name { font-size: 14.5px; font-weight: 500; }
+.roster-name { font-size: 14.5px; font-weight: 500; display: inline-flex; align-items: center; }
 .roster-role { font-size: 12.5px; color: var(--ink-faint); }
 .add-icon { margin-left: auto; font-size: 18px; color: var(--ink-faint); }
 
@@ -2567,21 +2607,25 @@ code {
 .select-room-sub { font-size: 14.5px; line-height: 1.55; color: var(--ink-soft); margin: 10px 0 20px; }
 .select-room .empty-actions { justify-content: center; }
 
-/* Task 6: a clearly clickable skip link on onboarding. */
-.onboarding-skip {
+/* Guided setup is dismissible. A quiet close affordance, not a skip-to-modal. */
+.onboarding-close {
   justify-self: end;
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
   background: none;
-  border: none;
-  padding: 8px 4px;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--informed);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  min-height: 40px;
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-size: 15px;
+  line-height: 1;
+  transition: color 0.13s, border-color 0.13s, background 0.13s;
 }
-.onboarding-skip:hover { color: var(--ink); }
-.onboarding-skip:disabled { opacity: 0.5; text-decoration: none; }
+.onboarding-close:hover { color: var(--ink); border-color: var(--line-strong); background: var(--bg); }
+.onboarding-close:disabled { opacity: 0.5; }
 
 @media (max-width: 767px) {
   /* The condensed overlay centers vertically on mobile inside a scrim. */

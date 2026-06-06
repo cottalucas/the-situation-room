@@ -5,6 +5,98 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-06 - @play, self as participant, and onboarding/roster polish
+
+Three features in one pass, built in dependency order: self as participant
+unblocks the @play "you + 1" floor, and the self model drives the roster polish.
+
+Conflicts resolved (flagged per orchestration step 2, then carried into the
+docs). The work order overrides three documented invariants, so the docs were
+updated to match rather than blocking: (1) play was documented as "parked", now
+@play is a first-class gated command; (2) "new accounts start empty" now also
+seeds one self person; (3) Guided Setup's "Skip, I'll set it up myself" door is
+removed in favor of a dismiss into the live empty room. The Firestore data model
+shape did not change except an additive `isSelf` person flag and the additive
+`selfSeeded` user setting; no migration of stored decision shape.
+
+#2 Self as participant. Added `isSelf` to the Person model and the Firestore
+round-trip. `store.ensureSelf({name, position})` is idempotent: it guarantees one
+self person keyed to `${uid}_self` and, once per account (the `selfSeeded` user
+setting), attaches self to every room roster and active decision, migrating
+existing accounts. After that one migration, removal sticks. `createRoom` seeds
+self into new rooms; new decisions inherit it through the roster. `person-ref.js`
+resolves first-person (I, me, my, myself) to the self record before any create,
+so the apply path attaches instead of duplicating. The command context flags the
+self person and the command system prompt binds first-person to it; prompt bumped
+to `room-command-v4-self-2026-06-06` in both `src/` and `functions/`. Self renders
+as "You" in People, roster, Energy grid (`chip-self`), and is excluded from "Add
+from directory". Local preview seeds one self person; Firestore seeds via
+`ensureSelf`.
+
+#1 @play. New `src/lib/play-readiness.js` holds the deterministic gate
+(`checkPlayReadiness`): >= 2 participants with self counting, every participant on
+a real stance, every non-self participant placed on the grid, network not
+required. Reason codes `missing_people` / `missing_stance` / `missing_grid` in
+that priority. Blocked path: a deterministic coaching turn names the gap and asks
+1 to 2 person-specific questions; the free-text reply routes through the existing
+`@map` contract and `applyRoomUpdate`, then readiness is re-checked. Ready path:
+calls `/api/generate-play` (no new model path), persists the play as a pinned,
+immutable `play` chat message labeled `PLAY · <timestamp>` with the generating
+inputs snapshotted (frozen, readable after the room changes), encrypted at rest
+in the message body, plus the durable Play doc via `store.savePlay`. Added `play`
+to `PERSISTED_MESSAGE_TYPES` so it survives reload. Analytics logs `play_blocked`
+{reason} and `play_generated` (counts only, never content). Decision: the coaching
+question is deterministic, not a second model surface, consistent with the
+`reflectOnAnswer` precedent; the reply parse (the eval target) uses the real `@map`
+path.
+
+#3 Onboarding and roster polish. Removed the "Skip, I'll set it up myself" link
+entirely. Added a quiet close affordance (`onboarding-close`); dismissing expands
+the rail and lands the user in the live empty room (reused or fresh empty room),
+never a settings modal. Replaced the lateral `guided-chat-expand` keyframe with a
+calm fade-and-rise that reads the same on both doors and respects reduced-motion.
+Redesigned "Add from directory" into a roomy list (8px gaps, 14x16 padding, 60px
+min row height, a helper line) and excluded self. Event `onboarding_dismissed`
+replaces `onboarding_skipped`.
+
+Verification: build clean (existing bundle-size warning only); prompt mirror in
+sync; `node --check functions/index.js` OK. Offline eval 19/19, new @play 23/23,
+new self 13/13, onboarding 52/52, resolution 19/19, persistence 24/24, guard
+12/12, autoread 10/10, confidence 9/9. Browser QA on clean local preview
+`http://localhost:5173/#/` (firebase env temporarily swapped out, then restored):
+"You" renders first in People with a self tag and as a `chip-self` on the Energy
+grid; @play with Priya at unknown stance blocked with a coaching turn naming Priya
+and asking how she feels (no play generated); with all stances set @play produced
+a pinned PLAY card with all four sections (situation summary, four sequenced
+per-person levers, key risk) that persisted across reload; guided setup shows the
+close affordance and no skip link, dismiss lands in the live room with no modal;
+Room Settings "Add from directory" lists the six directory people roomily and
+excludes "You"; zero console errors.
+
+Live eval (gated, real Haiku, ~1 to 2 cents): `@play` generate-play produced a
+coherent four-section play grounded in the people, with self in the sequence. The
+coaching reply parse extracted "Chad's against it" as `against` (and placed him),
+and a messy "could go either way" as `unknown` (defensible). The latter exposed a
+loop risk: an honest non-answer leaves stance `unknown`, which the readiness gate
+rejects, so the same question could repeat. Fix (option C): added a pure
+`nextCoachingStep` that terminates the loop. After two answers that do not close a
+stance gap it reads the still-unknown people as neutral with a transparent message
+and proceeds; a repeated grid gap points to the Energy lens; a people gap points
+to `@add`. Six `verify:play` cases cover it (suite now 29). The three failing
+bounded live regression cases were not caused by this change: two are the
+unchanged play prompt diverging from strict goldens on `not_generic`, and one is
+the command model echoing input words (`aggressive`, `micromanages`) into a note,
+not the self line. Offline goldens still 19/19.
+
+Naming: the in-repo user-facing command list (CommandsModal and the chat prompt
+chips) now includes `@play`. The external Novus/Pendo in-app guide is not in the
+repo; if it lists the command set it needs `@play` added there manually.
+
+Deploy: Firebase Hosting plus Functions plus Firestore rules released to
+`the-situation-room-708c6` (functions carry the mirrored
+`room-command-v4-self-2026-06-06` prompt). See the deploy and live smoke notes
+appended below.
+
 ## 2026-06-05 - Selected decision survives refresh
 
 Follow up to the browser refresh persistence pass after live QA showed that the

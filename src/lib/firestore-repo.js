@@ -101,6 +101,7 @@ async function personToFirestore(uid, person) {
     relationships: person.relationships || [],
     fresh: !!person.fresh,
     external: !!person.external,
+    isSelf: !!person.isSelf,
     createdAt: person.createdAt || serverTimestamp(),
   };
 }

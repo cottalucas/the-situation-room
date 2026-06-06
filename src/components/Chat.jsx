@@ -2,12 +2,35 @@ import React, { useState, useRef, useEffect } from "react";
 import { highlight, RichText } from "./highlight.jsx";
 import { EXAMPLE_PROMPTS } from "../lib/reasoning.js";
 
-function PlayMessage({ response, people, latest, onShowNetwork }) {
+function parsePlay(message) {
+  if (message.response && typeof message.response === "object") return message.response;
+  try {
+    const parsed = JSON.parse(message.body || "null");
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A generated play: a pinned, immutable card frozen at generation time. Its
+ * inputs are snapshotted into the message (people names, situation), so it stays
+ * readable after the room changes or a reload. Visually distinct from chat
+ * bubbles, re-openable via the reasoning toggle.
+ */
+function PlayMessage({ message, people, latest, onShowNetwork }) {
   const [expanded, setExpanded] = useState(false);
-  const byId = (id) => people.find((p) => p.id === id);
+  const response = parsePlay(message);
+  if (!response) return null;
+  // Prefer the frozen snapshot people; fall back to the live participants.
+  const snapshot = Array.isArray(response.people) ? response.people : [];
+  const byId = (id) => snapshot.find((p) => p.id === id) || people.find((p) => p.id === id);
   return (
-    <div className={`chat-msg chat-play ${latest ? "is-latest" : ""}`}>
-      <span className="msg-label">The play</span>
+    <div className={`chat-msg chat-play chat-play-pinned ${latest ? "is-latest" : ""}`}>
+      <span className="msg-label play-pin-label">
+        <span className="play-pin" aria-hidden="true">📌</span>
+        {message.label || "Play"}
+      </span>
       <h3 className="play-headline">{highlight(response.headline, "hl")}</h3>
       <ol className="step-list">
         {response.steps.map((step) => {
@@ -196,7 +219,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onCiteCl
             if (m.type === "user") return <UserMessage key={m.id} body={m.body} latest={latest} />;
             if (m.type === "play")
               return (
-                <PlayMessage key={m.id} response={m.response} people={participants} latest={latest} onShowNetwork={() => onShowNetwork(m.response)} />
+                <PlayMessage key={m.id} message={m} people={participants} latest={latest} onShowNetwork={onShowNetwork} />
               );
             if (m.type === "note")
               return (

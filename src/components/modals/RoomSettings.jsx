@@ -11,7 +11,9 @@ export function RoomSettings({ room, allPeople, onClose, onRename, onCreatePerso
   const [personName, setPersonName] = useState("");
   const [personRole, setPersonRole] = useState("");
   const roster = room.rosterIds.map((id) => allPeople[id]).filter(Boolean);
-  const available = Object.values(allPeople).filter((p) => !room.rosterIds.includes(p.id));
+  // Self is present by default and managed automatically; never offer it as a
+  // directory pick, so the LLM and the user can never create a duplicate "you".
+  const available = Object.values(allPeople).filter((p) => !room.rosterIds.includes(p.id) && !p.isSelf);
 
   const createPerson = (e) => {
     e.preventDefault();
@@ -39,11 +41,14 @@ export function RoomSettings({ room, allPeople, onClose, onRename, onCreatePerso
         <p className="field-help">Persistent team members. Available to every decision in this room.</p>
         <ul className="roster-list">
           {roster.map((p) => (
-            <li key={p.id} className="roster-row">
-              <Avatar name={p.name} size="sm" />
+            <li key={p.id} className={`roster-row ${p.isSelf ? "roster-row-self" : ""}`}>
+              <Avatar name={p.name} size="sm" self={p.isSelf} />
               <div className="roster-info">
-                <span className="roster-name">{p.name}</span>
-                <span className="roster-role">{p.role}</span>
+                <span className="roster-name">
+                  {p.isSelf ? "You" : p.name}
+                  {p.isSelf && <span className="self-tag">You</span>}
+                </span>
+                <span className="roster-role">{p.role || (p.isSelf ? "The operator" : "")}</span>
               </div>
               <button className="btn-ghost btn-sm" onClick={() => onRemoveFromRoster(p.id)}>
                 Remove
@@ -78,16 +83,19 @@ export function RoomSettings({ room, allPeople, onClose, onRename, onCreatePerso
       {available.length > 0 && (
         <div className="field">
           <label className="field-label">Add from directory</label>
-          {available.map((p) => (
-            <button key={p.id} className="add-row" onClick={() => onAddToRoster(p.id)}>
-              <Avatar name={p.name} size="sm" />
-              <div className="roster-info">
-                <span className="roster-name">{p.name}</span>
-                <span className="roster-role">{p.role}</span>
-              </div>
-              <span className="add-icon">+</span>
-            </button>
-          ))}
+          <p className="field-help">People you have mapped before. Add them to bring their profile into this room.</p>
+          <div className="directory-list">
+            {available.map((p) => (
+              <button key={p.id} className="add-row" onClick={() => onAddToRoster(p.id)}>
+                <Avatar name={p.name} size="sm" />
+                <div className="roster-info">
+                  <span className="roster-name">{p.name}</span>
+                  <span className="roster-role">{p.role}</span>
+                </div>
+                <span className="add-icon">+</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </Modal>

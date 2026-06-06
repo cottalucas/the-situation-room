@@ -33,7 +33,11 @@ call) and the strategist prompt itself (`strategist-v2`: grounding, off-topic an
 roleplay refusal, profanity neutralized, injection ignored). It rides on
 `VITE_ENABLE_LIVE_LLM` and is meant for deliberate testing.
 
-The play generator (`/api/generate-play`) is parked plumbing for future work.
+The play generator (`/api/generate-play`) backs the `@play` command, called only
+after the deterministic readiness gate (`src/lib/play-readiness.js`) passes.
+First-person references resolve to the self record (`isSelf`), so the model never
+duplicates the operator; the command prompt is bumped to
+`room-command-v4-self-2026-06-06` in both `src/` and `functions/`.
 
 ## Request path (end to end)
 
@@ -103,8 +107,10 @@ A shared module or a CI version-match assertion is the planned hardening.
   grounding, off-topic decline, and a banned trait/diagnosis vocabulary list.
 - Targeted helper scripts: `verify:persistence` (crypto + converters + anaphora
   resolver), `verify:autoread` (threshold + cache-bust), `verify:confidence`
-  (placement confidence shape), `verify:emulator` (Firestore transport, needs
-  Java).
+  (placement confidence shape), `verify:play` (the `@play` readiness gate, reason
+  codes, coaching, coaching-reply stance parse, and play shape), `verify:self`
+  (first-person resolves to the self record), `verify:emulator` (Firestore
+  transport, needs Java).
 - `npm run eval:live` (gated by `EVAL_ALLOW_LIVE=true` and `--live`): runs the
   fixtures against a live dev server. Bound spend with `EVAL_MAX_CASES` or
   `EVAL_CASE_IDS`. Record real output vs golden; never loosen an eval to make

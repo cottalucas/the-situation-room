@@ -6,10 +6,15 @@ Source of truth for what we are building and why. Revise freely.
 Working prototype with Firebase Auth and Firestore behind the store interface.
 The encrypted local cache remains for fast load and session consistency.
 Claude chat is command-first through local Vite testing or an authenticated
-Firebase Function. `@note`, `@grid`, `@network`, and `@map` are the active
-surface while open play chat stays parked until mapping, trace capture, and
-evals are stronger. Next step is the privacy surface for export, delete, and
-clear data location.
+Firebase Function. `@note`, `@grid`, `@network`, `@map`, `@ask`, and `@read` are
+the active surface. `@play` is now a first-class command: a deterministic
+client-side readiness gate decides whether the room holds enough signal, then
+either coaches the user to close the biggest gap or generates a grounded,
+pinned, immutable play card. The signed-in user is a first-class participant
+(rendered as "You"), so plays can reason about the operator's own position. Open
+(non-command) plain-text chat stays parked behind the live flag until mapping,
+trace capture, and evals are stronger. Next step is the privacy surface for
+export, delete, and clear data location.
 
 ## Problem
 The tools a product or corporate operator has help with the artifact, not the

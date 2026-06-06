@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
-import { interpretRoomCommand, askStrategist } from "../lib/context.js";
+import { interpretRoomCommand, askStrategist, buildContext, generatePlay } from "../lib/context.js";
+import { checkPlayReadiness, buildPlayCoaching, nextCoachingStep, playStamp, playSituation } from "../lib/play-readiness.js";
 import { trackEvent } from "../lib/firebase.js";
 import { consumeOnboardingPending } from "../lib/auth.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
@@ -197,6 +198,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const [route, setRoute] = useState(initialRoute);
   const [draft, setDraft] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  // When @play is blocked, the next free-text reply is parsed back through @map to
+  // close the gap. Cleared when the decision changes or the gap is filled.
+  const [playCoaching, setPlayCoaching] = useState(null);
   const [showPath, setShowPath] = useState(false);
   const [modal, setModal] = useState(null); // { type, id }
   const [pendingOnboarding, setPendingOnboarding] = useState(false);
@@ -223,7 +227,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const participants = activeDecisionId ? store.getParticipants(activeDecisionId) : [];
   const messages = activeDecisionId ? store.getChat(activeDecisionId) : [];
   const lastPlay = [...messages].reverse().find((m) => m.type === "play");
-  const sequence = lastPlay?.response?.sequence;
+  const lastPlayResponse = lastPlay?.response || (() => {
+    try {
+      return JSON.parse(lastPlay?.body || "null");
+    } catch {
+      return null;
+    }
+  })();
+  const sequence = lastPlayResponse?.sequence;
   const roomHasPeople = (room?.rosterIds?.length || 0) > 0;
   const userSettingsReady = store.getPref("userSettingsReady") !== false;
   const remoteReady = store.getPref("remoteReady") !== false;
@@ -279,6 +290,51 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     [activeDecisionId, store]
   );
 
+  /* @play: deterministic readiness gate, then either a coaching turn that closes
+     the biggest gap, or a grounded, pinned, immutable play card. */
+  const runPlay = useCallback(async () => {
+    if (!decision) return;
+    const currentParticipants = store.getParticipants(decision.id);
+    const currentDecision = store.getDecision(decision.id);
+    const readiness = checkPlayReadiness({ participants: currentParticipants, decision: currentDecision });
+    if (!readiness.ready) {
+      trackEvent("play_blocked", { reason: readiness.reason });
+      const coaching = buildPlayCoaching(readiness, currentParticipants);
+      store.pushMessage(decision.id, { type: "coach", body: coaching.body, questions: coaching.questions, grounded: true });
+      setPlayCoaching({ decisionId: decision.id, reason: readiness.reason, missing: readiness.missing, attempts: 0 });
+      return;
+    }
+    setPlayCoaching(null);
+    setIsGenerating(true);
+    try {
+      const edges = store.getEdges(decision.id);
+      const ctx = buildContext({ decision: currentDecision, participants: currentParticipants, edges });
+      const resp = await generatePlay(playSituation(currentDecision), ctx);
+      if (resp.kind === "play") {
+        // Freeze the generating inputs into the card so it stays readable after
+        // the room changes or a reload. Body is encrypted at rest like other text.
+        const snapshot = {
+          headline: resp.headline,
+          steps: resp.steps,
+          sequence: resp.sequence,
+          risk: resp.risk,
+          reasoning: resp.reasoning,
+          people: currentParticipants.map((p) => ({ id: p.id, name: p.isSelf ? "You" : p.name })),
+          situation: playSituation(currentDecision),
+          generatedAt: new Date().toISOString(),
+        };
+        store.pushMessage(decision.id, { type: "play", label: `PLAY · ${playStamp()}`, response: snapshot, body: JSON.stringify(snapshot) });
+        store.savePlay(decision.id, { situation: snapshot.situation, output: snapshot });
+        // Analytics logs the event only, never play content.
+        trackEvent("play_generated", { participants: currentParticipants.length, edges: edges.length });
+      } else {
+        store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [decision, store]);
+
   const startOnboarding = useCallback(
     ({ auto = false, mode = "first-run" } = {}) => {
       store.setPref("onboardingPrompted", true);
@@ -311,6 +367,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     if (!userId) return;
     setPendingOnboarding(consumeOnboardingPending(userId));
   }, [userId]);
+
+  // Make the signed-in user a first-class participant once their account has
+  // loaded. Idempotent: seeds the self record and migrates existing rooms once.
+  useEffect(() => {
+    if (!userId || !remoteReady) return;
+    const profile = store.getProfile();
+    store.ensureSelf({ name: profile.name || userName || "", position: profile.position || "" });
+  }, [userId, userName, remoteReady, store]);
 
   // Hash is the single source for the Tier 2 person page and Tier 3 frameworks
   // page, so they are linkable and the browser back button works.
@@ -373,19 +437,19 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     }
   }, [pendingOnboarding, startOnboarding, store, usableRoom]);
 
-  const skipOnboarding = useCallback(() => {
+  // Dismissing guided setup lands the user in the live empty room with the rail
+  // and command surface visible, never in a modal. Manual room editing stays
+  // reachable through the existing room-settings entry point (rail, empty state).
+  const dismissOnboarding = useCallback(() => {
     store.setPref("onboardingPrompted", true);
     store.setPref("railCollapsed", false);
-    trackEvent("onboarding_skipped", { mode: onboarding.mode });
+    trackEvent("onboarding_dismissed", { mode: onboarding.mode });
     setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
-    // Connect guided and manual: "I'll set it up myself" drops into the existing
-    // Room Settings modal. Reuse an empty room if one exists, else create one.
     const emptyRoom = store.getRooms().find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
     const roomId = emptyRoom?.id || store.createRoom();
     setActiveRoomId(roomId);
     setActiveDecisionId(null);
     setActiveTab("people");
-    setModal({ type: "roomSettings", id: roomId });
   }, [store, onboarding.mode]);
 
   const openOnboardingRoom = useCallback(() => {
@@ -398,6 +462,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const selectRoom = useCallback(
     (id) => {
       setActiveRoomId(id);
+      setPlayCoaching(null);
       store.setUserSetting("lastRoomId", id);
       const first = store.getDecisions(id).find((d) => d.status === "active");
       if (first) {
@@ -420,6 +485,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const selected = store.getDecision(id);
       const selectedRoomId = selected?.roomId || activeRoomId;
       store.ensureChat(id);
+      setPlayCoaching(null);
       if (selected?.roomId && selected.roomId !== activeRoomId) setActiveRoomId(selected.roomId);
       setActiveDecisionId(id);
       store.setUserSetting("lastRoomId", selectedRoomId);
@@ -910,6 +976,71 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const priorMessages = store.getChat(decision.id);
       store.pushMessage(decision.id, { type: "user", body: q });
 
+      // @play gap-closing: a free-text reply to a coaching question is parsed back
+      // through the same @map command path, then readiness is re-checked.
+      if (playCoaching && playCoaching.decisionId === decision.id && !q.startsWith("@")) {
+        setDraft("");
+        setIsGenerating(true);
+        try {
+          const resp = await interpretRoomCommand({
+            command: "map",
+            text: q,
+            room,
+            decision,
+            participants,
+            edges: store.getEdges(decision.id),
+            messages: priorMessages,
+          });
+          if (resp.kind === "update") {
+            const message = applyRoomUpdate(resp.update, "map") || { label: "Room updated", body: "Updated the room." };
+            store.pushMessage(decision.id, { type: "updated", ...message });
+            let nextParticipants = store.getParticipants(decision.id);
+            let recheck = checkPlayReadiness({ participants: nextParticipants, decision: store.getDecision(decision.id) });
+            let step = nextCoachingStep({ readiness: recheck, prev: playCoaching });
+            // Graceful exit: if the user answered twice without a clear stance,
+            // read the still-unknown people as neutral so the loop terminates.
+            if (step.kind === "neutralize") {
+              step.ids.forEach((id) => store.setPosition(decision.id, id, "neutral"));
+              const names = step.ids.map((id) => store.getPerson(id)).filter(Boolean).map((p) => (p.isSelf ? "you" : p.name.split(/\s+/)[0]));
+              store.pushMessage(decision.id, {
+                type: "updated",
+                label: "Reading as neutral",
+                body: `I could not pin a clear stance for ${names.join(" and ") || "them"}, so I will read them as neutral for the play. Adjust on the Energy lens if that is off.`,
+              });
+              nextParticipants = store.getParticipants(decision.id);
+              recheck = checkPlayReadiness({ participants: nextParticipants, decision: store.getDecision(decision.id) });
+              step = nextCoachingStep({ readiness: recheck, prev: null });
+            }
+            if (recheck.ready || step.kind === "ready") {
+              setPlayCoaching(null);
+              store.pushMessage(decision.id, { type: "updated", label: "Ready for a play", body: "That closes the gap. Send @play and I will lay out the move." });
+            } else if (step.kind === "manual") {
+              setPlayCoaching(null);
+              const tip =
+                recheck.reason === "missing_grid"
+                  ? "Place the remaining people on the Energy lens by dragging their chip, then send @play."
+                  : "Add who else is in the room with @add Name, role, then send @play.";
+              store.pushMessage(decision.id, { type: "updated", label: "One more step", body: tip });
+            } else {
+              const coaching = buildPlayCoaching(recheck, nextParticipants);
+              store.pushMessage(decision.id, { type: "coach", body: coaching.body, questions: coaching.questions, grounded: true });
+              setPlayCoaching({ decisionId: decision.id, reason: recheck.reason, missing: recheck.missing, attempts: step.attempts || 0 });
+            }
+          } else {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+          }
+        } finally {
+          setIsGenerating(false);
+        }
+        return;
+      }
+
+      if (/^@play\b/i.test(q)) {
+        setDraft("");
+        await runPlay();
+        return;
+      }
+
       const note = q.match(/^@notes?\s+([\s\S]+)$/i);
       if (note) {
         const remainder = note[1].trim();
@@ -1078,7 +1209,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         setIsGenerating(false);
       }
     },
-    [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, room, store]
+    [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, playCoaching, room, runPlay, store]
   );
   const showOnNetwork = useCallback(() => {
     setShowPath(true);
@@ -1210,7 +1341,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                   error={onboarding.error}
                   headline={onboarding.mode === "guided" ? "Set up a new room" : "Build your first room"}
                   onSubmit={submitOnboarding}
-                  onSkip={skipOnboarding}
+                  onDismiss={dismissOnboarding}
                   onOpenRoom={openOnboardingRoom}
                 />
               </main>

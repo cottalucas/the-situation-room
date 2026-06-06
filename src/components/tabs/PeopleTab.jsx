@@ -34,11 +34,12 @@ export function PeopleTab({ participants, decision, onOpenProfile, onAddExternal
         {participants.map((p) => {
           const stance = decision.positions[p.id] || "unknown";
           return (
-            <li key={p.id} className="person-row" onClick={() => onOpenProfile(p.id)}>
-              <Avatar name={p.name} />
+            <li key={p.id} className={`person-row ${p.isSelf ? "person-row-self" : ""}`} onClick={() => onOpenProfile(p.id)}>
+              <Avatar name={p.name} self={p.isSelf} />
               <div className="person-row-main">
                 <div className="person-row-top">
-                  <span className="person-row-name">{p.name}</span>
+                  <span className="person-row-name">{p.isSelf ? "You" : p.name}</span>
+                  {p.isSelf && <span className="self-tag">You</span>}
                   {externals.has(p.id) && <span className="ext-tag">External</span>}
                   <PositionBadge position={stance} size="xs" />
                 </div>
