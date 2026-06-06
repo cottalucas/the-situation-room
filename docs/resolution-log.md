@@ -94,8 +94,15 @@ repo; if it lists the command set it needs `@play` added there manually.
 
 Deploy: Firebase Hosting plus Functions plus Firestore rules released to
 `the-situation-room-708c6` (functions carry the mirrored
-`room-command-v4-self-2026-06-06` prompt). See the deploy and live smoke notes
-appended below.
+`room-command-v4-self-2026-06-06` prompt). `Deploy complete!`: functions `api`
+updated (Node 20 2nd gen), hosting released, rules already current. The only
+warning is the known benign build-image cleanup. Live smoke (unauthenticated):
+app root HTTP 200, the served asset `/assets/index-kHLVoEym.js` matches the local
+build, and `/api/strategist`, `/api/interpret-room-command`, and
+`/api/generate-play` all return 401 "Sign in required" (live and auth-gated). The
+authenticated `@play` plus `ensureSelf` cold-account smoke needs a sign-in and was
+left to the maintainer. Shipped on branch `feat/play-self-onboarding`; main not
+yet fast-forwarded, so prod is ahead of main until merge.
 
 ## 2026-06-05 - Selected decision survives refresh
 
