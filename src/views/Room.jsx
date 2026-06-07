@@ -50,7 +50,7 @@ import { GridTab } from "../components/tabs/GridTab.jsx";
 import { NetworkTab } from "../components/tabs/NetworkTab.jsx";
 import { RoomSettings } from "../components/modals/RoomSettings.jsx";
 import { DecisionSettings } from "../components/modals/DecisionSettings.jsx";
-import { AddExternal } from "../components/modals/AddExternal.jsx";
+import { AddParticipant } from "../components/modals/AddParticipant.jsx";
 import { NewDecision } from "../components/modals/NewDecision.jsx";
 import { CommandsModal } from "../components/modals/CommandsModal.jsx";
 import { ConfirmModal } from "../components/modals/ConfirmModal.jsx";
@@ -1400,7 +1400,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                             participants={participants}
                             decision={decision}
                             onOpenProfile={openPersonPage}
-                            onAddExternal={() => setModal({ type: "external" })}
+                            onAddPerson={() => setModal({ type: "addParticipant" })}
                             onRemoveParticipant={(id) => {
                               store.removeParticipant(decision.id, id);
                               trackEvent("decision_participant_remove");
@@ -1551,9 +1551,17 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           }}
         />
       )}
-      {modal?.type === "external" && decision && (
-        <AddExternal
-          onAdd={(name, role) => {
+      {modal?.type === "addParticipant" && decision && room && (
+        <AddParticipant
+          rosterAvailable={(room.rosterIds || [])
+            .map((id) => store.getPerson(id))
+            .filter(Boolean)
+            .filter((p) => ![...decision.participantIds, ...decision.externalIds].includes(p.id))}
+          onAddExisting={(id) => {
+            store.addParticipant(decision.id, id);
+            trackEvent("decision_participant_add", { source: "roster" });
+          }}
+          onAddExternal={(name, role) => {
             const id = store.addExternal(decision.id, { name, role });
             trackEvent("external_add");
             setModal(null);

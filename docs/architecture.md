@@ -590,7 +590,7 @@ src/
     Chat.jsx              the conversation
     tabs/                 PeopleTab, GridTab, NetworkTab
     modals/               Modal shell, RoomSettings, DecisionSettings,
-                          AddExternal, NewDecision, CommandsModal,
+                          AddParticipant, NewDecision, CommandsModal,
                           ConfirmModal, AuthModal
   views/
     Landing.jsx           public landing, register and sign in entry

@@ -5,7 +5,29 @@ entries; correct them with a follow up that references the original.
 
 ---
 
-## 2026-06-06 - @play, self as participant, and onboarding/roster polish
+## 2026-06-06 - Re-add a roster member to a decision (follow up)
+
+Live use surfaced a gap: removing a participant from a decision left no way to add
+them back. The People lens only offered "+ Add external", which creates a new
+person, so a removed roster member could not return and an external duplicate was
+the only path. This corrects the 2026-06-03 "add from roster action is gone"
+decision, which assumed the whole roster always stays in every decision.
+
+What changed: replaced the single-purpose AddExternal modal with `AddParticipant`
+("Add to decision"). It has two paths: "From this room" lists roster members not
+currently in the decision (each re-adds via `store.addParticipant`, which resolves
+to the existing record so there is never a duplicate), and "Add someone new" keeps
+the external form (`store.addExternal`). The People lens action is now "+ Add
+person". Self is re-addable the same way and renders as "You" in the list. Deleted
+the now-unused `AddExternal.jsx`. Analytics: `decision_participant_add`
+{source: roster}.
+
+Verification: build clean; offline 19/19, play 29/29, self 13/13. Browser QA on
+local preview: removed Priya, the Add modal listed her under "From this room"
+alongside Chad (a roster member never in this decision), re-added her with no
+duplicate and the modal list shrank; removed and re-added "You" with the same
+result; external form still present; zero console errors. Shipped on
+`feat/play-self-onboarding`; redeployed with the batch below.
 
 Three features in one pass, built in dependency order: self as participant
 unblocks the @play "you + 1" floor, and the self model drives the roster polish.
