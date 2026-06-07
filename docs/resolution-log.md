@@ -5,6 +5,76 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-07 - Influence Ring: the Network lens redesign
+
+Replaced the Network lens with the Influence Ring, a concentric-ring SVG layout
+where ring position encodes influence over the decision. Six phases in one pass.
+
+Conflicts flagged before building, resolved with the user, then carried into the
+docs: (1) the brief's premise of a force-directed graph and a graph library is
+false, the old lens was already hand-written SVG with a role/edge auto-layout, so
+there was nothing to remove, only to replace; (2) influence is stored per decision
+(decision.influence[personId] = {level, overridden}), parallel to positions and
+placements, not on the person document, because influence is "over this specific
+decision" and varies by decision, this needs no Firestore rule change since it
+writes through the decision; (3) the edge token stays "defers" (no migration, no
+rules or prompt-token churn, no production data break) and the UI shows "Defers
+to". User chose all six phases in one pass.
+
+P1 data model. Added decision.influence with DEFAULT_INFLUENCE {level:null,
+overridden:false}, seeded on decision/participant/external creation, removed on
+participant removal. store.setInfluence/getInfluence; round-trips plaintext
+through firestore-repo (enum, not free text). Seeded levels on the salesforce
+decision. Edges unchanged (already {from,to,type}).
+
+P2 @map prompt. Added influence inference rules and influenceLevel to the
+map/create schema in both src/lib/llm-prompts.js and functions/index.js;
+normalizeRoomUpdate validates influenceLevel (valid level or null) in both
+mirrors. applyRoomUpdate writes influence for map/create, skipping the self user
+and any overridden level, and fires influence_inferred. Prompt bumped to
+room-command-v5-influence-2026-06-07 in both files. Five inference evals plus
+contract guards: npm run verify:influence (7/7).
+
+P3 render. Rewrote NetworkTab.jsx as the Influence Ring (no library). Pure
+geometry in src/lib/influence-ring.js (ringLayout, clipLine, edgeColor,
+ringLabelPositions). Self center r40, high ring1 r140, medium ring2 r260 (null
+lands here), low ring3 r380; even angular spacing with a per-ring stagger, no
+overlaps. Dashed ring guides, top-right labels, arrowed edges clipped to node
+edges (ally #1D9E75, conflict #E24B4A, defers --line-strong), empty state under
+two participants, hover tooltip. New lens-scoped influence color ramp tokens.
+Removed the dead seed exports (networkPositions, EDGE_META).
+
+P4 interaction (desktop only). Two pointer gestures by zone: core (<60% r) moves
+a node between rings and writes influence {overridden:true} plus
+influence_overridden; rim (60-100%) draws a relationship via a three-pill picker
+(Ally/Conflict/Defers to) that writes an edge, supports type change and remove,
+and prevents duplicates. Escape cancels with no write; the self node never
+repositions and has no outbound edge affordance; a press without a drag opens the
+node summary. Pointer mapping accounts for the preserveAspectRatio letterbox, and
+setPointerCapture/releasePointerCapture are guarded so a capture hiccup never
+aborts a gesture (found and fixed during browser QA of the edge gesture).
+
+P5 analytics. trackNetwork in firebase.js fires the five Novus (Pendo) events to
+both Firebase Analytics and pendo.track, fire and forget, ids and counts only:
+network_viewed, edge_created, edge_deleted, influence_overridden,
+influence_inferred. No names, notes, or edge endpoints in any payload.
+
+P6 evals. npm run verify:influence-ring (19, including the 12 spec cases: Suite A
+layout 5, Suite B edges 3, Suite C drag 4).
+
+Verification: build clean; prompt mirror in sync; node --check functions OK.
+Offline 19/19, influence 7/7, influence-ring 19/19, play 29/29, self 13/13,
+onboarding 52/52, resolution 19/19, persistence 24/24, guard 12/12, autoread
+10/10, confidence 9/9. Browser QA on local preview (firebase env swapped out then
+restored): the ring renders with self centered and nodes on the correct rings by
+seeded influence, edges arrowed and colored; a simulated core drag moved Dana
+medium to high and it persisted across reload; a simulated rim drag opened the
+picker and creating an Ally edge took the count 5 to 6; zero runtime errors on a
+clean load (the HMR errors seen mid-session were intermediate edit states, gone
+after a fresh build/load). Not touched: People lens, Energy lens, @play, auth,
+routing, Firebase init. Shipped on branch feat/influence-ring (stacked on the
+prior feat/play-self-onboarding work). Deploy notes appended below.
+
 ## 2026-06-06 - Re-add a roster member to a decision (follow up)
 
 Live use surfaced a gap: removing a participant from a decision left no way to add

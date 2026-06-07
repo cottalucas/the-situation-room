@@ -162,6 +162,14 @@ external participant add, observation creation, archive/delete, and play
 request result. It does not log note text, decision context, person names, room
 names, or generated play text.
 
+Novus (Pendo) events for the Influence Ring fire through `trackNetwork` in
+`firebase.js`, fire and forget to both Firebase Analytics and `pendo.track` when
+the global is present: `network_viewed { roomId, participantCount, edgeCount }`,
+`edge_created { roomId, type }`, `edge_deleted { roomId }`, `influence_overridden
+{ roomId, newLevel }`, and `influence_inferred { roomId, participantCount,
+inferredCount, nullCount }`. Payloads carry only ids, counts, and enum values,
+never names, notes, or edge endpoints.
+
 ## Encrypted local cache and encrypted Firestore text
 
 The encrypted IndexedDB cache is a cache, not the store of record. Firebase is
@@ -481,12 +489,35 @@ target and the rest as the note, so multi-word names and titles work
 used for direct references but not for splitting a sentence, so a note body is
 never swallowed by a role match.
 
-`NetworkTab.jsx` uses the seeded network positions only when every visible
-participant belongs to the seeded preview scenario. Real rooms use a
-deterministic automatic layout derived from role hierarchy and decision edges,
-so new Firebase rooms do not collapse unknown people into the center of the
-canvas. Grid placement does not drive the network layout. A grid update should
-not reshuffle the relationship map unless it also changes relationships.
+The Network lens is the Influence Ring (`NetworkTab.jsx`), a hand-written SVG
+renderer with no graph library. Ring position encodes influence over this
+decision: You at the center (ring 0), then high (r 140), medium (r 260, where
+null also lands), and low (r 380). Nodes are distributed evenly around their ring
+with a per-ring rotation stagger so they never stack across rings, and the layout
+has no overlaps for normal counts. Edges are straight lines clipped to node
+edges, arrowed, colored by type (ally teal, conflict red, defers a line token).
+The pure geometry and interaction logic lives in `src/lib/influence-ring.js`
+(`ringLayout`, `clipLine`, `edgeColor`, `gestureForRadius`, `nearestRing`,
+`centerDropWrite`, `edgeWrite`, `ringLabelPositions`), so it is unit-testable
+without React.
+
+Two desktop pointer gestures, decided by where the press lands on a node:
+dragging the core (within 60% of the radius) repositions the node between rings
+and writes `influence[id] = { level, overridden: true }`; dragging the rim (60%
+to 100%) draws a relationship and opens a picker (Ally, Conflict, Defers to) that
+writes an edge. Escape cancels either with no write. The self node never
+repositions and has no outbound edge affordance. A press with no drag opens the
+node summary. Touch drag is out of scope. Pointer coordinates are mapped through
+the SVG `preserveAspectRatio` letterbox, and the capture calls are guarded so a
+capture hiccup never aborts a gesture.
+
+`influence` is decision-scoped, like positions and placements: a person can be
+high-influence on one decision and low on another. `store.setInfluence`,
+`getInfluence`, and `DEFAULT_INFLUENCE` manage it; it round-trips plaintext
+through `firestore-repo` (no encryption: it is an enum, not free text) and needs
+no Firestore rule change because it writes through the decision document. `@map`
+and `@create` infer it (never for the self user, never over a user-set
+`overridden` level). Grid placement does not drive the network layout.
 
 ## LLM trace capture
 
@@ -528,6 +559,14 @@ deterministic verifier, `npm run verify:onboarding`. It checks the fixed
 question flow, one-shot trigger guard, command plan, and normalized mock outputs
 without calling a live model.
 
+The Influence Ring has two offline suites: `npm run verify:influence` (5 @map
+inference golden cases plus contract guards: clear high, clear low, ambiguous to
+null, seniority is not influence, junior gatekeeper is high) and `npm run
+verify:influence-ring` (Suite A layout: self centered, high on ring 1, null on
+ring 2, no overlap, label positions; Suite B edges: ally and conflict colors,
+arrow stops at the node edge; Suite C drag: center drop writes the right level,
+sets overridden, edge write creates the right type, escape cancels with no write).
+
 `@play` has a deterministic verifier, `npm run verify:play`: readiness reason
 codes (under-threshold rooms never produce a play), the you+1 floor with no
 network requirement, the three-or-more case, the coaching turn copy, the coaching
@@ -557,6 +596,8 @@ src/
     llm-prompts.js        play and command system prompts, prompt versions
     llm-trace.js          local raw trace writer and cost estimator
     onboarding.js         first-run questions, trigger helpers, command plan
+    influence-ring.js     pure ring layout, edge clipping, drag-gesture logic
+    play-readiness.js     deterministic @play gate, coaching, play snapshot helpers
     play-contract.js      compact LLM context and validate returned plays
     room-command-contract.js compact and validate LLM command updates
     reasoning.js          canned play engine, Claude API later

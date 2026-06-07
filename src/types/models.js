@@ -43,8 +43,17 @@
  * @property {string[]} externalIds      People scoped to this decision only.
  * @property {Object.<string,Position>} positions  personId to stance.
  * @property {Object.<string,Placement>} placements personId to grid placement.
+ * @property {Object.<string,Influence>} influence  personId to influence over this decision.
  * @property {DecisionNote[]} decisionNotes
  * @property {string} derivedSummary
+ */
+
+/**
+ * @typedef {Object} Influence
+ * @property {"high"|"medium"|"low"|null} level  How much this person can block,
+ *   accelerate, or shape this decision. Decision-scoped, not a person trait.
+ * @property {boolean} overridden  True if the user set it by hand on the Influence
+ *   Ring; @map must not overwrite a user-set level. isSelf is always center, ignored.
  */
 
 /**

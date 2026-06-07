@@ -22,8 +22,9 @@ const POSITIONS = new Set(["for", "against", "neutral", "unknown"]);
 const TKI = new Set(["Competing", "Avoiding", "Compromising", "Collaborating", "Accommodating"]);
 const SCARF = new Set(["Status", "Certainty", "Autonomy", "Relatedness", "Fairness"]);
 const CONFIDENCE = new Set(["high", "medium", "low"]);
+const INFLUENCE = new Set(["high", "medium", "low"]);
 const ALLOWED_COMMANDS = new Set(["note", "grid", "network", "net", "map", "create"]);
-const COMMAND_PROMPT_VERSION = "room-command-v4-self-2026-06-06";
+const COMMAND_PROMPT_VERSION = "room-command-v5-influence-2026-06-07";
 const PLAY_PROMPT_VERSION = "play-v1-local-2026-06-03";
 const STRATEGIST_PROMPT_VERSION = "strategist-v3-2026-06-04";
 
@@ -163,6 +164,10 @@ function cleanConfidence(value) {
   return CONFIDENCE.has(value) ? value : undefined;
 }
 
+function cleanInfluence(value) {
+  return INFLUENCE.has(value) ? value : null;
+}
+
 function extractJson(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
@@ -231,9 +236,15 @@ function commandRules(command) {
   if (command === "map" || command === "create") {
     return [
       `Command rules for @${command}:`,
-      "- This is the broad intake command. It may create people, save concise notes, set grid values, set position, and add network edges.",
+      "- This is the broad intake command. It may create people, save concise notes, set grid values, set position, add network edges, and infer influence level.",
       "- Use the grid calibration bands and include a confidence for each grid value and each edge, exactly like the @grid and @network commands. There is no looser path here.",
       "- Apply the same edge discipline: only relationships the user states or strongly implies, and a single reporting line is one defers edge and nothing more.",
+      "- Influence inference. For each participant except the user (isSelf true), infer influenceLevel over THIS specific decision from all notes in context. Influence is how much this person can block, accelerate, or shape the outcome, not their general seniority.",
+      "  high: can unilaterally block or approve, final say on budget, headcount, or scope; their opposition would likely kill the initiative.",
+      "  medium: meaningfully shapes the outcome but cannot act alone; must be consulted; their support helps but is not sufficient.",
+      "  low: informed but not decision making; their stance matters for execution, not for the decision itself.",
+      "  If there is genuinely insufficient signal, return null. Do not guess. A senior title is not by itself high influence on this decision; a junior person who gatekeeps a required dependency can be high.",
+      "- Return influenceLevel as high, medium, low, or null per participant. Never set influenceLevel for the isSelf user. The app ignores influenceLevel for any participant the user has already set by hand.",
       "- Keep the confirmation short and grouped by destination: people, notes, grid, network. Ask one open question only if it would materially improve the next mapping pass.",
     ].join("\n");
   }
@@ -268,7 +279,7 @@ function commandSchema(command) {
   return {
     summary: "Short confirmation of what changed.",
     decisionNote: "Optional short decision-level note.",
-    people: [{ id: "existing participant id when known", name: "new person name if needed", role: "role if known", create: false, note: "Short polished note to save on the person.", position: "for|against|neutral|unknown", power: 70, interest: 60, confidence: "high|medium|low", profilePatch: {} }],
+    people: [{ id: "existing participant id when known", name: "new person name if needed", role: "role if known", create: false, note: "Short polished note to save on the person.", position: "for|against|neutral|unknown", power: 70, interest: 60, confidence: "high|medium|low", influenceLevel: "high|medium|low|null", profilePatch: {} }],
     edges: [{ from: "person moved", to: "person who moves them", type: "defers", confidence: "high|medium|low", note: "Optional short note." }],
     openQuestions: ["Optional question. One normally, two maximum."],
   };
@@ -359,6 +370,7 @@ function normalizeRoomUpdate(raw) {
     power: clampPercent(p.power),
     interest: clampPercent(p.interest),
     confidence: cleanConfidence(p.confidence),
+    influenceLevel: cleanInfluence(p.influenceLevel),
     profilePatch: cleanProfilePatch(p.profilePatch),
   })).filter((p) => p.id || p.name);
   const edges = (Array.isArray(raw.edges) ? raw.edges : []).slice(0, 16).map((e) => ({

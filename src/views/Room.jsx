@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
 import { interpretRoomCommand, askStrategist, buildContext, generatePlay } from "../lib/context.js";
 import { checkPlayReadiness, buildPlayCoaching, nextCoachingStep, playStamp, playSituation } from "../lib/play-readiness.js";
-import { trackEvent } from "../lib/firebase.js";
+import { trackEvent, trackNetwork } from "../lib/firebase.js";
 import { consumeOnboardingPending } from "../lib/auth.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
@@ -148,6 +148,7 @@ function commandCapabilities(sourceCommand) {
     profile: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
     grid: sourceCommand === "grid" || sourceCommand === "map" || sourceCommand === "create",
     edges: sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
+    influence: sourceCommand === "map" || sourceCommand === "create",
   };
 }
 
@@ -722,6 +723,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       let positions = 0;
       let edges = 0;
       let created = 0;
+      let influenced = 0;
       const clarificationQuestions = [];
       const confirmQuestions = [];
       const caps = commandCapabilities(sourceCommand);
@@ -763,6 +765,15 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             confirmQuestions.push(softGridConfirm(store.getPerson(id) || item, item.power, item.interest));
           }
         }
+        // Influence is inferred by @map/@create only. Never set it for the self
+        // user, and never overwrite a level the user set by hand on the ring.
+        if (caps.influence && item.influenceLevel) {
+          const target = store.getPerson(id);
+          if (target && !target.isSelf && !store.getInfluence(targetDecisionId, id).overridden) {
+            store.setInfluence(targetDecisionId, id, item.influenceLevel, false);
+            influenced += 1;
+          }
+        }
         currentDecision = store.getDecision(targetDecisionId);
         currentParticipants = store.getParticipants(targetDecisionId);
       });
@@ -779,6 +790,18 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       });
 
       if (update.decisionNote) store.addDecisionNote(targetDecisionId, update.decisionNote);
+      if (caps.influence && influenced) {
+        const pts = store.getParticipants(targetDecisionId);
+        const inf = store.getDecision(targetDecisionId)?.influence || {};
+        const leveled = (id) => ["high", "medium", "low"].includes(inf[id]?.level);
+        const nonSelf = pts.filter((p) => !p.isSelf);
+        trackNetwork("influence_inferred", {
+          roomId: targetRoomId,
+          participantCount: pts.length,
+          inferredCount: nonSelf.filter((p) => leveled(p.id)).length,
+          nullCount: nonSelf.filter((p) => !leveled(p.id)).length,
+        });
+      }
       if (edges) setActiveTab("network");
       else if (placements || positions) setActiveTab("grid");
 
@@ -1421,11 +1444,12 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                             participants={participants}
                             decision={decision}
                             edges={store.getEdges(decision.id)}
-                            onRemoveEdge={(index) => store.removeEdge(decision.id, index)}
+                            roomId={activeRoomId}
                             selectedId={nodeSummaryId}
                             onOpenProfile={openNodeSummary}
-                            sequence={sequence}
-                            showPath={showPath}
+                            onSetInfluence={(personId, level) => store.setInfluence(decision.id, personId, level, true)}
+                            onCreateEdge={(from, to, type) => store.addEdge(decision.id, { from, to, type })}
+                            onRemoveEdge={(index) => store.removeEdge(decision.id, index)}
                           />
                         )}
                       </div>

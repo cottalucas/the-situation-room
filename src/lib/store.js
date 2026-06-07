@@ -21,6 +21,11 @@ import * as repo from "./firestore-repo.js";
 
 export const WELCOME = "Select a participant to open their profile, or map the room below with a command.";
 
+/** Per-decision influence default. level null renders on the middle ring; not
+ * overridden, so @map may infer it. Influence is decision-scoped, like positions
+ * and placements: a person can be high-influence on one decision and low on another. */
+export const DEFAULT_INFLUENCE = { level: null, overridden: false };
+
 let _seq = 0;
 const mid = () => `m${++_seq}`;
 
@@ -499,15 +504,17 @@ export function createDecision(roomId, { title, context, participants }) {
   const id = makeId(fs() && uid ? `${uid}_deci` : "deci");
   const positions = {};
   const placements = {};
+  const influence = {};
   ids.forEach((pid) => {
     positions[pid] = "unknown";
     placements[pid] = { ...DEFAULT_PLACEMENT };
+    influence[pid] = { ...DEFAULT_INFLUENCE };
   });
   const decision = {
     id, roomId, title,
     context: context || { deciding: "", goal: "", constraint: "" },
     decisionNotes: [], derivedSummary: "", deadline: "", status: "active",
-    participantIds: [...ids], externalIds: [], positions, placements, edges: [],
+    participantIds: [...ids], externalIds: [], positions, placements, influence, edges: [],
   };
   commit({ ...state, decisions: [...state.decisions, decision], chats: { ...state.chats, [id]: [{ id: mid(), type: "welcome", body: WELCOME }] } });
   if (fs()) repo.putDecision(roomId, decision);
@@ -562,24 +569,41 @@ export function addParticipant(decisionId, personId) {
   const participantIds = [...d.participantIds, personId];
   const positions = { ...d.positions, [personId]: "unknown" };
   const placements = { ...d.placements, [personId]: { ...DEFAULT_PLACEMENT } };
-  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, participantIds, positions, placements } : x)) });
-  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds, positions, placements });
+  const influence = { ...(d.influence || {}), [personId]: { ...DEFAULT_INFLUENCE } };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, participantIds, positions, placements, influence } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds, positions, placements, influence });
 }
 export function removeParticipant(decisionId, personId) {
   const d = getDecision(decisionId);
   if (!d) return;
   const positions = { ...d.positions };
   const placements = { ...d.placements };
+  const influence = { ...(d.influence || {}) };
   delete positions[personId];
   delete placements[personId];
+  delete influence[personId];
   const next = {
     ...d,
     participantIds: d.participantIds.filter((x) => x !== personId),
     externalIds: d.externalIds.filter((x) => x !== personId),
-    positions, placements,
+    positions, placements, influence,
   };
   commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? next : x)) });
-  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds: next.participantIds, externalIds: next.externalIds, positions, placements });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds: next.participantIds, externalIds: next.externalIds, positions, placements, influence });
+}
+
+/** Set a participant's influence over this decision. overridden true marks it a
+ * manual user choice that @map must not overwrite. */
+export function setInfluence(decisionId, personId, level, overridden = false) {
+  const d = getDecision(decisionId);
+  if (!d) return;
+  const safeLevel = ["high", "medium", "low"].includes(level) ? level : null;
+  const influence = { ...(d.influence || {}), [personId]: { level: safeLevel, overridden: !!overridden } };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, influence } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { influence });
+}
+export function getInfluence(decisionId, personId) {
+  return getDecision(decisionId)?.influence?.[personId] || DEFAULT_INFLUENCE;
 }
 
 /** Create a decision scoped external and attach them. Returns id. */
@@ -595,15 +619,16 @@ export function addExternal(decisionId, { name, role }) {
   };
   const positions = { ...d.positions, [id]: "unknown" };
   const placements = { ...d.placements, [id]: { ...DEFAULT_PLACEMENT } };
+  const influence = { ...(d.influence || {}), [id]: { ...DEFAULT_INFLUENCE } };
   const externalIds = [...d.externalIds, id];
   commit({
     ...state,
     people: { ...state.people, [id]: person },
-    decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, externalIds, positions, placements } : x)),
+    decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, externalIds, positions, placements, influence } : x)),
   });
   if (fs()) {
     repo.putPerson(uid, person);
-    repo.updateDecisionFields(d.roomId, decisionId, { externalIds, positions, placements });
+    repo.updateDecisionFields(d.roomId, decisionId, { externalIds, positions, placements, influence });
   }
   return id;
 }

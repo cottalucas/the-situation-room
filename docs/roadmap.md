@@ -20,7 +20,18 @@
 - Decisions inside a room, with context, deadline, archive, positions, and
   placements.
 - Three lenses: People, Energy (the draggable power/interest map, command
-  @energy with @grid as a hidden alias), Network (typed edges, sequence path).
+  @energy with @grid as a hidden alias), Network (the Influence Ring).
+- Influence Ring (Network lens). A concentric-ring SVG layout (no graph library)
+  where ring position encodes influence over the decision: You at center, then
+  high, medium, low. Influence is decision-scoped (decision.influence[personId] =
+  {level, overridden}); @map and @create infer it (never the self user, never over
+  a user-set level). Two desktop drag gestures: drag a node's core to move it
+  between rings (sets influence, persists), drag its rim to draw a relationship
+  through a three-pill picker (Ally, Conflict, Defers to). Edges arrowed and
+  colored by type, clipped to node edges. Novus events: network_viewed,
+  edge_created, edge_deleted, influence_overridden, influence_inferred (ids and
+  counts only). Offline evals: npm run verify:influence (5 inference cases) and
+  npm run verify:influence-ring (Suite A layout, B edges, C drag).
 - Desktop rail cleanup. Rooms and Decisions stay in the rail, selected rows use
   one quiet treatment, decision rows are plain and indented, New room and New
   decision share the same plus affordance, and rooms with many active decisions
@@ -147,9 +158,8 @@
 - Privacy surface: export, delete, and a clear statement of where data lives.
 - Stronger zero knowledge encryption option based on a user held secret, if the
   product needs protection from server side key derivation.
-- Editable network edges and per person edge drawing.
-- A safer relationship editing surface. The network canvas should not delete
-  edges through accidental line clicks.
+- Influence Ring on touch: drag gestures are desktop only for now; a touch
+  interaction model (move between rings, draw relationships) is still to design.
 - Bundle splitting for Firebase modules if the production bundle warning starts
   to matter.
 - Bump the Firebase Functions runtime off the deprecated Node 20 (decommission

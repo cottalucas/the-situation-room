@@ -5,6 +5,7 @@ const MAX_ITEMS = 16;
 const EDGE_TYPES = new Set(["ally", "conflict", "defers"]);
 const POSITIONS = new Set(["for", "against", "neutral", "unknown"]);
 const CONFIDENCE = new Set(["high", "medium", "low"]);
+const INFLUENCE = new Set(["high", "medium", "low"]);
 const TKI = new Set(["Competing", "Avoiding", "Compromising", "Collaborating", "Accommodating"]);
 const SCARF = new Set(["Status", "Certainty", "Autonomy", "Relatedness", "Fairness"]);
 
@@ -34,6 +35,12 @@ function clampPercent(value) {
 
 function cleanConfidence(value) {
   return CONFIDENCE.has(value) ? value : undefined;
+}
+
+// A valid influence level, or null for "insufficient signal". Anything else is
+// treated as null so the apply path never sets a bogus level.
+function cleanInfluence(value) {
+  return INFLUENCE.has(value) ? value : null;
 }
 
 function cleanProfilePatch(patch) {
@@ -169,6 +176,7 @@ export function normalizeRoomUpdate(raw) {
         power,
         interest,
         confidence: cleanConfidence(p.confidence),
+        influenceLevel: cleanInfluence(p.influenceLevel),
         profilePatch,
       };
     })

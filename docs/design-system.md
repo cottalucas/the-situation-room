@@ -2,8 +2,9 @@
 
 The visual language is editorial, calm, and senior. Warm off white, deep ink,
 one serif for headings, one sans for everything else. Restraint signals
-seniority. Generous whitespace. The only saturated color is the four quadrant
-accents and the position dots.
+seniority. Generous whitespace. Saturated color is reserved for the four quadrant
+accents, the position dots, and the three influence-ring levels (a lens-scoped
+3-step ramp). Nothing else.
 
 This file exists so the look never regresses again. If you change a token,
 change it here too.
@@ -40,6 +41,11 @@ position
 --against     #b91c1c
 --neutral     #8d8a82
 --unknown     #c5c1b8   shown as a dashed ring
+
+influence ring (Network lens only)
+--influence-high    #6d4ac0   purple, can block or approve
+--influence-medium  #c2703f   coral, must be consulted (also null)
+--influence-low     #9a968d   gray, informed only
 ```
 
 Quadrant tints sit at about 6 percent over the raised surface, with a 15 percent
@@ -145,6 +151,21 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   summary (`NodeSummary`), not the full overlay: name, the decision last touched,
   the last one or two notes, and key scores (Power and Interest, SCARF state).
   Tapping the summary opens the person profile page.
+- The Network lens is the Influence Ring: concentric rings on a square SVG
+  (viewBox 0 0 800 800) where ring position encodes influence over the decision.
+  You sits at the center (white fill, ink stroke, always dominant); high influence
+  on ring 1 (r 140), medium on ring 2 (r 260, where unset/null also lands), low on
+  ring 3 (r 380). Node radii step down 40 / 30 / 24 / 20. Ring guides are dashed
+  hairlines; ring labels (High influence, Medium, Low) sit top-right, 11px, in
+  `--ink-faint`. Edges are arrowed lines clipped to node edges: ally `#1D9E75`,
+  conflict `#E24B4A`, defers `--line-strong`. Influence node colors are an
+  intentional, lens-scoped extension of the palette, a calm 3-step ramp
+  (`--influence-high` purple, `--influence-medium` coral, `--influence-low` gray),
+  not the quadrant or position accents. Desktop drag has two gestures by zone:
+  the node core repositions between rings, the rim draws a relationship through a
+  three-pill picker (Ally, Conflict, Defers to). A dashed rim hint on hover signals
+  the draggable edge zone (never on You). Hover shows a small tooltip (name, role,
+  influence level). Touch drag is out of scope.
 - Mobile shell: a slim header with the brand and a right-side burger; a
   horizontal tab row (People, Energy, Network) directly beneath the header as the
   primary lens switcher; the active lens fills the full remaining height, so the

@@ -211,22 +211,6 @@ export const seedObservations = {
 /* NETWORK: node layout (percent of canvas) and edge styling          */
 /* ------------------------------------------------------------------ */
 
-export const networkPositions = {
-  self: { x: 50, y: 90 },
-  priya: { x: 50, y: 14 },
-  raj: { x: 80, y: 40 },
-  dana: { x: 20, y: 40 },
-  marco: { x: 72, y: 82 },
-  lin: { x: 28, y: 82 },
-  chad: { x: 50, y: 58 },
-};
-
-export const EDGE_META = {
-  ally: { label: "Ally", color: "var(--for)" },
-  conflict: { label: "Conflict", color: "var(--against)" },
-  defers: { label: "Defers to", color: "var(--ink-faint)" },
-};
-
 const SALESFORCE_EDGES = [
   { from: "priya", to: "raj", type: "defers" },
   { from: "raj", to: "marco", type: "defers" },
@@ -262,6 +246,13 @@ export const seedDecisions = [
     externalIds: [],
     positions: { self: "for", dana: "against", raj: "neutral", lin: "against", marco: "for", priya: "unknown" },
     placements: placementsFor(["self", "dana", "raj", "lin", "marco", "priya"]),
+    influence: {
+      priya: { level: "high", overridden: false },
+      raj: { level: "high", overridden: false },
+      dana: { level: "medium", overridden: false },
+      marco: { level: "medium", overridden: false },
+      lin: { level: "low", overridden: false },
+    },
     edges: SALESFORCE_EDGES,
   },
   {

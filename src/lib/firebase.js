@@ -59,6 +59,20 @@ export async function trackEvent(name, params = {}) {
   logEvent(analytics, name, params);
 }
 
+/**
+ * Fire a product event to both Firebase Analytics and Novus (Pendo), fire and
+ * forget. Use only privacy-safe payloads: ids, counts, and enum values, never
+ * raw names, notes, or edge details.
+ */
+export function trackNetwork(name, params = {}) {
+  trackEvent(name, params);
+  try {
+    if (typeof pendo !== "undefined" && typeof pendo.track === "function") pendo.track(name, params);
+  } catch {
+    // Novus is best-effort; never block the UI on analytics.
+  }
+}
+
 export async function trackScreen(screenName) {
   const analytics = await analyticsPromise;
   if (!analytics) return;

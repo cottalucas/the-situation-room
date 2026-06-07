@@ -36,8 +36,12 @@ roleplay refusal, profanity neutralized, injection ignored). It rides on
 The play generator (`/api/generate-play`) backs the `@play` command, called only
 after the deterministic readiness gate (`src/lib/play-readiness.js`) passes.
 First-person references resolve to the self record (`isSelf`), so the model never
-duplicates the operator; the command prompt is bumped to
-`room-command-v4-self-2026-06-06` in both `src/` and `functions/`.
+duplicates the operator. `@map` and `@create` also infer `influenceLevel`
+(high/medium/low/null) per participant over this decision, excluding the self user
+and never overwriting a user-set (`overridden`) level; the contract validates it
+in `normalizeRoomUpdate` and the apply path writes `decision.influence`. The
+command prompt is bumped to `room-command-v5-influence-2026-06-07` in both `src/`
+and `functions/`. Offline inference evals: `npm run verify:influence`.
 
 ## Request path (end to end)
 

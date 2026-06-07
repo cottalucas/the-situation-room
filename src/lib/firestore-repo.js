@@ -141,6 +141,7 @@ async function decisionToFirestore(decision) {
     externalIds: decision.externalIds || [],
     positions: decision.positions || {},
     placements: decision.placements || {},
+    influence: decision.influence || {},
     createdAt: decision.createdAt || serverTimestamp(),
   };
 }
@@ -153,6 +154,7 @@ async function decisionFromFirestore(id, roomId, data, edges = []) {
     context: await decryptContext(data.context || {}),
     decisionNotes: await decryptDecisionNotes(data.decisionNotes || []),
     derivedSummary: await decryptText(data.derivedSummary || ""),
+    influence: data.influence || {},
     edges,
   };
 }
