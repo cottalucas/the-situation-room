@@ -24,8 +24,8 @@
 - Influence Ring (Network lens). A concentric-ring SVG layout (no graph library)
   where ring position encodes influence over the decision: You at center, then
   high, medium, low. Influence is decision-scoped (decision.influence[personId] =
-  {level, overridden}); @map and @create infer it (never the self user, never over
-  a user-set level). Two desktop drag gestures: drag a node's core to move it
+  {level, overridden}); @network, @map, and @create infer it (never the self user,
+  never over a user-set level). Two desktop drag gestures: drag a node's core to move it
   between rings (sets influence, persists), drag its rim to draw a relationship
   through a three-pill picker (Ally, Conflict, Defers to). Edges arrowed and
   colored by type, clipped to node edges. Novus events: network_viewed,

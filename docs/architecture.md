@@ -249,13 +249,16 @@ See `docs/llm-pipeline.md` for the end-to-end AI pipeline and MLOps (prompts,
 contracts, evals, traces, cost, deploy). This section covers the backend wiring.
 
 `functions/index.js` is the production Claude backend. It exposes one
-authenticated HTTPS function, `api`, with two same-origin endpoints:
+authenticated HTTPS function, `api`, with these same-origin endpoints:
 
 - `/api/interpret-room-command` for `@note`, `@energy` (alias `@grid`),
-  `@network`, `@map`, and `@create`.
+  `@network`, and `@map`. The internal `create` command also routes here (it
+  backs onboarding's add-people step), but `@create` is no longer a user command.
 - `/api/strategist` for the grounded `@ask` stakeholder coach.
 - `/api/generate-play` for the `@play` generator, behind the deterministic
   readiness gate, and play evals.
+- `/api/classify-intent` for plain-text intent classification (a cheap call that
+  never writes; gated behind `ENABLE_PLAIN_TEXT_ROUTING`, off in production).
 
 The browser sends the Firebase Auth id token in the `Authorization` header.
 The function verifies the token, checks the per-user daily request and cost
@@ -310,9 +313,12 @@ Both route to the same internal `grid` command and the same
 `decision.placements` and `decision.positions` fields, so the rename is a
 command and label change only, with no data migration. `@network` reads reporting lines, control,
 micromanagement, influence, alliances, close ties, and conflict into edges.
+`@network` owns two jobs: edges and influence level (ring placement); it gates
+influence on confidence and never touches power/interest (that is `@energy`).
 `@map` is the broad intake command that may create people, save notes, place
-people on the grid, set stance, and add network edges. `@create` creates people
-from prose. Open questions are capped at two, with one as the normal target.
+people on the grid, set stance, add network edges, and infer influence. The
+internal `create` command (no longer user-facing) creates people from prose for
+onboarding. Open questions are capped at two, with one as the normal target.
 Network and grid updates stay decision-scoped. Person notes and framework reads
 stay on the person profile.
 
@@ -515,9 +521,11 @@ capture hiccup never aborts a gesture.
 high-influence on one decision and low on another. `store.setInfluence`,
 `getInfluence`, and `DEFAULT_INFLUENCE` manage it; it round-trips plaintext
 through `firestore-repo` (no encryption: it is an enum, not free text) and needs
-no Firestore rule change because it writes through the decision document. `@map`
-and `@create` infer it (never for the self user, never over a user-set
-`overridden` level). Grid placement does not drive the network layout.
+no Firestore rule change because it writes through the decision document.
+`@network`, `@map`, and `@create` infer it (never for the self user, never over a
+user-set `overridden` level); the `commandCapabilities`/`influenceDecision`
+helpers in `room-command-contract.js` are the shared, testable boundary. Grid
+placement does not drive the network layout.
 
 ## LLM trace capture
 
