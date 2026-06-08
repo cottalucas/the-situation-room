@@ -1365,7 +1365,9 @@ code {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  /* Above the mobile command companion (130) so a modal opened from the "/"
+     button is visible, not hidden behind the full-screen companion panel. */
+  z-index: 140;
   background: rgba(26, 25, 22, 0.28);
   display: flex;
   align-items: center;
