@@ -5,6 +5,18 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-08 - Fix: Commands modal hidden behind the mobile companion
+
+Follow-up from a user report that the "/" button "did not open the command list"
+on mobile. It did open it; the modal backdrop (z-index 120) sat below the
+full-screen command companion (`.command-scrim`, z-index 130), so the modal
+rendered behind it and looked dead. Bumped `.modal-backdrop` to 140 (above the
+companion and the mobile profile scrim, still below the full-screen page at 150
+and the nav drawer at 180, neither of which is open while the commands modal is).
+Pre-existing layering bug, not from the command-pipeline pass. Hosting only.
+
+---
+
 ## 2026-06-08 - @network owns influence, command cleanup, gated plain-text routing
 
 Three command-pipeline fixes plus a Network tooltip micro-fix. This pass touches
