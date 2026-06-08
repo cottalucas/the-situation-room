@@ -17,6 +17,8 @@ import {
   nearestRing,
   gestureForRadius,
   levelForRing,
+  angleFromCenter,
+  CENTER as RC,
   dist,
 } from "../src/lib/influence-ring.js";
 
@@ -111,6 +113,50 @@ check("gesture: core (<60% r) is move", gestureForRadius(10, 30) === "move");
 check("gesture: rim (60-100% r) is edge", gestureForRadius(25, 30) === "edge");
 check("gesture: outside node is none", gestureForRadius(40, 30) === null);
 check("nearestRing maps radius to ring/level", levelForRing(nearestRing(150)) === "high" && levelForRing(nearestRing(390)) === "low");
+
+console.log("\nSuite D - angular position is owned per person");
+// D1 a stored angle is used verbatim, not recomputed
+const withAngle = { ...influence, ceo: { level: "high", overridden: false, angle: 1.234 } };
+const dLayout = ringLayout(participants, withAngle);
+const ceoNode = dLayout.find((n) => n.id === "ceo");
+check("D1 stored angle is used verbatim", near(ceoNode.angle, 1.234, 0.0001) && ceoNode.needsPersist === false);
+// D2 a node without a stored angle is flagged for one-time persistence
+check("D2 unstored angle flags needsPersist", dLayout.find((n) => n.id === "cto").needsPersist === true);
+// D3 changing ONE person's ring keeps every other node's position byte-for-byte
+const allAngles = {
+  ceo: { level: "high", overridden: false, angle: 0.2 },
+  cto: { level: "high", overridden: false, angle: 1.1 },
+  vp: { level: "medium", overridden: false, angle: 2.0 },
+  cs: { level: "low", overridden: false, angle: 3.0 },
+  eng: { level: "medium", overridden: false, angle: 4.0 },
+};
+const before = ringLayout(participants, allAngles);
+// Move only cs from low to high; everyone else's record is untouched.
+const after = ringLayout(participants, { ...allAngles, cs: { ...allAngles.cs, level: "high" } });
+const posOf = (arr, id) => { const n = arr.find((x) => x.id === id); return `${n.x.toFixed(4)},${n.y.toFixed(4)}`; };
+const othersUnmoved = ["self", "ceo", "cto", "vp", "eng"].every((id) => posOf(before, id) === posOf(after, id));
+const csNode = after.find((n) => n.id === "cs");
+check("D3 moving one person moves only that person", othersUnmoved);
+// D4 the moved person keeps their angle, only the ring radius changes
+check("D4 moved person keeps angle, gains new ring", near(csNode.angle, 3.0, 0.0001) && csNode.ring === 1 && near(radiusFromCenter(csNode), RING_RADIUS[1]));
+// D5 angleFromCenter inverts the ring placement
+const probe = { x: RC + 100 * Math.cos(0.7), y: RC + 100 * Math.sin(0.7) };
+check("D5 angleFromCenter inverts placement", near(angleFromCenter(probe.x, probe.y), 0.7, 0.0001));
+// D6 THE BUG: with NO stored angles at all, changing one person's level must not
+// move anyone else (correctness must not depend on persistence having happened).
+const noAngles = {
+  ceo: { level: "high", overridden: false },
+  cto: { level: "high", overridden: false },
+  vp: { level: "medium", overridden: false },
+  cs: { level: "low", overridden: false },
+};
+const b2 = ringLayout(participants, noAngles);
+const a2 = ringLayout(participants, { ...noAngles, cs: { level: "high", overridden: false } });
+const posOf2 = (arr, id) => { const n = arr.find((x) => x.id === id); return `${n.x.toFixed(4)},${n.y.toFixed(4)}`; };
+check("D6 unstored: moving one person's ring moves only that person", ["self", "ceo", "cto", "vp", "eng"].every((id) => posOf2(b2, id) === posOf2(a2, id)));
+// D7 that moved (unstored) person keeps its angle, only the radius changes
+const csB = b2.find((n) => n.id === "cs"); const csA = a2.find((n) => n.id === "cs");
+check("D7 unstored moved person keeps angle, new ring radius", near(csB.angle, csA.angle, 1e-9) && csA.ring === 1 && near(radiusFromCenter(csA), RING_RADIUS[1]));
 
 console.log(`\nInfluence Ring: ${passed} passed, ${failed} failed`);
 if (failed) {

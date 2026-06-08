@@ -521,7 +521,7 @@ code {
 .ring-svg { width: 100%; height: 100%; max-width: min(100%, 88vh); aspect-ratio: 1; touch-action: none; }
 .ring-guide { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 6 4; opacity: 0.6; transition: stroke 0.12s, stroke-width 0.12s, opacity 0.12s; }
 .ring-guide-active { stroke: var(--ink-soft); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: 1; }
-.ring-label { font-size: 10px; fill: var(--ink-faint); font-family: var(--sans); letter-spacing: 0.08em; text-transform: uppercase; }
+.ring-label { font-size: 11px; fill: var(--ink-faint); font-family: var(--sans); letter-spacing: 0.06em; text-transform: uppercase; }
 
 /* Subtle influence zone tints: present the rings as zones, not bare lines */
 .ring-zone { pointer-events: none; }
@@ -545,14 +545,24 @@ code {
 .ring-node-hover { stroke: var(--ink); stroke-width: 2.5; }
 .ring-node-selected { stroke: var(--ink); stroke-width: 2.5; }
 .ring-node-label { fill: #fff; font-family: var(--sans); pointer-events: none; }
-.ring-node-label-high { font-size: 12px; font-weight: 600; }
+.ring-node-label-high { font-size: 13px; font-weight: 600; }
 .ring-node-label-medium { font-size: 12px; font-weight: 500; }
 .ring-node-label-low { font-size: 11px; font-weight: 400; }
 .ring-node-label-unknown { font-size: 11px; font-weight: 400; }
-.ring-node-label-self { fill: var(--ink-soft); font-size: 11px; font-weight: 500; font-family: var(--sans); pointer-events: none; }
-.ring-rim-hint { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 2 3; pointer-events: none; }
-.ring-target-pulse { stroke: var(--informed); stroke-width: 2; opacity: 0.5; animation: ring-pulse 1s ease-in-out infinite; pointer-events: none; }
-@keyframes ring-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.7; } }
+.ring-node-label-self { fill: var(--ink-soft); font-size: 13px; font-weight: 700; font-family: var(--sans); pointer-events: none; }
+
+/* Hover affordances: both drag gestures shown at once. Core disc = reposition, */
+/* dashed rim ring with N/E/S/W ticks = draw a relationship. */
+.ring-core-affordance { fill: rgba(255, 255, 255, 0.2); pointer-events: none; }
+.ring-rim-ring { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; animation: ring-rim-in 150ms ease-out forwards; }
+.ring-rim-tick { stroke: var(--ink-faint); stroke-width: 1; opacity: 0; animation: ring-rim-in 150ms ease-out forwards; }
+@keyframes ring-rim-in { from { opacity: 0; } to { opacity: 0.8; } }
+/* Valid drop target: a pulse expanding from the node edge. fill-box origin keeps */
+/* the scale centered on the node wherever it sits. */
+.ring-target-pulse { stroke: var(--ink-soft); stroke-width: 2; fill: none; pointer-events: none; transform-box: fill-box; transform-origin: center; animation: ring-target-pulse 600ms ease-out infinite; }
+@keyframes ring-target-pulse { from { transform: scale(1); opacity: 0.5; } to { transform: scale(1.45); opacity: 0; } }
+/* Invalid drop target (You): a red veto tint. */
+.ring-target-invalid { fill: rgba(226, 75, 74, 0.15); stroke: none; pointer-events: none; }
 .ring-ghost-edge { stroke: var(--line-strong); stroke-width: 1.5; stroke-dasharray: 5 5; pointer-events: none; }
 
 .ring-tooltip {
@@ -571,8 +581,8 @@ code {
   white-space: nowrap;
   z-index: 40;
 }
-.ring-tooltip-name { font-weight: 600; color: var(--ink); }
-.ring-tooltip-meta { color: var(--ink-soft); font-size: 11px; }
+.ring-tooltip-name { font-weight: 600; font-size: 15px; color: var(--ink); }
+.ring-tooltip-meta { color: var(--ink-soft); font-size: 13px; }
 .ring-tooltip-badge {
   align-self: flex-start;
   margin-top: 2px;
@@ -603,7 +613,7 @@ code {
 /* Anchor the picker just off the midpoint of the two nodes, never centered on it */
 .ring-picker-above { transform: translate(-50%, calc(-100% - 8px)); }
 .ring-picker-below { transform: translate(-50%, 8px); }
-.ring-picker-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); }
+.ring-picker-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); }
 .ring-picker-pills { display: flex; gap: 6px; }
 .ring-pill {
   border: 1px solid var(--line-strong);

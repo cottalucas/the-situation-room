@@ -5,6 +5,63 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-08 - Influence Ring: stable angles, drag affordances, larger type
+
+Three renderer-only fixes to the Network lens. No prompt or other lens touched.
+
+FIX 1, angular position is owned per person. The bug: every render recomputed
+even-distribution angles per ring, so moving one person to another ring shifted
+everyone who shared the destination ring. The fix stores an `angle` (radians) on
+each `influence[personId]` record. This extends the existing schemaless influence
+map, so it is not a Firestore schema change (rules gate the decision doc on
+ownership and validStatus only, no per-field shape), and `store.firestore-repo`
+already round-trips the whole influence map. Added `store.setInfluence(..., angle)`
+(merges, preserving the prior angle so an @map level change never moves a node)
+and `store.setInfluenceAngle` (angle only). A core drag now writes the drop
+point's ring and angle in one write. `models.js` documents the optional field.
+
+The interesting part: the spec said to persist a per-ring even-distribution
+default on first render and rely on that write. In practice that is fragile. Live
+debugging showed the persist effect fired and wrote, but the async local-mode
+`store.hydrate()` (and, in Firestore mode, the first snapshot) commits a fresh
+state right after, stripping the just-written angles, and a write-once ref guard
+then blocked any retry. So early writes never stuck. Two changes fixed it for
+good:
+  1. The default angle is now derived from a roster-wide, id-sorted slot
+     (`defaultAngleFor`), independent of ring membership. This makes correctness
+     not depend on persistence at all: with or without a stored angle, moving one
+     person moves only that person, because nobody's default depends on who else
+     is on their ring. Verified in-browser after a cache clear: dragging Lin
+     low to high left Priya, Raj, Dana, Marco, and You byte-for-byte identical.
+  2. Persistence is now self-healing (no permanent guard): it rewrites any node
+     still missing a stored angle until the write lands, surviving the hydration
+     clobber. Verified: after the drag and a reload, every node carried its angle
+     and Lin stayed exactly where it was dropped.
+This is a deliberate deviation from the spec's literal "even distribution for
+that ring" default, chosen because per-ring distribution requires a reliable
+freeze and the global-slot default is overlap-free for realistic rooms and
+correct unconditionally. Flagged here rather than shipped silently.
+
+FIX 2, both drag gestures are now legible on hover. The core shows a soft white
+inner disc (`r * 0.55`), the rim a dashed ring at `r + 5` with four N/E/S/W ticks
+fading in over 150ms; cursors are grab (core) and crosshair (rim). During a rim
+drag a valid target pulses (`ring-target-pulse`, fill-box scaled so it stays
+centered wherever the node sits) and an invalid target (You) shows a red tint and
+a not-allowed cursor. You shows a tooltip on hover but never an affordance;
+self-hover was enabled (it was previously suppressed entirely) so You still gets
+its tooltip.
+
+FIX 3, type sizes raised across the lens: node labels 13/12/11 by level, You
+13/700, ring labels 11px at 0.06em, tooltip name 15px and body 13px, picker
+eyebrow 10px. This also retires the sub-11px labels the previous pass had flagged.
+
+Eval `verify-influence-ring` grew Suites D6/D7 (unstored nodes do not redistribute
+when one changes ring) and now runs 26/26. Build clean. Verified live in local
+preview via simulated pointer drags and computed-style reads. Client-only;
+deployed to hosting.
+
+---
+
 ## 2026-06-08 - Influence Ring: visual hierarchy polish pass
 
 Craft-only pass on the Influence Ring. No data model, Firestore, prompt, or drag

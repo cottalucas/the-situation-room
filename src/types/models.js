@@ -54,6 +54,10 @@
  *   accelerate, or shape this decision. Decision-scoped, not a person trait.
  * @property {boolean} overridden  True if the user set it by hand on the Influence
  *   Ring; @map must not overwrite a user-set level. isSelf is always center, ignored.
+ * @property {number} [angle]  Optional. The node's angular position on its ring,
+ *   in radians from the ring center. Owned per person: assigned once by even
+ *   distribution, then only changed when the user drags that specific node. Absent
+ *   until first assigned. Not set or read by @map.
  */
 
 /**

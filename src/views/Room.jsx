@@ -1447,7 +1447,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                             roomId={activeRoomId}
                             selectedId={nodeSummaryId}
                             onOpenProfile={openNodeSummary}
-                            onSetInfluence={(personId, level) => store.setInfluence(decision.id, personId, level, true)}
+                            onSetInfluence={(personId, level, angle) => store.setInfluence(decision.id, personId, level, true, angle)}
+                            onPersistAngle={(personId, angle) => store.setInfluenceAngle(decision.id, personId, angle)}
                             onCreateEdge={(from, to, type) => store.addEdge(decision.id, { from, to, type })}
                             onRemoveEdge={(index) => store.removeEdge(decision.id, index)}
                           />

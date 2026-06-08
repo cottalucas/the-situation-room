@@ -10,6 +10,7 @@ import {
   ringLabelPositions,
   annulusPath,
   pickerAnchor,
+  angleFromCenter,
   clipLine,
   edgeColor,
   edgeStrokeWidth,
@@ -52,7 +53,7 @@ function provenanceLine(rawLevel, overridden) {
  * between rings (sets influence), drag its rim to draw a relationship. SVG only,
  * no graph library. Touch drag is intentionally out of scope.
  */
-export function NetworkTab({ participants, decision, edges, roomId, onOpenProfile, onSetInfluence, onCreateEdge, onRemoveEdge, selectedId }) {
+export function NetworkTab({ participants, decision, edges, roomId, onOpenProfile, onSetInfluence, onPersistAngle, onCreateEdge, onRemoveEdge, selectedId }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const [drag, setDrag] = useState(null);
@@ -77,6 +78,21 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
     trackNetwork("network_viewed", { roomId, participantCount: participants.length, edgeCount: liveEdges.length });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Claim a default angle for any node that does not yet own one, so its position
+  // is stable from here on. Self-healing on purpose: it writes any node still
+  // missing a stored angle and retries until the write lands, which survives the
+  // async store hydration that can otherwise replace an early optimistic write.
+  // setInfluenceAngle dedupes an identical angle and needsPersist flips to false
+  // once stored, so this converges in a write or two and never loops. Never runs
+  // mid-drag, so it cannot fight a gesture in progress.
+  useEffect(() => {
+    if (!onPersistAngle || dragRef.current) return;
+    layout.forEach((n) => {
+      if (n.isSelf || !n.needsPersist) return;
+      onPersistAngle(n.id, n.angle);
+    });
+  }, [layout, onPersistAngle]);
 
   const setDragState = (next) => {
     dragRef.current = next;
@@ -141,14 +157,18 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
     const { x, y } = toViewBox(e);
     const moved = cur.moved || dist(x, y, cur.startX, cur.startY) > MOVE_THRESHOLD;
     let hoverTargetId = null;
+    let invalidTargetId = null;
     let snapRing = cur.snapRing;
     if (cur.mode === "move") {
       snapRing = nearestRing(dist(x, y, CENTER, CENTER));
     } else if (cur.mode === "edge") {
-      const target = layout.find((n) => !n.isSelf && n.id !== cur.id && dist(x, y, n.x, n.y) <= n.r);
-      hoverTargetId = target?.id || null;
+      const over = layout.find((n) => n.id !== cur.id && dist(x, y, n.x, n.y) <= n.r);
+      // A node under the pointer is a valid target unless it is You (no inbound
+      // edges from a rim drag onto self). Self under the pointer reads as invalid.
+      if (over && !over.isSelf) hoverTargetId = over.id;
+      else if (over && over.isSelf) invalidTargetId = over.id;
     }
-    setDragState({ ...cur, x, y, moved, hoverTargetId, snapRing });
+    setDragState({ ...cur, x, y, moved, hoverTargetId, invalidTargetId, snapRing });
   };
 
   const openPicker = (from, to) => {
@@ -180,7 +200,10 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
     }
     if (cur.mode === "move") {
       const level = levelForRing(cur.snapRing ?? nearestRing(dist(cur.x, cur.y, CENTER, CENTER)));
-      onSetInfluence?.(cur.id, level);
+      // The drop point owns this node's new angle. One write moves exactly this node:
+      // its level (the ring it landed on) and its angular position (where it was dropped).
+      const angle = angleFromCenter(cur.x, cur.y);
+      onSetInfluence?.(cur.id, level, angle);
       trackNetwork("influence_overridden", { roomId, newLevel: level, previousLevel: cur.originLevel || null });
     } else if (cur.mode === "edge" && cur.hoverTargetId) {
       openPicker(cur.id, cur.hoverTargetId);
@@ -231,7 +254,7 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
           viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          style={{ cursor: drag ? (drag.mode === "edge" ? "crosshair" : "grabbing") : "default" }}
+          style={{ cursor: drag ? (drag.mode === "edge" ? (drag.invalidTargetId ? "not-allowed" : "crosshair") : "grabbing") : "default" }}
         >
           <defs>
             <marker id="ring-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
@@ -320,21 +343,44 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
                 const r = isDraggingThis ? node.r * 1.1 : node.r;
                 const isHover = hover?.id === node.id;
                 const isTarget = draggingNode?.mode === "edge" && draggingNode.hoverTargetId === node.id;
+                const isInvalidTarget = draggingNode?.mode === "edge" && draggingNode.invalidTargetId === node.id;
+                // Both gestures get a hover affordance at once, but never on You and
+                // never on the node being dragged (its own affordance would lag the pointer).
+                const showAffordance = isHover && !node.isSelf && !drag;
                 return (
                   <g
                     key={node.id}
                     className="ring-node-g"
                     onPointerDown={(e) => startDrag(e, node)}
-                    onPointerEnter={() => !node.isSelf && setHover({ id: node.id, zone: "move" })}
+                    onPointerEnter={() => setHover({ id: node.id, zone: "move" })}
                     onPointerMove={(e) => onNodeHoverMove(e, node)}
                     onPointerLeave={() => setHover((h) => (h?.id === node.id ? null : h))}
                     onClick={() => node.isSelf && onOpenProfile?.(node.id)}
                     style={{ cursor: node.isSelf ? "default" : drag ? "inherit" : isHover ? (hover.zone === "edge" ? "crosshair" : "grab") : "pointer" }}
                   >
-                    {isTarget && <circle className="ring-target-pulse" cx={cx} cy={cy} r={r + 8} fill="none" />}
-                    {/* Rim affordance: hint the draggable edge zone (not on self) */}
-                    {isHover && !node.isSelf && !drag && (
-                      <circle className="ring-rim-hint" cx={cx} cy={cy} r={r} fill="none" />
+                    {/* Valid drop target while drawing a relationship: a pulsing invite ring */}
+                    {isTarget && <circle className="ring-target-pulse" cx={cx} cy={cy} r={r} fill="none" />}
+                    {/* Invalid drop target (You has no inbound edges): a red veto tint */}
+                    {isInvalidTarget && <circle className="ring-target-invalid" cx={cx} cy={cy} r={r} />}
+                    {/* Rim gesture affordance: a dashed ring with N/E/S/W ticks signals the edge zone */}
+                    {showAffordance && (
+                      <g className="ring-rim-affordance" pointerEvents="none">
+                        <circle className="ring-rim-ring" cx={cx} cy={cy} r={r + 5} fill="none" />
+                        {[[0, -1], [1, 0], [0, 1], [-1, 0]].map(([ux, uy], i) => (
+                          <line
+                            key={i}
+                            className="ring-rim-tick"
+                            x1={cx + ux * (r + 5)}
+                            y1={cy + uy * (r + 5)}
+                            x2={cx + ux * (r + 10)}
+                            y2={cy + uy * (r + 10)}
+                          />
+                        ))}
+                      </g>
+                    )}
+                    {/* Center gesture affordance: a soft inner disc signals the reposition zone */}
+                    {showAffordance && (
+                      <circle className="ring-core-affordance" cx={cx} cy={cy} r={r * 0.55} pointerEvents="none" />
                     )}
                     {/* You is the fixed anchor: a thin halo separates it from the high ring */}
                     {node.isSelf && <circle className="ring-node-self-halo" cx={cx} cy={cy} r={r + 8} fill="none" />}

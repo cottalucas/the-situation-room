@@ -37,10 +37,38 @@ export function nodeRadiusFor(level, isSelf = false) {
   return NODE_RADIUS[level] || NODE_RADIUS.medium;
 }
 
+/** The angle (radians) of a point measured from the ring center. Inverse of the
+ * placement below, so a drag drop point maps back to a storable angularPosition. */
+export function angleFromCenter(x, y) {
+  return Math.atan2(y - CENTER, x - CENTER);
+}
+
 /**
- * Place every participant on its ring, distributed evenly with a per-ring
- * rotation stagger so nodes do not stack on the same angle across rings.
- * @returns {Array<{id,name,role,isSelf,level,ring,x,y,r,angle}>}
+ * The default angle a person sits at before anyone drags them. It is derived
+ * ONLY from a stable, id-sorted slot across the whole roster, never from which
+ * ring they currently occupy. That is the whole point: a person's default angle
+ * does not depend on how many people share their ring, so changing one person's
+ * influence (their ring) can never shift anyone else. Even distribution around
+ * the circle keeps nodes from overlapping for any realistic room size.
+ */
+export function defaultAngleFor(personId, others = []) {
+  const ordered = [...others].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const total = ordered.length || 1;
+  const slot = Math.max(0, ordered.findIndex((p) => p.id === personId));
+  return (2 * Math.PI / total) * slot;
+}
+
+/**
+ * Place every participant on its ring. Each person OWNS their angle. A stored
+ * influence.angle (from a drag, or a persisted default) is used verbatim. A
+ * person without one falls back to defaultAngleFor, which is stable per identity
+ * and independent of ring membership, so correctness does not depend on the
+ * default ever being persisted: moving one person changes exactly one person's
+ * position, with or without a write landing. Unstored nodes carry
+ * needsPersist:true so the renderer can still claim the default to storage.
+ *
+ * Changing a person's ring keeps their angle and only changes the radius.
+ * @returns {Array<{id,name,role,isSelf,level,ring,x,y,r,angle,needsPersist}>}
  */
 export function ringLayout(participants = [], influence = {}) {
   const self = participants.find((p) => p.isSelf);
@@ -48,38 +76,33 @@ export function ringLayout(participants = [], influence = {}) {
 
   const nodes = [];
   if (self) {
-    nodes.push({ id: self.id, name: self.name, role: self.role, isSelf: true, level: "self", ring: 0, x: CENTER, y: CENTER, r: NODE_RADIUS.self, angle: 0 });
+    nodes.push({ id: self.id, name: self.name, role: self.role, isSelf: true, level: "self", ring: 0, x: CENTER, y: CENTER, r: NODE_RADIUS.self, angle: 0, needsPersist: false });
   }
 
-  const byRing = { 1: [], 2: [], 3: [] };
   others.forEach((p) => {
-    const level = influence[p.id]?.level || null;
-    byRing[ringForLevel(level)].push({ person: p, level });
-  });
-
-  [1, 2, 3].forEach((ring) => {
-    const group = byRing[ring];
+    const rec = influence[p.id] || {};
+    const level = rec.level || null;
+    const ring = ringForLevel(level);
     const radius = RING_RADIUS[ring];
-    const count = group.length;
-    const offset = ROTATION_STEP * ring;
-    group.forEach((entry, index) => {
-      const angle = count > 0 ? (2 * Math.PI / count) * index + offset : offset;
-      // null influence still lands on ring 2, but renders as its own ambiguous
-      // "unknown" style (warm gray, dashed) rather than masquerading as medium.
-      const renderLevel = entry.level || "unknown";
-      nodes.push({
-        id: entry.person.id,
-        name: entry.person.name,
-        role: entry.person.role,
-        isSelf: false,
-        level: renderLevel,
-        rawLevel: entry.level,
-        ring,
-        x: CENTER + radius * Math.cos(angle),
-        y: CENTER + radius * Math.sin(angle),
-        r: nodeRadiusFor(renderLevel),
-        angle,
-      });
+    const storedAngle = Number.isFinite(rec.angle) ? rec.angle : null;
+    const hasStored = storedAngle !== null;
+    const angle = hasStored ? storedAngle : defaultAngleFor(p.id, others);
+    // null influence still lands on ring 2, but renders as its own ambiguous
+    // "unknown" style (warm gray, dashed) rather than masquerading as medium.
+    const renderLevel = level || "unknown";
+    nodes.push({
+      id: p.id,
+      name: p.name,
+      role: p.role,
+      isSelf: false,
+      level: renderLevel,
+      rawLevel: level,
+      ring,
+      x: CENTER + radius * Math.cos(angle),
+      y: CENTER + radius * Math.sin(angle),
+      r: nodeRadiusFor(renderLevel),
+      angle,
+      needsPersist: !hasStored,
     });
   });
 

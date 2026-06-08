@@ -593,12 +593,32 @@ export function removeParticipant(decisionId, personId) {
 }
 
 /** Set a participant's influence over this decision. overridden true marks it a
- * manual user choice that @map must not overwrite. */
-export function setInfluence(decisionId, personId, level, overridden = false) {
+ * manual user choice that @map must not overwrite. angle (radians) is the node's
+ * angular position on the ring; when omitted the existing angle is preserved, so
+ * an @map level change never disturbs where the node sits. */
+export function setInfluence(decisionId, personId, level, overridden = false, angle) {
   const d = getDecision(decisionId);
   if (!d) return;
   const safeLevel = ["high", "medium", "low"].includes(level) ? level : null;
-  const influence = { ...(d.influence || {}), [personId]: { level: safeLevel, overridden: !!overridden } };
+  const prev = d.influence?.[personId] || {};
+  const rec = { level: safeLevel, overridden: !!overridden };
+  const nextAngle = Number.isFinite(angle) ? angle : prev.angle;
+  if (Number.isFinite(nextAngle)) rec.angle = nextAngle;
+  const influence = { ...(d.influence || {}), [personId]: rec };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, influence } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { influence });
+}
+
+/** Persist only a node's angular position, preserving its level and overridden
+ * flag. Used to claim a first-render default angle and for a within-ring drag,
+ * so one moved node is exactly one write and nobody else is touched. */
+export function setInfluenceAngle(decisionId, personId, angle) {
+  if (!Number.isFinite(angle)) return;
+  const d = getDecision(decisionId);
+  if (!d) return;
+  const prev = d.influence?.[personId] || { ...DEFAULT_INFLUENCE };
+  if (prev.angle === angle) return;
+  const influence = { ...(d.influence || {}), [personId]: { ...prev, angle } };
   commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, influence } : x)) });
   if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { influence });
 }

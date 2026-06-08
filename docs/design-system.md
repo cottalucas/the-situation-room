@@ -163,24 +163,41 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   affordance because it cannot be repositioned. High influence sits on ring 1
   (r 140), medium on ring 2 (r 260, where unset/null also lands), low on ring 3
   (r 380). Node radii encode hierarchy directly and step down self 36 / high 30 /
-  medium 24 / unknown 22 / low 19. Each level pairs a fill with a darker stroke
+  medium 24 / unknown 22 / low 19. Node labels read white inside the node, sized
+  by level: high 13px/600, medium 12px/500, low and unknown 11px/400; You is
+  13px/700 beneath the node. Each level pairs a fill with a darker stroke
   (see tokens); null influence renders as its own warm-gray dashed `unknown`
-  style rather than masquerading as medium. Ring guides are dashed hairlines in
+  style rather than masquerading as medium. Each person OWNS their angular
+  position. A stored `influence.angle` (set by a drag, or a persisted default) is
+  used verbatim; a person without one falls back to a stable default derived from
+  a roster-wide id-sorted slot, deliberately independent of how many people share
+  their ring. That is the rule that matters: changing one person's influence moves
+  only that person and never redistributes anyone else, with or without the
+  default ever being persisted. The renderer still writes each default back once
+  (self-healing, so an async store hydration cannot strip it), satisfying persist
+  across reload. Ring guides are dashed hairlines in
   `--line-strong` at 0.6 opacity (6 4 dash); subtle tint bands fill each zone
   behind them (high `rgba(61,44,141,0.04)`, medium `rgba(196,97,26,0.03)`, low
   `rgba(176,168,152,0.02)`). Ring labels (HIGH INFLUENCE, MEDIUM, LOW) sit
-  centered at the top of each arc, 10px uppercase with 0.08em tracking, in
+  centered at the top of each arc, 11px uppercase with 0.06em tracking, in
   `--ink-faint`. Edges are arrowed lines clipped to node edges: ally `#1D9E75`,
   conflict `#E24B4A`, defers `--line-strong`. Influence node colors are an
   intentional, lens-scoped extension of the palette, not the quadrant or position
   accents. Desktop drag has two gestures by zone: the node core repositions
-  between rings, the rim draws a relationship through the picker. The picker
+  between rings (the drop point sets both the ring and the angle), the rim draws a
+  relationship through the picker. The picker
   anchors just off the midpoint of the two connected nodes (flipping below when
-  it would clip the top edge), never centered on the canvas, with a 9px "Set
+  it would clip the top edge), never centered on the canvas, with a 10px "Set
   relationship" eyebrow and color-coded pills (Ally green, Conflict red, Defers
-  to neutral) that fill with their hue at 10 percent on hover. A dashed rim hint
-  on hover signals the draggable edge zone (never on You). Hover shows a small
-  tooltip: name, role, an influence badge tinted to the level, and a provenance
+  to neutral) that fill with their hue at 10 percent on hover. Hover surfaces both
+  gestures at once: a soft white inner disc (`r * 0.55`) marks the reposition core
+  (grab cursor), and a dashed ring at `r + 5` with four N/E/S/W ticks marks the
+  relationship rim (crosshair cursor), both fading in over 150ms. While drawing a
+  relationship, a valid target pulses an inviting ring and an invalid one (You,
+  which takes no inbound edge) shows a red tint with a not-allowed cursor. You
+  never shows a drag affordance. Hover shows a small
+  tooltip (name 15px, body 13px, badge and provenance 11px): name, role, an
+  influence badge tinted to the level, and a provenance
   line that reads "Influence set by you" when overridden or "Influence inferred
   from notes" when the model placed it. The empty state (fewer than two
   participants) centers a three-arc icon over "No one in the room yet" and "Use
