@@ -5,6 +5,56 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-08 - Influence Ring: visual hierarchy polish pass
+
+Craft-only pass on the Influence Ring. No data model, Firestore, prompt, or drag
+logic touched. Five visual changes so the ring reads as a hierarchy at a glance.
+
+1. Nodes now encode influence by size and color. New fill/stroke pairs per level
+   (high `#3D2C8D`/`#2A1F6B`, medium `#C4611A`/`#A0501A`, low `#D4916A`/`#B07050`),
+   radii self 36 / high 30 / medium 24 / unknown 22 / low 19. Larger and darker
+   reads as more influence.
+2. Null influence stopped masquerading as medium. ringLayout now sets a distinct
+   `unknown` render level (warm gray `#B0A898`, dashed outline, r 22) while still
+   landing on ring 2, so ambiguity is visible. The ring placement and drag snap
+   logic are untouched; only the render level and styling changed.
+3. You reads as the anchor, not a participant: near-black fill, no stroke, a soft
+   glow, a thin halo ring at r+8, label "You" beneath the node, and no cursor
+   affordance (it already could not be dragged).
+4. Ring guides are visible (`--line-strong`, 0.6 opacity, 6 4 dash) with subtle
+   tint bands behind them, and the labels moved to the top center of each arc,
+   uppercase. The relationship picker anchors near the midpoint of the two nodes
+   (flipping below at the top edge) instead of floating at canvas center, with a
+   "Set relationship" eyebrow and color-coded pills.
+5. The hover tooltip swapped the meaningless "Position unknown" for an influence
+   badge tinted to the level plus a provenance line ("Influence set by you" vs
+   "Influence inferred from notes"). The empty state (fewer than two participants)
+   is now a three-arc icon over a two-line prompt.
+
+Conflicts flagged before building (per the orchestration loop) and resolved by
+treating the spec as the new intent, then updating design-system.md to match:
+the old doc described You as white fill with ink stroke, node radii 40/30/24/20,
+and ring labels top-right at 11px. All superseded here. One minor deviation from
+the stated type floor: the ring labels render at 10px and the picker eyebrow at
+9px (the doc's label floor is 11px). Kept per the explicit spec because both are
+tracked uppercase micro-labels, not reading text; noted here so it is a decision,
+not a regression.
+
+One eval assertion updated to match: verify-influence-ring A5 asserted labels
+were top-right (`x > center`); it now asserts top-centered above each arc
+(`x === center`, `y < center - radius`). Geometry helpers `annulusPath` (zone
+bands) and `pickerAnchor` (picker placement) added to influence-ring.js as pure,
+testable functions.
+
+Verified: `npm run verify:influence-ring` 19/19, `npm run build` clean. Live
+check in local preview mode (the-room-preview) confirmed computed styles match
+the spec exactly (high `rgb(61,44,141)`, self `rgb(26,26,46)` with the glow, halo
+`rgba(26,26,46,0.15)`, guides at 0.6 opacity, labels 10px uppercase) and the
+tooltip badge plus provenance line render. No console errors. Client-only;
+deployed to hosting.
+
+---
+
 ## 2026-06-07 - Influence Ring: the Network lens redesign
 
 Replaced the Network lens with the Influence Ring, a concentric-ring SVG layout

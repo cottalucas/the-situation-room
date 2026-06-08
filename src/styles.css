@@ -496,9 +496,15 @@ code {
 /* or position accents.                                                */
 /* ================================================================== */
 :root {
-  --influence-high: #6d4ac0;   /* purple, can block or approve */
-  --influence-medium: #c2703f; /* coral, must be consulted */
-  --influence-low: #9a968d;    /* gray, informed only */
+  --influence-high: #3D2C8D;          /* deep purple, dominant: can block or approve */
+  --influence-high-stroke: #2A1F6B;
+  --influence-medium: #C4611A;        /* warm amber, must be consulted */
+  --influence-medium-stroke: #A0501A;
+  --influence-low: #D4916A;           /* lighter, desaturated: informed only */
+  --influence-low-stroke: #B07050;
+  --influence-unknown: #B0A898;       /* warm gray, ambiguous by design */
+  --influence-unknown-stroke: #908070;
+  --influence-self: #1A1A2E;          /* near-black anchor, You */
 }
 .ring-canvas {
   flex: 1;
@@ -513,21 +519,37 @@ code {
   overflow: hidden;
 }
 .ring-svg { width: 100%; height: 100%; max-width: min(100%, 88vh); aspect-ratio: 1; touch-action: none; }
-.ring-guide { stroke: var(--line); stroke-width: 0.5; stroke-dasharray: 4 6; transition: stroke 0.12s, stroke-width 0.12s; }
-.ring-guide-active { stroke: var(--ink-soft); stroke-width: 1.5; stroke-dasharray: 4 4; }
-.ring-label { font-size: 11px; fill: var(--ink-faint); font-family: var(--sans); letter-spacing: 0.04em; }
-.ring-empty { font-size: 14px; fill: var(--ink-faint); font-family: var(--sans); }
+.ring-guide { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 6 4; opacity: 0.6; transition: stroke 0.12s, stroke-width 0.12s, opacity 0.12s; }
+.ring-guide-active { stroke: var(--ink-soft); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: 1; }
+.ring-label { font-size: 10px; fill: var(--ink-faint); font-family: var(--sans); letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* Subtle influence zone tints: present the rings as zones, not bare lines */
+.ring-zone { pointer-events: none; }
+.ring-zone-high { fill: rgba(61, 44, 141, 0.04); }
+.ring-zone-medium { fill: rgba(196, 97, 26, 0.03); }
+.ring-zone-low { fill: rgba(176, 168, 152, 0.02); }
+
+/* Empty state: three open arcs echoing the ring, with a quiet two-line prompt */
+.ring-empty-arc { stroke: var(--line-strong); stroke-width: 1.5; }
+.ring-empty-title { font-size: 15px; font-weight: 500; fill: var(--ink); font-family: var(--sans); }
+.ring-empty-sub { font-size: 12px; fill: var(--ink-faint); font-family: var(--sans); }
 
 .ring-node-g { -webkit-tap-highlight-color: transparent; }
-.ring-node { stroke: var(--bg-raised); stroke-width: 1.5; transition: stroke 0.12s, stroke-width 0.12s; }
-.ring-node-self { fill: var(--bg-overlay); stroke: var(--ink); stroke-width: 2; }
-.ring-node-high { fill: var(--influence-high); }
-.ring-node-medium { fill: var(--influence-medium); }
-.ring-node-low { fill: var(--influence-low); }
-.ring-node-hover { stroke: var(--ink-soft); stroke-width: 2; }
+.ring-node { transition: stroke 0.12s, stroke-width 0.12s; }
+.ring-node-high { fill: var(--influence-high); stroke: var(--influence-high-stroke); stroke-width: 2; }
+.ring-node-medium { fill: var(--influence-medium); stroke: var(--influence-medium-stroke); stroke-width: 1.5; }
+.ring-node-low { fill: var(--influence-low); stroke: var(--influence-low-stroke); stroke-width: 1; }
+.ring-node-unknown { fill: var(--influence-unknown); stroke: var(--influence-unknown-stroke); stroke-width: 1; stroke-dasharray: 3 3; }
+.ring-node-self { fill: var(--influence-self); stroke: none; filter: drop-shadow(0 0 8px rgba(26, 26, 46, 0.25)); }
+.ring-node-self-halo { stroke: rgba(26, 26, 46, 0.15); stroke-width: 1; pointer-events: none; }
+.ring-node-hover { stroke: var(--ink); stroke-width: 2.5; }
 .ring-node-selected { stroke: var(--ink); stroke-width: 2.5; }
-.ring-node-label { font-size: 12px; font-weight: 500; fill: #fff; font-family: var(--sans); pointer-events: none; }
-.ring-node-label-self { fill: var(--ink); }
+.ring-node-label { fill: #fff; font-family: var(--sans); pointer-events: none; }
+.ring-node-label-high { font-size: 12px; font-weight: 600; }
+.ring-node-label-medium { font-size: 12px; font-weight: 500; }
+.ring-node-label-low { font-size: 11px; font-weight: 400; }
+.ring-node-label-unknown { font-size: 11px; font-weight: 400; }
+.ring-node-label-self { fill: var(--ink-soft); font-size: 11px; font-weight: 500; font-family: var(--sans); pointer-events: none; }
 .ring-rim-hint { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 2 3; pointer-events: none; }
 .ring-target-pulse { stroke: var(--informed); stroke-width: 2; opacity: 0.5; animation: ring-pulse 1s ease-in-out infinite; pointer-events: none; }
 @keyframes ring-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.7; } }
@@ -551,26 +573,42 @@ code {
 }
 .ring-tooltip-name { font-weight: 600; color: var(--ink); }
 .ring-tooltip-meta { color: var(--ink-soft); font-size: 11px; }
+.ring-tooltip-badge {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.ring-badge-high { background: rgba(61, 44, 141, 0.1); color: #3D2C8D; }
+.ring-badge-medium { background: rgba(196, 97, 26, 0.1); color: #C4611A; }
+.ring-badge-low { background: rgba(212, 145, 106, 0.1); color: #B07050; }
+.ring-badge-unknown { background: var(--bg-raised); color: var(--ink-faint); }
+.ring-tooltip-prov { color: var(--ink-faint); font-size: 11px; font-style: italic; }
 
 .ring-picker-scrim { position: absolute; inset: 0; z-index: 50; }
 .ring-picker {
   position: absolute;
   z-index: 51;
-  transform: translate(-50%, -50%);
   background: var(--bg-overlay);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 10px 12px;
-  box-shadow: var(--shadow-float);
+  padding: 10px 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.ring-picker-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); }
+/* Anchor the picker just off the midpoint of the two nodes, never centered on it */
+.ring-picker-above { transform: translate(-50%, calc(-100% - 8px)); }
+.ring-picker-below { transform: translate(-50%, 8px); }
+.ring-picker-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); }
 .ring-picker-pills { display: flex; gap: 6px; }
 .ring-pill {
   border: 1px solid var(--line-strong);
-  background: var(--bg);
+  background: var(--bg-overlay);
+  color: var(--ink-soft);
   border-radius: 999px;
   padding: 6px 12px;
   font-size: 13px;
@@ -578,8 +616,13 @@ code {
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.ring-pill:hover { border-color: var(--ink-faint); background: var(--bg-raised); }
-.ring-pill-active { background: var(--ink); color: var(--bg-raised); border-color: var(--ink); }
+.ring-pill-ally { border-color: #1D9E75; color: #1D9E75; }
+.ring-pill-ally:hover, .ring-pill-ally.ring-pill-active { background: rgba(29, 158, 117, 0.1); }
+.ring-pill-conflict { border-color: #E24B4A; color: #E24B4A; }
+.ring-pill-conflict:hover, .ring-pill-conflict.ring-pill-active { background: rgba(226, 75, 74, 0.1); }
+.ring-pill-defers { border-color: var(--line-strong); color: var(--ink-soft); }
+.ring-pill-defers:hover, .ring-pill-defers.ring-pill-active { background: var(--bg-raised); border-color: var(--ink-faint); }
+.ring-pill-active { font-weight: 500; }
 .ring-picker-remove { background: none; border: none; color: var(--against); font-size: 12px; cursor: pointer; align-self: flex-start; padding: 0; }
 .ring-legend-hint { font-size: 11px; color: var(--ink-faint); margin-left: auto; }
 

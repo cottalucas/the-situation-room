@@ -71,12 +71,12 @@ for (let i = 0; i < layout.length; i += 1) {
   }
 }
 check("A4 no node overlaps another", overlap === null);
-// A5 ring labels at correct radii, top-right (x>center, y<center)
+// A5 ring labels at correct radii, centered at the top of each arc (x==center, y<center)
 const labels = ringLabelPositions();
 check(
-  "A5 ring labels at r=140/260/380, top-right",
+  "A5 ring labels at r=140/260/380, top-centered above each arc",
   labels.length === 3 &&
-    labels.every((l) => l.x > CENTER && l.y < CENTER) &&
+    labels.every((l) => l.x === CENTER && l.y < CENTER - l.radius) &&
     labels[0].radius === 140 && labels[1].radius === 260 && labels[2].radius === 380
 );
 

@@ -8,6 +8,8 @@ import {
   EDGE_TYPES,
   ringLayout,
   ringLabelPositions,
+  annulusPath,
+  pickerAnchor,
   clipLine,
   edgeColor,
   edgeStrokeWidth,
@@ -29,7 +31,19 @@ function levelLabel(level) {
   if (level === "high") return "High influence";
   if (level === "medium") return "Medium influence";
   if (level === "low") return "Low influence";
-  return "Influence not set";
+  return "Influence unknown";
+}
+
+// The render level a null/unknown influence maps to for badge and class styling.
+function badgeLevel(level) {
+  return level === "high" || level === "medium" || level === "low" ? level : "unknown";
+}
+
+// Provenance line under the influence badge: did the user set it, or was it inferred?
+function provenanceLine(rawLevel, overridden) {
+  if (overridden) return "Influence set by you";
+  if (rawLevel) return "Influence inferred from notes";
+  return null;
 }
 
 /**
@@ -225,6 +239,15 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
             </marker>
           </defs>
 
+          {/* Influence zone bands: subtle tints so the rings read as zones, not just lines */}
+          {!empty && (
+            <>
+              <circle className="ring-zone ring-zone-high" cx={CENTER} cy={CENTER} r={RING_RADIUS[1]} />
+              <path className="ring-zone ring-zone-medium" d={annulusPath(RING_RADIUS[2], RING_RADIUS[1])} fillRule="evenodd" />
+              <path className="ring-zone ring-zone-low" d={annulusPath(RING_RADIUS[3], RING_RADIUS[2])} fillRule="evenodd" />
+            </>
+          )}
+
           {/* Ring guides */}
           {[1, 2, 3].map((ring) => (
             <circle
@@ -237,15 +260,29 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
             />
           ))}
           {labels.map((l) => (
-            <text key={l.ring} className="ring-label" x={l.x + 6} y={l.y - 4}>
+            <text key={l.ring} className="ring-label" x={l.x} y={l.y} textAnchor="middle">
               {l.label}
             </text>
           ))}
 
           {empty ? (
-            <text className="ring-empty" x={CENTER} y={CENTER} textAnchor="middle">
-              Add people with @note to start mapping influence
-            </text>
+            <g className="ring-empty-state" textAnchor="middle">
+              {/* Three concentric open arcs, an echo of the ring itself */}
+              {[20, 35, 50].map((r) => (
+                <path
+                  key={r}
+                  className="ring-empty-arc"
+                  d={`M ${CENTER - r} ${CENTER - 40} A ${r} ${r} 0 1 1 ${CENTER + r} ${CENTER - 40}`}
+                  fill="none"
+                />
+              ))}
+              <text className="ring-empty-title" x={CENTER} y={CENTER + 50}>
+                No one in the room yet
+              </text>
+              <text className="ring-empty-sub" x={CENTER} y={CENTER + 78}>
+                Use @note to add people and map their influence
+              </text>
+            </g>
           ) : (
             <>
               {/* Edges first, so nodes sit on top */}
@@ -292,13 +329,15 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
                     onPointerMove={(e) => onNodeHoverMove(e, node)}
                     onPointerLeave={() => setHover((h) => (h?.id === node.id ? null : h))}
                     onClick={() => node.isSelf && onOpenProfile?.(node.id)}
-                    style={{ cursor: node.isSelf ? "pointer" : drag ? "inherit" : isHover ? (hover.zone === "edge" ? "crosshair" : "grab") : "pointer" }}
+                    style={{ cursor: node.isSelf ? "default" : drag ? "inherit" : isHover ? (hover.zone === "edge" ? "crosshair" : "grab") : "pointer" }}
                   >
                     {isTarget && <circle className="ring-target-pulse" cx={cx} cy={cy} r={r + 8} fill="none" />}
                     {/* Rim affordance: hint the draggable edge zone (not on self) */}
                     {isHover && !node.isSelf && !drag && (
                       <circle className="ring-rim-hint" cx={cx} cy={cy} r={r} fill="none" />
                     )}
+                    {/* You is the fixed anchor: a thin halo separates it from the high ring */}
+                    {node.isSelf && <circle className="ring-node-self-halo" cx={cx} cy={cy} r={r + 8} fill="none" />}
                     <circle
                       className={`ring-node ring-node-${node.level} ${isHover ? "ring-node-hover" : ""} ${node.id === selectedId ? "ring-node-selected" : ""}`}
                       cx={cx}
@@ -306,9 +345,15 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
                       r={r}
                       opacity={isDraggingThis ? 0.9 : 1}
                     />
-                    <text className={`ring-node-label ${node.isSelf ? "ring-node-label-self" : ""}`} x={cx} y={cy} textAnchor="middle" dominantBaseline="central">
-                      {firstLabel(node)}
-                    </text>
+                    {node.isSelf ? (
+                      <text className="ring-node-label-self" x={cx} y={cy + r + 18} textAnchor="middle">
+                        You
+                      </text>
+                    ) : (
+                      <text className={`ring-node-label ring-node-label-${node.level}`} x={cx} y={cy} textAnchor="middle" dominantBaseline="central">
+                        {firstLabel(node)}
+                      </text>
+                    )}
                   </g>
                 );
               })}
@@ -327,12 +372,17 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
             <span className="ring-tooltip-name">{hoverNode.isSelf ? "You" : hoverNode.name}</span>
             {hoverNode.isSelf ? (
               <span className="ring-tooltip-meta">The decision-maker</span>
-            ) : (
-              <>
-                {hoverNode.role && <span className="ring-tooltip-meta">{hoverNode.role}</span>}
-                <span className="ring-tooltip-meta">{levelLabel(hoverNode.rawLevel)}</span>
-              </>
-            )}
+            ) : (() => {
+              const lvl = badgeLevel(hoverNode.rawLevel);
+              const prov = provenanceLine(hoverNode.rawLevel, influence[hoverNode.id]?.overridden);
+              return (
+                <>
+                  {hoverNode.role && <span className="ring-tooltip-meta">{hoverNode.role}</span>}
+                  <span className={`ring-tooltip-badge ring-badge-${lvl}`}>{levelLabel(hoverNode.rawLevel)}</span>
+                  {prov && <span className="ring-tooltip-prov">{prov}</span>}
+                </>
+              );
+            })()}
           </div>
           );
         })()}
@@ -341,17 +391,19 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
         {picker && (() => {
           const a = nodeById.get(picker.from);
           const b = nodeById.get(picker.to);
-          const mid = a && b ? toCanvasPx((a.x + b.x) / 2, (a.y + b.y) / 2) : { left: 0, top: 0 };
+          if (!a || !b) return null;
+          const anchor = pickerAnchor(a, b);
+          const pos = toCanvasPx(anchor.x, anchor.y);
           return (
           <>
             <div className="ring-picker-scrim" onClick={() => setPicker(null)} />
-            <div className="ring-picker" style={{ left: mid.left, top: mid.top }}>
-              <span className="ring-picker-label">Relationship</span>
+            <div className={`ring-picker ring-picker-${anchor.placement}`} style={{ left: pos.left, top: pos.top }}>
+              <span className="ring-picker-label">Set relationship</span>
               <div className="ring-picker-pills">
                 {EDGE_TYPES.map((type) => (
                   <button
                     key={type}
-                    className={`ring-pill ${picker.existingType === type ? "ring-pill-active" : ""}`}
+                    className={`ring-pill ring-pill-${type} ${picker.existingType === type ? "ring-pill-active" : ""}`}
                     onClick={() => choosePickerType(type)}
                   >
                     {EDGE_LABEL[type]}

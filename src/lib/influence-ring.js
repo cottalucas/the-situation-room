@@ -13,7 +13,9 @@
 export const CENTER = 400;
 export const VIEWBOX = 800;
 export const RING_RADIUS = { 1: 140, 2: 260, 3: 380 };
-export const NODE_RADIUS = { self: 40, high: 30, medium: 24, low: 20 };
+// Node radius encodes influence directly: larger reads as more influence. self is
+// the largest and darkest; unknown sits between medium and low, styled apart.
+export const NODE_RADIUS = { self: 36, high: 30, medium: 24, low: 19, unknown: 22 };
 export const ROTATION_STEP = Math.PI / 6;
 export const EDGE_TYPES = ["ally", "conflict", "defers"];
 export const EDGE_LABEL = { ally: "Ally", conflict: "Conflict", defers: "Defers to" };
@@ -29,7 +31,7 @@ export function levelForRing(ring) {
   return LEVEL_FOR_RING[ring] || "medium";
 }
 
-/** Node radius for an influence level (self overrides). null reads as medium. */
+/** Node radius for a render level (self overrides). Unknown has its own size. */
 export function nodeRadiusFor(level, isSelf = false) {
   if (isSelf) return NODE_RADIUS.self;
   return NODE_RADIUS[level] || NODE_RADIUS.medium;
@@ -62,7 +64,9 @@ export function ringLayout(participants = [], influence = {}) {
     const offset = ROTATION_STEP * ring;
     group.forEach((entry, index) => {
       const angle = count > 0 ? (2 * Math.PI / count) * index + offset : offset;
-      const renderLevel = entry.level || "medium";
+      // null influence still lands on ring 2, but renders as its own ambiguous
+      // "unknown" style (warm gray, dashed) rather than masquerading as medium.
+      const renderLevel = entry.level || "unknown";
       nodes.push({
         id: entry.person.id,
         name: entry.person.name,
@@ -150,14 +154,44 @@ export function cancelDrag() {
   return null;
 }
 
-/** Top-right label positions for each ring guide. */
+/** Label positions: centered at the top of each ring arc, sitting just above it. */
 export function ringLabelPositions() {
-  const a = -Math.PI / 4; // top-right
+  const gap = 14; // viewBox units the label floats above its ring arc
   return [
     { ring: 1, level: "high", label: "High influence", radius: RING_RADIUS[1] },
     { ring: 2, level: "medium", label: "Medium", radius: RING_RADIUS[2] },
     { ring: 3, level: "low", label: "Low", radius: RING_RADIUS[3] },
-  ].map((l) => ({ ...l, x: CENTER + l.radius * Math.cos(a), y: CENTER + l.radius * Math.sin(a) }));
+  ].map((l) => ({ ...l, x: CENTER, y: CENTER - l.radius - gap }));
+}
+
+/**
+ * SVG path for a filled annulus (ring band) between two concentric radii, drawn
+ * with the even-odd fill rule so the inner disc is a hole. Used for the subtle
+ * tinted influence zones behind the guides.
+ */
+export function annulusPath(rOuter, rInner) {
+  const circle = (r) =>
+    `M ${CENTER - r} ${CENTER} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 ${-r * 2} 0 Z`;
+  return `${circle(rOuter)} ${circle(rInner)}`;
+}
+
+/**
+ * Where the relationship picker should anchor: just above the midpoint of the
+ * two connected nodes, flipped below when that would clip the top edge. Returned
+ * in viewBox coords; placement tells the overlay which side to grow toward.
+ */
+export function pickerAnchor(a, b) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const offset = 36; // viewBox units off the midpoint, clearing both nodes
+  const margin = 90; // keep clear of the canvas edges
+  let y = my - offset;
+  let placement = "above";
+  if (y < margin) {
+    y = my + offset;
+    placement = "below";
+  }
+  return { x: mx, y, placement };
 }
 
 /** Distance helper. */

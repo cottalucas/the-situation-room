@@ -42,10 +42,13 @@ position
 --neutral     #8d8a82
 --unknown     #c5c1b8   shown as a dashed ring
 
-influence ring (Network lens only)
---influence-high    #6d4ac0   purple, can block or approve
---influence-medium  #c2703f   coral, must be consulted (also null)
---influence-low     #9a968d   gray, informed only
+influence ring (Network lens only). node fill / stroke, by level. larger and
+darker reads as more influence.
+--influence-high     #3D2C8D / #2A1F6B   deep purple, dominant: can block or approve
+--influence-medium   #C4611A / #A0501A   warm amber, must be consulted
+--influence-low      #D4916A / #B07050   desaturated, informed only
+--influence-unknown  #B0A898 / #908070   warm gray, dashed: null influence, ambiguous by design
+--influence-self     #1A1A2E             near-black anchor, You
 ```
 
 Quadrant tints sit at about 6 percent over the raised surface, with a 15 percent
@@ -153,19 +156,35 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   Tapping the summary opens the person profile page.
 - The Network lens is the Influence Ring: concentric rings on a square SVG
   (viewBox 0 0 800 800) where ring position encodes influence over the decision.
-  You sits at the center (white fill, ink stroke, always dominant); high influence
-  on ring 1 (r 140), medium on ring 2 (r 260, where unset/null also lands), low on
-  ring 3 (r 380). Node radii step down 40 / 30 / 24 / 20. Ring guides are dashed
-  hairlines; ring labels (High influence, Medium, Low) sit top-right, 11px, in
+  You sits at the center as the fixed anchor: near-black `--influence-self` fill,
+  no stroke, a soft `drop-shadow(0 0 8px rgba(26,26,46,0.25))` glow, and a thin
+  halo ring at `r + 8` that separates it from the high ring. Its label reads "You"
+  beneath the node in `--ink-soft`, not inside, and it carries no cursor
+  affordance because it cannot be repositioned. High influence sits on ring 1
+  (r 140), medium on ring 2 (r 260, where unset/null also lands), low on ring 3
+  (r 380). Node radii encode hierarchy directly and step down self 36 / high 30 /
+  medium 24 / unknown 22 / low 19. Each level pairs a fill with a darker stroke
+  (see tokens); null influence renders as its own warm-gray dashed `unknown`
+  style rather than masquerading as medium. Ring guides are dashed hairlines in
+  `--line-strong` at 0.6 opacity (6 4 dash); subtle tint bands fill each zone
+  behind them (high `rgba(61,44,141,0.04)`, medium `rgba(196,97,26,0.03)`, low
+  `rgba(176,168,152,0.02)`). Ring labels (HIGH INFLUENCE, MEDIUM, LOW) sit
+  centered at the top of each arc, 10px uppercase with 0.08em tracking, in
   `--ink-faint`. Edges are arrowed lines clipped to node edges: ally `#1D9E75`,
   conflict `#E24B4A`, defers `--line-strong`. Influence node colors are an
-  intentional, lens-scoped extension of the palette, a calm 3-step ramp
-  (`--influence-high` purple, `--influence-medium` coral, `--influence-low` gray),
-  not the quadrant or position accents. Desktop drag has two gestures by zone:
-  the node core repositions between rings, the rim draws a relationship through a
-  three-pill picker (Ally, Conflict, Defers to). A dashed rim hint on hover signals
-  the draggable edge zone (never on You). Hover shows a small tooltip (name, role,
-  influence level). Touch drag is out of scope.
+  intentional, lens-scoped extension of the palette, not the quadrant or position
+  accents. Desktop drag has two gestures by zone: the node core repositions
+  between rings, the rim draws a relationship through the picker. The picker
+  anchors just off the midpoint of the two connected nodes (flipping below when
+  it would clip the top edge), never centered on the canvas, with a 9px "Set
+  relationship" eyebrow and color-coded pills (Ally green, Conflict red, Defers
+  to neutral) that fill with their hue at 10 percent on hover. A dashed rim hint
+  on hover signals the draggable edge zone (never on You). Hover shows a small
+  tooltip: name, role, an influence badge tinted to the level, and a provenance
+  line that reads "Influence set by you" when overridden or "Influence inferred
+  from notes" when the model placed it. The empty state (fewer than two
+  participants) centers a three-arc icon over "No one in the room yet" and "Use
+  @note to add people and map their influence". Touch drag is out of scope.
 - Mobile shell: a slim header with the brand and a right-side burger; a
   horizontal tab row (People, Energy, Network) directly beneath the header as the
   primary lens switcher; the active lens fills the full remaining height, so the
