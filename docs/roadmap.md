@@ -153,8 +153,16 @@
 - Stronger `@map` and `@network` extraction. Explicit reporting lines,
   micromanagement, control, alliances, conflict, close ties, and privileged
   relationships should become reliable enough to pass live trace-derived evals.
-- Re-open plain chat only after command mapping, trace capture, and eval scores
-  are good enough to prevent vague, expensive coaching responses.
+  `@network` now owns influence level as well as edges (prompt v6, offline evals
+  in `verify:network`); harden the influence inference from live traces next.
+- Plain-text intent routing exists behind `ENABLE_PLAIN_TEXT_ROUTING`, off in
+  production. Today plain text is classified and offered as a tappable suggestion
+  pill, never routed silently and never mutating state. Flip the flag on only
+  after live trace review and eval scores say the classifier is good enough to act
+  on its own. This is the safe, incremental version of re-opening plain chat:
+  command mapping with a human tap in the loop, not a coaching response.
+- Re-open fully silent plain-text routing only after command mapping, trace
+  capture, and eval scores are good enough to prevent vague, expensive responses.
 - Privacy surface: export, delete, and a clear statement of where data lives.
 - Stronger zero knowledge encryption option based on a user held secret, if the
   product needs protection from server side key derivation.

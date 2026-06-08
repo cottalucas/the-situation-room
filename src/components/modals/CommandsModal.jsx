@@ -7,11 +7,10 @@ const GROUPS = [
     title: "Build the room",
     items: [
       { cmd: "@energy <text>", desc: "Place people by power and interest, and set where they stand. Example: “@energy the CEO has high power but low interest.”" },
-      { cmd: "@network <text>", desc: "Map who reports to, allies with, or clashes with whom. Example: “@network sales reports to the CEO and clashes with product.”" },
+      { cmd: "@network <text>", desc: "Map relationships and influence. Who moves whom, who allies with whom, who clashes. Example: “@network sales reports to the CEO and clashes with product.”" },
       { cmd: "@note <person> <text>", desc: "Save one observation about a person and sharpen their read. The person can be a name, first name, or role. Example: “@note head of sales keeps asking for updates.”" },
-      { cmd: "@map <text>", desc: "Describe the whole situation in prose and let it route to people, notes, energy, and network at once. The broad intake command." },
-      { cmd: "@create <text>", desc: "Only add people by name and role, without analyzing them yet." },
-      { cmd: "@add <name>, <role>", desc: "Add one outside person to this decision only." },
+      { cmd: "@map <text>", desc: "Describe the situation in plain language. Routes to the right commands automatically." },
+      { cmd: "@add <name>, <role>", desc: "Add a person to this decision by name and role." },
     ],
   },
   {

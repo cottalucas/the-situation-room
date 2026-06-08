@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
-import { interpretRoomCommand, askStrategist, buildContext, generatePlay } from "../lib/context.js";
+import { interpretRoomCommand, askStrategist, buildContext, generatePlay, classifyIntent } from "../lib/context.js";
 import { checkPlayReadiness, buildPlayCoaching, nextCoachingStep, playStamp, playSituation } from "../lib/play-readiness.js";
 import { trackEvent, trackNetwork } from "../lib/firebase.js";
 import { consumeOnboardingPending } from "../lib/auth.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 import { screenOpenMessage } from "../lib/chat-guard.js";
+import { commandCapabilities, influenceDecision, planClassificationAction } from "../lib/room-command-contract.js";
 import {
   ONBOARDING_INTRO,
   ONBOARDING_INTRO_RETURNING,
@@ -32,6 +33,13 @@ const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 // Open (non-command) chat is experimental and routes to the grounded strategist
 // behind the input guard. It rides on the live LLM flag.
 const OPEN_CHAT = LIVE_LLM;
+// Plain-text routing. OFF in production: plain text is classified and surfaced as
+// a tappable suggestion pill, never routed silently and never mutating state.
+// Flip to true (VITE_ENABLE_PLAIN_TEXT_ROUTING=true) only once the offline evals
+// and live trace review say the classifier is good enough to act on its own.
+const ENABLE_PLAIN_TEXT_ROUTING = import.meta.env.VITE_ENABLE_PLAIN_TEXT_ROUTING === "true";
+// Map a classified intent back to the command a user would type.
+const INTENT_PREFIX = { network: "@network", energy: "@energy", note: "@note", ask: "@ask", map: "@map" };
 
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
@@ -142,14 +150,9 @@ function softGridConfirm(person, power, interest) {
   return `I read ${person.name} as roughly ${power} power and ${interest} interest, but I was not certain. Adjust if that is off.`;
 }
 
-function commandCapabilities(sourceCommand) {
-  return {
-    notes: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
-    profile: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
-    grid: sourceCommand === "grid" || sourceCommand === "map" || sourceCommand === "create",
-    edges: sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
-    influence: sourceCommand === "map" || sourceCommand === "create",
-  };
+// influence clarification copy stays about the ring, never about power/interest.
+function influenceClarification(person) {
+  return `Does ${person.name || "this person"} actually have a say on this decision, or are they just kept informed? Tell me high, medium, or low influence.`;
 }
 
 function commandResultLabel(sourceCommand) {
@@ -765,13 +768,18 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             confirmQuestions.push(softGridConfirm(store.getPerson(id) || item, item.power, item.interest));
           }
         }
-        // Influence is inferred by @map/@create only. Never set it for the self
-        // user, and never overwrite a level the user set by hand on the ring.
+        // Influence is owned by @network, @map, and @create. Never set it for the
+        // self user, and never overwrite a level the user set by hand on the ring.
+        // @network gates on confidence: an uncertain read asks instead of writing.
         if (caps.influence && item.influenceLevel) {
           const target = store.getPerson(id);
-          if (target && !target.isSelf && !store.getInfluence(targetDecisionId, id).overridden) {
+          const current = { isSelf: target?.isSelf, overridden: store.getInfluence(targetDecisionId, id).overridden };
+          const verdict = influenceDecision(item, current, sourceCommand);
+          if (verdict === "write") {
             store.setInfluence(targetDecisionId, id, item.influenceLevel, false);
             influenced += 1;
+          } else if (verdict === "ask" && clarificationQuestions.length < 2) {
+            clarificationQuestions.push(influenceClarification(store.getPerson(id) || item));
           }
         }
         currentDecision = store.getDecision(targetDecisionId);
@@ -802,7 +810,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           nullCount: nonSelf.filter((p) => !leveled(p.id)).length,
         });
       }
-      if (edges) setActiveTab("network");
+      if (edges || (caps.influence && influenced)) setActiveTab("network");
       else if (placements || positions) setActiveTab("grid");
 
       const parts = [
@@ -811,12 +819,22 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         profiles ? `${profiles} ${profiles === 1 ? "read" : "reads"}` : "",
         placements || positions ? "grid" : "",
         edges ? "network" : "",
+        influenced ? `${influenced} influence ${influenced === 1 ? "level" : "levels"}` : "",
       ].filter(Boolean);
       let body = update.summary || (parts.length ? `Updated ${parts.join(", ")}.` : "No clear update found.");
-      if (sourceCommand === "network" && edges) body = `Added ${edges} network ${edges === 1 ? "relationship" : "relationships"}.`;
-      if (clarificationQuestions.length && !placements && !positions) body = "I need a quick check before moving the grid.";
-      else if (clarificationQuestions.length) body = `Updated ${parts.join(", ") || "the room"}, but held one extreme grid value for confirmation.`;
-      const concreteChanges = created + notes + profiles + placements + positions + edges;
+      if (sourceCommand === "network") {
+        // @network owns edges and influence. Name whichever it changed.
+        const bits = [];
+        if (edges) bits.push(`${edges} ${edges === 1 ? "relationship" : "relationships"}`);
+        if (influenced) bits.push(`${influenced} influence ${influenced === 1 ? "level" : "levels"}`);
+        if (bits.length) body = `Updated ${bits.join(" and ")}.`;
+        else if (clarificationQuestions.length) body = "Before I move anyone on the ring, one quick check.";
+      } else if (clarificationQuestions.length && !placements && !positions) {
+        body = "I need a quick check before moving the grid.";
+      } else if (clarificationQuestions.length) {
+        body = `Updated ${parts.join(", ") || "the room"}, but held one extreme grid value for confirmation.`;
+      }
+      const concreteChanges = created + notes + profiles + placements + positions + edges + influenced;
       const modelQuestions = concreteChanges || clarificationQuestions.length ? [] : update.openQuestions || [];
 
       return {
@@ -987,13 +1005,17 @@ export default function Room({ onExit, userId, userName, userEmail }) {
 
   /* chat */
   const onSubmit = useCallback(
-    async (e) => {
-      e.preventDefault();
-      const q = draft.trim();
+    async (eOrText) => {
+      // Accept a form event (reads the draft) or a string (a suggestion pill tap
+      // re-running the text as a prefixed command through this same path).
+      const fromPill = typeof eOrText === "string";
+      if (!fromPill) eOrText.preventDefault();
+      const q = (fromPill ? eOrText : draft).trim();
       if (!q || !decision || isGenerating) {
-        setDraft("");
+        if (!fromPill) setDraft("");
         return;
       }
+      if (!fromPill) setDraft("");
       setShowPath(false);
       // Capture prior turns before the new user message lands, for anaphora.
       const priorMessages = store.getChat(decision.id);
@@ -1120,7 +1142,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         setDraft("");
         return;
       }
-      const mapCommand = q.match(/^@(map|energy|grid|network|net|create)\s+([\s\S]+)$/i);
+      // @create is retired as a user command; @add covers adding people and @map
+      // covers prose intake. The internal "create" path still backs onboarding.
+      const mapCommand = q.match(/^@(map|energy|grid|network|net)\s+([\s\S]+)$/i);
       if (mapCommand) {
         const rawCommand = mapCommand[1].toLowerCase();
         // @energy is the user-facing name; @grid stays as a hidden alias. Both
@@ -1189,17 +1213,18 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         return;
       }
 
-      // Open chat (experimental): plain text routes to the grounded strategist
-      // behind the input guard. Anything off-topic is declined by the strategist.
+      // Plain text (no command prefix). When live reasoning is off, only commands
+      // run. Otherwise classify the intent and, in production (routing flag off),
+      // surface a tappable suggestion pill. Nothing mutates here: state changes
+      // only when the user taps the pill, which re-runs the text as a prefixed
+      // command through this same handler.
       if (!OPEN_CHAT) {
-        setDraft("");
         store.pushMessage(decision.id, {
           type: "fallback",
-          body: "Use @note, @energy, @network, @map, @create, @ask, @read, or @add to work the room.",
+          body: "Use @note, @energy, @network, @map, @ask, @read, or @add to work the room.",
         });
         return;
       }
-      setDraft("");
       const screen = screenOpenMessage(q);
       if (screen.blocked) {
         trackEvent("open_chat_blocked", { reason: screen.reason });
@@ -1207,32 +1232,36 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         return;
       }
       setIsGenerating(true);
+      let plan = null;
       try {
-        const resp = await askStrategist({
-          question: q,
-          room,
-          decision,
-          participants,
-          edges: store.getEdges(decision.id),
-          messages: priorMessages,
-        });
-        if (resp.kind === "coach") {
-          trackEvent("open_chat");
-          store.pushMessage(decision.id, {
-            type: "coach",
-            body: resp.answer.answer,
-            questions: resp.answer.moves,
-            cites: resp.answer.cites,
-            grounded: resp.answer.grounded,
-          });
-        } else {
-          store.pushMessage(decision.id, { type: "fallback", body: resp.body });
-        }
+        const { classification } = await classifyIntent(q);
+        plan = planClassificationAction(classification, ENABLE_PLAIN_TEXT_ROUTING);
+        // Privacy-safe analytics: intent and confidence only, never the raw text.
+        trackNetwork("plain_text_classified", { intent: classification.intent, confidence: classification.confidence, acted: false });
       } finally {
         setIsGenerating(false);
       }
+      if (!plan) return;
+      if (plan.action === "pill") {
+        store.pushMessage(decision.id, { type: "suggest", intent: plan.intent, text: q, body: `Looks like @${plan.intent}. Tap to run it.` });
+      } else if (plan.action === "suggest") {
+        store.pushMessage(decision.id, { type: "suggest-list", body: "I'm not sure how to use this. Did you mean to:" });
+      } else if (plan.action === "route" || plan.action === "confirm") {
+        // Routing flag on: run the command, labeling it so the user can see the call.
+        const label = plan.action === "route" ? `↳ treated as @${plan.intent}` : `I read this as @${plan.intent}, running it. Tell me if that was wrong.`;
+        store.pushMessage(decision.id, { type: "fallback", body: label });
+        await onSubmit(`${INTENT_PREFIX[plan.intent]} ${q}`);
+      }
     },
     [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, playCoaching, room, runPlay, store]
+  );
+  // A suggestion pill re-runs the plain text as its prefixed command.
+  const onRunSuggestion = useCallback(
+    (intent, text) => {
+      const prefix = INTENT_PREFIX[intent];
+      if (prefix) onSubmit(`${prefix} ${text}`);
+    },
+    [onSubmit]
   );
   const showOnNetwork = useCallback(() => {
     setShowPath(true);
@@ -1290,6 +1319,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     onOpenProfile: openPersonPage,
     onCiteClick: openReadChip,
     onOpenCommands: () => setModal({ type: "commands" }),
+    onRunSuggestion,
     draft,
     setDraft,
     onSubmit,

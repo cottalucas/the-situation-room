@@ -11,7 +11,7 @@
 import { getResponse } from "./reasoning.js";
 import { auth } from "./firebase.js";
 import { compactContext, normalizePlay } from "./play-contract.js";
-import { compactRoomCommandContext, normalizeRoomUpdate, normalizeStrategistAnswer } from "./room-command-contract.js";
+import { compactRoomCommandContext, normalizeRoomUpdate, normalizeStrategistAnswer, normalizeClassification } from "./room-command-contract.js";
 
 const RECENT_OBSERVATIONS = 5;
 
@@ -116,6 +116,29 @@ export async function askStrategist({ question, room, decision, participants, ed
     return { kind: "coach", answer };
   } catch (err) {
     return { kind: "fallback", body: err?.message || "The strategist pass failed." };
+  }
+}
+
+/**
+ * Classify prefix-free plain text into a command intent. Cheap single call,
+ * never mutates anything. Only the text is sent, never the room context, and the
+ * caller never logs the raw text. Returns a normalized { intent, confidence }.
+ */
+export async function classifyIntent(text) {
+  const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
+  if (!liveEnabled) return { kind: "fallback", classification: { intent: "unclear", confidence: "low", reasoning: "" } };
+  try {
+    const res = await fetch("/api/classify-intent", {
+      method: "POST",
+      headers: await apiHeaders(),
+      body: JSON.stringify({ text: String(text || "").slice(0, 700) }),
+    });
+    if (!res.ok) throw new Error("classify failed");
+    const data = await res.json();
+    return { kind: "ok", classification: normalizeClassification(data?.classification) };
+  } catch {
+    // A failed classification degrades to "unclear", never to a silent mutation.
+    return { kind: "fallback", classification: { intent: "unclear", confidence: "low", reasoning: "" } };
   }
 }
 

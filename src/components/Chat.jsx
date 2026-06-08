@@ -138,6 +138,43 @@ function CoachMessage({ message, people, latest, isRead, onCiteClick }) {
   );
 }
 
+// Plain-text classification, routing flag off: a guidance pill that runs the
+// suggested command on tap. Never mutates state on its own.
+function SuggestMessage({ message, latest, onRunSuggestion }) {
+  return (
+    <SimpleMessage label="Suggestion" variant="chat-suggest" latest={latest}>
+      <p>{message.body}</p>
+      <button type="button" className="suggest-pill" onClick={() => onRunSuggestion?.(message.intent, message.text)}>
+        Run @{message.intent}
+      </button>
+    </SimpleMessage>
+  );
+}
+
+// Low confidence or unclear intent: offer the command menu, no routing.
+const SUGGEST_OPTIONS = [
+  { label: "Note something about a person", cmd: "@note " },
+  { label: "Update someone's influence", cmd: "@network " },
+  { label: "Update power or interest", cmd: "@energy " },
+  { label: "Ask a question", cmd: "@ask " },
+];
+function SuggestListMessage({ message, latest, setDraft }) {
+  return (
+    <SimpleMessage label="Not sure" variant="chat-suggest" latest={latest}>
+      <p>{message.body || "I'm not sure how to use this. Did you mean to:"}</p>
+      <ul className="suggest-list">
+        {SUGGEST_OPTIONS.map((o) => (
+          <li key={o.cmd}>
+            <button type="button" className="suggest-option" onClick={() => setDraft?.(o.cmd)}>
+              {o.label} <code>{o.cmd.trim()}</code>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </SimpleMessage>
+  );
+}
+
 function UserMessage({ body, latest }) {
   return (
     <div className={`chat-msg chat-user ${latest ? "is-latest" : ""}`}>
@@ -194,7 +231,7 @@ function EmptyConversation() {
  * The conversation. User prompts and assistant command confirmations alternate
  * in the thread. Person reads live in the floating profile, never in this stream.
  */
-export function Chat({ messages, participants, decision, onShowNetwork, onCiteClick, onOpenCommands, draft, setDraft, onSubmit, isGenerating, openChat, placeholder, autoFocusInput }) {
+export function Chat({ messages, participants, decision, onShowNetwork, onCiteClick, onOpenCommands, onRunSuggestion, draft, setDraft, onSubmit, isGenerating, openChat, placeholder, autoFocusInput }) {
   const endRef = useRef(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -236,6 +273,8 @@ export function Chat({ messages, participants, decision, onShowNetwork, onCiteCl
             if (m.type === "updated") return <UpdatedMessage key={m.id} message={m} latest={latest} />;
             if (m.type === "coach") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} onCiteClick={onCiteClick} />;
             if (m.type === "read") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} isRead onCiteClick={onCiteClick} />;
+            if (m.type === "suggest") return <SuggestMessage key={m.id} message={m} latest={latest} onRunSuggestion={onRunSuggestion} />;
+            if (m.type === "suggest-list") return <SuggestListMessage key={m.id} message={m} latest={latest} setDraft={setDraft} />;
             if (m.type === "welcome") return null;
             return (
               <SimpleMessage key={m.id} label="No read" variant="chat-fallback" latest={latest}>

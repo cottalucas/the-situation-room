@@ -17,15 +17,28 @@ the definitive reference for the AI layer. Build to it.
 - **Offline-first evals.** Behavior is checked against mocked golden responses
   with no API calls. Live runs are deliberate and gated.
 
-## The two model surfaces
+## The three model surfaces
 
 1. **Commands (deterministic intake).** `@note`, `@energy` (alias `@grid`),
-   `@network`, `@map`, `@create`. Prose in, a validated `roomUpdate` out, applied
-   to Firestore state.
+   `@network`, `@map`. Prose in, a validated `roomUpdate` out, applied to
+   Firestore state. `@create` is retired as a user command (the panel and the
+   user-facing router drop it); the internal `create` command path still backs
+   onboarding's add-people step, so `ALLOWED_COMMANDS` and the apply capabilities
+   keep it.
 2. **Strategist (grounded reasoning).** `@ask`, "The Read", and the experimental
    open (non-command) chat. Prose question in, a grounded
    `{ answer, moves, cites, grounded }` out. Reasons over the room, cites the
    people/edges it used, declines off-topic and roleplay.
+3. **Intent classifier (plain-text routing, gated).** `/api/classify-intent`
+   maps a prefix-free message to one intent (`network`, `energy`, `note`, `ask`,
+   `map`, `unclear`) with a confidence. It never writes anything. The flag
+   `ENABLE_PLAIN_TEXT_ROUTING` (env `VITE_ENABLE_PLAIN_TEXT_ROUTING`) is **off in
+   production**: a confident intent surfaces a tappable suggestion pill that runs
+   the real command only on tap; low/unclear shows the command menu. Flipping the
+   flag on lets a high-confidence intent route silently (with a `↳ treated as`
+   label) and a medium one route with a confirmation. Analytics fire
+   `plain_text_classified { intent, confidence, acted }` only; the raw text is
+   never logged. Routing table evals: `npm run verify:classify`.
 
 Open chat is gated behind two layers: `src/lib/chat-guard.js` (deterministic
 input harness: empty / oversized / jailbreak / short pure-abuse blocked before any
@@ -36,12 +49,18 @@ roleplay refusal, profanity neutralized, injection ignored). It rides on
 The play generator (`/api/generate-play`) backs the `@play` command, called only
 after the deterministic readiness gate (`src/lib/play-readiness.js`) passes.
 First-person references resolve to the self record (`isSelf`), so the model never
-duplicates the operator. `@map` and `@create` also infer `influenceLevel`
-(high/medium/low/null) per participant over this decision, excluding the self user
-and never overwriting a user-set (`overridden`) level; the contract validates it
-in `normalizeRoomUpdate` and the apply path writes `decision.influence`. The
-command prompt is bumped to `room-command-v5-influence-2026-06-07` in both `src/`
-and `functions/`. Offline inference evals: `npm run verify:influence`.
+duplicates the operator. `@network`, `@map`, and `@create` infer `influenceLevel`
+(ring placement on the Network lens) per participant over this decision, excluding
+the self user and never overwriting a user-set (`overridden`) level. `@network`
+owns both jobs (edges plus influence) and gates influence on confidence: an
+uncertain read asks a clarifying question rather than writing. It never touches
+power/interest (`powerScore`); that is the Energy lens (`@energy`) only. The
+contract validates levels in `normalizeRoomUpdate`, the boundary lives in
+`commandCapabilities`/`influenceDecision`, and the apply path writes
+`decision.influence`. The command prompt is bumped to
+`room-command-v6-network-influence-2026-06-08` in both `src/` and `functions/`.
+Offline evals: `npm run verify:influence` (inference) and `npm run verify:network`
+(@network owns influence, never powerScore).
 
 ## Request path (end to end)
 

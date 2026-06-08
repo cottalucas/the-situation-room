@@ -157,6 +157,74 @@ export function normalizeStrategistAnswer(raw, participants = []) {
   return { kind: "coach", answer, moves, cites, grounded };
 }
 
+/**
+ * Which destinations a command is allowed to write. Network now owns influence
+ * (ring placement) in addition to edges, but never grid (power/interest) — that
+ * stays on the Energy lens. Keeping this pure and shared lets the offline evals
+ * assert the boundary without standing up React.
+ */
+export function commandCapabilities(sourceCommand) {
+  return {
+    notes: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
+    profile: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
+    grid: sourceCommand === "grid" || sourceCommand === "map" || sourceCommand === "create",
+    edges: sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
+    influence: sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
+  };
+}
+
+/**
+ * Decide what to do with one person's inferred influence level:
+ *   "write" — apply the level
+ *   "ask"   — uncertain, surface a clarifying question instead of writing
+ *   "skip"  — nothing to do (no level, self, or a hand-set level we must respect)
+ * Confidence gates only @network, where confidence speaks to influence directly.
+ * For @map/@create the confidence field describes the grid read, so it does not
+ * block an influence write there (preserving existing behavior).
+ */
+export function influenceDecision(item, current = {}, command) {
+  if (!item || !item.influenceLevel) return "skip";
+  if (current.isSelf) return "skip";
+  if (current.overridden) return "skip"; // a level the user set by hand wins
+  if (command === "network" && item.confidence === "low") return "ask";
+  return "write";
+}
+
+const INTENTS = new Set(["network", "energy", "note", "ask", "map", "unclear"]);
+
+/**
+ * Validate the plain-text intent classifier output. Anything off-contract becomes
+ * "unclear" at low confidence, so a malformed model response never routes.
+ */
+export function normalizeClassification(raw) {
+  if (!raw || typeof raw !== "object") return { intent: "unclear", confidence: "low", reasoning: "" };
+  const validIntent = INTENTS.has(raw.intent);
+  const intent = validIntent ? raw.intent : "unclear";
+  // A malformed or unclear intent never carries usable confidence into routing.
+  const confidence = validIntent && CONFIDENCE.has(raw.confidence) ? raw.confidence : "low";
+  return { intent, confidence, reasoning: cleanText(raw.reasoning, 200) };
+}
+
+/**
+ * Decide what the app does with a classification, given the routing flag.
+ * Flag ON  (after offline evals pass): high routes silently with a label,
+ *           medium routes with a confirmation, low/unclear shows suggestions.
+ * Flag OFF (production default): nothing mutates. A confident intent surfaces a
+ *           tappable pill ("Looks like @network, tap to run it"); low/unclear
+ *           shows the command suggestions. State only changes when the user taps.
+ * Pure, so the routing table is covered by offline evals.
+ */
+export function planClassificationAction(classification, enabled) {
+  const { intent, confidence } = normalizeClassification(classification);
+  const confident = intent !== "unclear" && (confidence === "high" || confidence === "medium");
+  if (!enabled) {
+    return confident ? { action: "pill", intent, confidence } : { action: "suggest", intent, confidence };
+  }
+  if (intent === "unclear" || confidence === "low") return { action: "suggest", intent, confidence };
+  if (confidence === "high") return { action: "route", intent, confidence };
+  return { action: "confirm", intent, confidence };
+}
+
 export function normalizeRoomUpdate(raw) {
   if (!raw || typeof raw !== "object") return null;
   const people = (Array.isArray(raw.people) ? raw.people : [])

@@ -5,6 +5,73 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-08 - @network owns influence, command cleanup, gated plain-text routing
+
+Three command-pipeline fixes plus a Network tooltip micro-fix. This pass touches
+the LLM prompts and Firebase Functions, which earlier passes were told to avoid,
+so it was flagged first: two items materially conflicted with the docs and the
+user resolved each before any code (see below). Deployed Functions + hosting.
+
+Conflicts flagged and resolved (orchestration loop step 2):
+- FIX 3 plain-text routing contradicted the roadmap ("re-open plain chat only
+  after eval scores are good enough") and turned plain text into a state-mutating
+  path. Resolution: build it but gate all mutation behind
+  `ENABLE_PLAIN_TEXT_ROUTING` (off in prod). Flag off, a confident classification
+  shows a tappable suggestion pill that runs the real command only on tap; low or
+  unclear shows the command menu. Nothing mutates without a tap.
+- FIX 2's "@map classifies then calls sub-handlers" contradicted the Haiku-only,
+  single-deterministic-call principle. Resolution: keep the one validated @map
+  call (it already routes to people/notes/energy/network); reword the description
+  only.
+
+FIX 1, @network owns influence. The bug: @network only wrote edges, so "Tymon has
+lower influence" never moved Tymon's ring. The influence schema already existed on
+`people[].influenceLevel`, so the fix reused it rather than inventing the spec's
+parallel `influenceUpdates` array (same spirit as keeping the `defers` token, not
+`defers_to`). `commandCapabilities` and `influenceDecision` moved into
+room-command-contract.js as pure, shared helpers: @network gained the influence
+capability (and keeps edges), still never gets the grid capability, so it can
+never touch power/interest. influenceDecision returns write / ask / skip:
+self-skip, a hand-set `overridden` level is never overwritten, and an uncertain
+(@network low-confidence) read asks a ring-specific clarifying question instead of
+writing. The @network prompt was rewritten to a JOB 1 (edges) / JOB 2 (influence)
+structure with the high/medium/low definitions and a CRITICAL DISTINCTION block
+(influenceLevel is the ring, power/interest is the Energy lens, never conflate,
+never ask about power when the user said influence), mirrored in both `src/` and
+`functions/`, version bumped to room-command-v6-network-influence-2026-06-08.
+Five acceptance evals written first (`verify:network`, 9/9): explicit writes,
+implied writes, ambiguous asks, overridden blocks, @network never touches grid.
+
+FIX 2, command cleanup. Removed `@create` from the commands panel and the
+user-facing router (regex + fallback copy); kept the internal `create` path
+because onboarding still drives it. Updated @add ("Add a person to this decision
+by name and role", no "outside person"), @network ("Map relationships and
+influence..."), and @map ("Describe the situation in plain language. Routes to the
+right commands automatically.").
+
+FIX 3, plain-text classifier. New cheap Haiku call `/api/classify-intent` (prompt
+`intent-classify-v1`, mirrored in functions and the dev middleware), client
+`classifyIntent`, contract `normalizeClassification` + `planClassificationAction`
+(the routing table, `verify:classify` 12/12). A malformed or unclear intent drops
+to low confidence so it never routes. onSubmit was made to accept a string as well
+as a form event, so the suggestion pill re-runs the text as a prefixed command
+(`@network ...`) through the exact same command path, reusing person resolution
+and apply. Analytics fire `plain_text_classified { intent, confidence, acted }`,
+never the raw text; the dev trace stores only the intent and confidence.
+
+Micro-fix: the You node tooltip dropped the "The decision-maker" subtitle for
+"This map shows the room from your perspective." (13px, --ink-soft). Shipped and
+deployed on its own first.
+
+Verified: all offline evals green (network 9, classify 12, influence 7, ring 26,
+guard 12, play 29, self 13), build clean, functions lint clean. Browser smoke in
+local preview: commands modal shows the new set with no @create; the suggestion
+pill and command menu render, and tapping the pill re-runs the text as @network.
+Live @network influence and the live classifier ride on VITE_ENABLE_LIVE_LLM and
+were covered by the offline evals, not by spending credits in this pass.
+
+---
+
 ## 2026-06-08 - Influence Ring: stable angles, drag affordances, larger type
 
 Three renderer-only fixes to the Network lens. No prompt or other lens touched.
