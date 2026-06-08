@@ -417,7 +417,7 @@ export function NetworkTab({ participants, decision, edges, roomId, onOpenProfil
           >
             <span className="ring-tooltip-name">{hoverNode.isSelf ? "You" : hoverNode.name}</span>
             {hoverNode.isSelf ? (
-              <span className="ring-tooltip-meta">The decision-maker</span>
+              <span className="ring-tooltip-meta">This map shows the room from your perspective.</span>
             ) : (() => {
               const lvl = badgeLevel(hoverNode.rawLevel);
               const prov = provenanceLine(hoverNode.rawLevel, influence[hoverNode.id]?.overridden);
