@@ -142,6 +142,44 @@ export async function classifyIntent(text) {
   }
 }
 
+/**
+ * Capture one confirmed or corrected mapping into the user's private example
+ * store. Fire-and-forget: the Function name-redacts the phrasing at write time, so
+ * raw note text and names never persist. The browser sends the note plus the names
+ * to redact (room participants); the Function stores only the redacted pattern.
+ * Never throws and never blocks the UI.
+ *
+ * @param {Object} args
+ * @param {string} args.phrasing        raw note text (redacted server-side, not stored)
+ * @param {string[]} args.redactNames   participant names/first names to redact
+ * @param {string} args.mappingOutcome  the band/stance/level that was committed
+ * @param {string} args.axis            power | interest | stance | influence
+ * @param {string} args.action          accept | adjust | skip
+ * @param {string} args.confidence      high | medium | low
+ * @param {boolean} args.wasAdjusted    true when the user corrected the suggestion
+ */
+export async function captureExample({ phrasing, redactNames, mappingOutcome, axis, action, confidence, wasAdjusted }) {
+  const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
+  if (!liveEnabled || !phrasing || !axis || !mappingOutcome) return;
+  try {
+    await fetch("/api/capture-example", {
+      method: "POST",
+      headers: await apiHeaders(),
+      body: JSON.stringify({
+        phrasing,
+        redactNames: Array.isArray(redactNames) ? redactNames : [],
+        mappingOutcome,
+        axis,
+        action: action || "accept",
+        confidence: confidence || "low",
+        wasAdjusted: Boolean(wasAdjusted),
+      }),
+    });
+  } catch {
+    // Best-effort personalization. Never surface a capture failure to the user.
+  }
+}
+
 export async function interpretRoomCommand({ command, text, room, decision, participants, edges, focusPerson, messages }) {
   const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
   if (!liveEnabled) {

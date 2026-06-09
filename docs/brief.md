@@ -11,10 +11,13 @@ the active surface. `@play` is now a first-class command: a deterministic
 client-side readiness gate decides whether the room holds enough signal, then
 either coaches the user to close the biggest gap or generates a grounded,
 pinned, immutable play card. The signed-in user is a first-class participant
-(rendered as "You"), so plays can reason about the operator's own position. Open
-(non-command) plain-text chat stays parked behind the live flag until mapping,
-trace capture, and evals are stronger. Next step is the privacy surface for
-export, delete, and clear data location.
+(rendered as "You"), so plays can reason about the operator's own position. The
+mapping read is grounded server-side in three layers the browser never sees:
+curated framework theory, curated cross-user phrasing heuristics, and a per-user
+store of the operator's own confirmed mappings (name-redacted, soft priors that
+never override the curated rules). Open (non-command) plain-text chat stays parked
+behind the live flag until mapping, trace capture, and evals are stronger. Next
+step is the privacy surface for export, delete, and clear data location.
 
 ## Problem
 The tools a product or corporate operator has help with the artifact, not the

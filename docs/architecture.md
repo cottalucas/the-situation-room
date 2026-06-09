@@ -198,6 +198,8 @@ stay plaintext so the app can query and render the map.
 ```
 users/{uid}                                      { name, email, position, createdAt,
                                                   settings }
+users/{uid}/learningExamples/{exampleId}        { phrasingPattern, mappingOutcome, axis,
+                                                  action, confidence, weight, createdAt }
 people/{personId}                               { ownerId, name, role, goal, context,
                                                   baseRead, visualTags, relationships,
                                                   fresh, external, createdAt }
@@ -259,6 +261,9 @@ authenticated HTTPS function, `api`, with these same-origin endpoints:
   readiness gate, and play evals.
 - `/api/classify-intent` for plain-text intent classification (a cheap call that
   never writes; gated behind `ENABLE_PLAIN_TEXT_ROUTING`, off in production).
+- `/api/capture-example` records one confirmed or corrected mapping into the
+  user's private learning example store. No model call: it name-redacts the
+  phrasing and writes one Firestore doc, so it runs before the LLM budget gate.
 
 The browser sends the Firebase Auth id token in the `Authorization` header.
 The function verifies the token, checks the per-user daily request and cost
@@ -296,6 +301,41 @@ language. It is curated by hand, never auto-grown from user data, and the
 combined grounding plus learnings prose is held under ~900 words by tightening
 rather than adding. It is bundled with the Function only, never in Firestore or
 `src/lib`.
+
+Per-user self-learning example store. A third, dynamic layer personalizes the
+read without breaking the cache. When a user confirms or corrects a suggested
+mapping, the Function records one example under the signed-in user's own document,
+`users/{uid}/learningExamples/{exampleId}`:
+`{ phrasingPattern, mappingOutcome, axis, action, confidence, weight, createdAt }`.
+The phrasing is name-redacted at write time by `functions/learning-store.js`
+(`redactPattern`): every participant name and first name, plus emails and
+`@handles`, becomes `[person]` before anything is stored. Raw note text and names
+never reach Firestore. `axis` is one of power, interest, stance, influence;
+`action` is accept, adjust, or skip (a corrected mapping is the strongest signal;
+a skip is a low-weight negative). Privacy is enforced two ways: the redaction at
+write time, and `firestore.rules` denying the client both read and write on
+`learningExamples`. Only the Function (Admin SDK, which bypasses rules) reads and
+writes it with verified auth, so the browser never sees the collection. The
+capture call carries no analytics content: the client fires one fire-and-forget
+`example_captured { action_type, was_adjusted }` event (enums only, never
+phrasing, names, or note text).
+
+At call time the Function reads this user's recent examples
+(`readUserExamples`, ordered by recency through the automatic single-field index,
+over-fetched then capped), builds a soft-prior block (`buildUserPriorsBlock`,
+`selectUserPriors`), and appends it as one extra system block BELOW the cached
+prefix, after the `cache_control` breakpoint, so the cached grounding plus
+learnings stays byte-identical and cached. Hard rules: the block states that the
+curated grounding and global learnings ALWAYS outweigh the priors; skip negatives
+are never surfaced as priors; and the slice is capped at five
+(`MAX_USER_PRIORS`) so a user's repeated mistakes can never dominate the read
+(the loop must not learn errors as truth). Each command trace records
+`userPriorsCount`. `functions/learning-store.js` is server-only (bundled with the
+Function, never imported by `src/`), the same boundary as the grounding. The Vite
+dev bridge redacts through the same helper for parity but does not persist
+examples or inject priors (the store is production-only). Offline eval:
+`npm run verify:learning` proves redaction-before-storage, the soft-prior
+precedence rule, and the five-example cap.
 
 The grounding and learnings are
 not mirrored in `src/`, so they carry their own `GROUNDING_VERSION` and
@@ -588,7 +628,9 @@ Production calls write trace metadata to
 `users/{uid}/llmUsage/{YYYY-MM-DD}`. Firestore rules allow the signed-in user
 to read their own usage and trace records; writes come from the Admin SDK in
 the Function. Raw production prompts and raw model text are stored only when
-`LLM_STORE_RAW_TRACES=true`.
+`LLM_STORE_RAW_TRACES=true`. The user's `learningExamples` subcollection is the
+stricter case: client read and write are both denied, so only the Function
+touches it.
 
 This is the V1 trace analysis layer in the AI eval flywheel. Local raw traces
 are best for prompt debugging. Production metadata is best for monitoring
@@ -629,6 +671,15 @@ participant has `npm run verify:self`: first-person references resolve to the se
 record so the apply path attaches instead of creating a duplicate, and the room
 context flags exactly one self. Both run offline with no credits.
 
+The per-user learning example store has `npm run verify:learning`: it imports the
+pure helpers in `functions/learning-store.js` and proves the three guarantees
+that matter for privacy and for not learning errors as truth: (a) name redaction
+happens before storage (names, emails, and handles become `[person]`, with
+substring safety), (b) user examples are soft priors that never override a clear
+grounding rule (the block marks them lowest priority, states the grounding always
+outweighs, and never surfaces skip negatives), and (c) the five-example cap holds.
+Offline, no credits, no Firebase.
+
 ## Folder structure
 
 ```
@@ -662,6 +713,7 @@ src/
   scripts/
     eval-v1.mjs           offline/live eval harness
     trace-summary.mjs     aggregate local trace latency, tokens, cost
+    verify-learning.mjs   offline checks for the per-user example store
   hooks/
     useAuth.js            Firebase auth state
     useStore.js           subscribe a component to the store
@@ -691,6 +743,7 @@ src/
     Room.jsx              the app, wires store and UI state together
 functions/
   index.js                authenticated Claude API and trace writer
+  learning-store.js       server-only per-user example store: redaction, priors
   package.json            Firebase Functions runtime dependencies
   .env.example            function runtime knobs, no API key
 firebase.json             hosting, Firestore rules, and function source

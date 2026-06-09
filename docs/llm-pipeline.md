@@ -131,6 +131,24 @@ user prose
   learnings are not mirrored in `src/`, so they have their own versions and are
   excluded from the `COMMAND_PROMPT_VERSION` sync check (`COMMAND_SYSTEM_PROMPT`
   stays identical across both files); the Vite dev bridge does not carry them.
+- **Per-user soft priors (dynamic, below the cache).** A third layer personalizes
+  the read without breaking the cache. When a user confirms or corrects a
+  suggested mapping, the Function captures one name-redacted example
+  (`/api/capture-example` -> `functions/learning-store.js#buildExample`, which
+  redacts every participant name, email, and handle to `[person]` BEFORE storage)
+  under `users/{uid}/learningExamples`. Client read and write are denied in
+  `firestore.rules`; only the Function touches it. At command time the Function
+  reads this user's recent confirmed examples, builds a soft-prior block
+  (`buildUserPriorsBlock`), and appends it as one system block BELOW the cached
+  prefix (after the `cache_control` breakpoint), so the static prefix stays
+  cached. Hard rules baked into the block and the selection: the curated grounding
+  and global learnings ALWAYS outweigh the priors, skip negatives never surface,
+  and the slice is capped at five (`MAX_USER_PRIORS`) so a user's repeated
+  mistakes cannot dominate, the loop must not learn errors as truth. Traces record
+  `userPriorsCount`. Analytics are content-free: one fire-and-forget
+  `example_captured { action_type, was_adjusted }`, never phrasing or names.
+  `functions/learning-store.js` is server-only; the dev bridge redacts through it
+  for parity but does not persist or inject. Offline eval: `npm run verify:learning`.
 
 ### Source of truth vs hand-synced copy (the one drift risk)
 
@@ -161,7 +179,9 @@ A shared module or a CI version-match assertion is the planned hardening.
   resolver), `verify:autoread` (threshold + cache-bust), `verify:confidence`
   (placement confidence shape), `verify:play` (the `@play` readiness gate, reason
   codes, coaching, coaching-reply stance parse, and play shape), `verify:self`
-  (first-person resolves to the self record), `verify:emulator` (Firestore
+  (first-person resolves to the self record), `verify:learning` (the per-user
+  example store: name redaction before storage, soft-prior precedence over a clear
+  grounding rule, and the five-example cap), `verify:emulator` (Firestore
   transport, needs Java).
 - `npm run eval:live` (gated by `EVAL_ALLOW_LIVE=true` and `--live`): runs the
   fixtures against a live dev server. Bound spend with `EVAL_MAX_CASES` or

@@ -17,6 +17,7 @@ import {
   classifyPrompt,
 } from "./src/lib/llm-prompts.js";
 import { estimateCostUsd, makeTraceId, writeLlmTrace } from "./src/lib/llm-trace.js";
+import { buildExample } from "./functions/learning-store.js";
 
 const MAX_BODY_BYTES = 120_000;
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -402,6 +403,30 @@ function localAnthropicPlugin(env) {
             error: err?.message || "Local mapping endpoint failed.",
           });
           return sendJson(res, err?.status || 500, { error: err?.message || "Local mapping endpoint failed." });
+        }
+      });
+
+      // Dev parity for the capture path. It redacts the phrasing through the same
+      // pure helper the Function uses, so name redaction can be exercised locally,
+      // but the dev bridge does not persist examples or inject per-user priors
+      // (the example store is a production-only feature, the same accepted parity
+      // gap as the server-only grounding and global learnings).
+      server.middlewares.use("/api/capture-example", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "POST only." });
+        if (!isLocalRequest(req)) return sendJson(res, 403, { error: "Local requests only." });
+        try {
+          const payload = JSON.parse(await readBody(req));
+          const built = buildExample({
+            phrasing: payload?.phrasing,
+            names: Array.isArray(payload?.redactNames) ? payload.redactNames : [],
+            mappingOutcome: payload?.mappingOutcome,
+            axis: payload?.axis,
+            action: payload?.action,
+            confidence: payload?.confidence,
+          });
+          return sendJson(res, built ? 200 : 400, built ? { ok: true } : { error: "Unusable example." });
+        } catch (err) {
+          return sendJson(res, 500, { error: err?.message || "Capture endpoint failed." });
         }
       });
     },

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
-import { interpretRoomCommand, askStrategist, buildContext, generatePlay, classifyIntent } from "../lib/context.js";
+import { interpretRoomCommand, askStrategist, buildContext, generatePlay, classifyIntent, captureExample } from "../lib/context.js";
 import { checkPlayReadiness, buildPlayCoaching, nextCoachingStep, playStamp, playSituation } from "../lib/play-readiness.js";
 import { trackEvent, trackNetwork } from "../lib/firebase.js";
 import { consumeOnboardingPending } from "../lib/auth.js";
@@ -148,6 +148,71 @@ function gridClarification(person, axis, value) {
 
 function softGridConfirm(person, power, interest) {
   return `I read ${person.name} as roughly ${power} power and ${interest} interest, but I was not certain. Adjust if that is off.`;
+}
+
+// Map a calibrated grid value to its band label, so a captured example stores the
+// qualitative read ("high") rather than a brittle exact number. Mirrors the
+// calibration rubric: very low 10-20, low 25-35, moderate 45-55, high 70-80,
+// very high 85-95.
+function gridBand(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 20) return "very low";
+  if (n <= 35) return "low";
+  if (n <= 55) return "moderate";
+  if (n <= 80) return "high";
+  return "very high";
+}
+
+// Names to redact from a captured phrasing: every participant's full name and
+// first name. The Function redacts these to [person] before storing, so the raw
+// names never persist.
+function redactNamesFor(participants) {
+  const names = new Set();
+  for (const p of participants || []) {
+    const full = (p?.name || "").trim();
+    if (!full) continue;
+    names.add(full);
+    const first = full.split(/\s+/)[0];
+    if (first) names.add(first);
+  }
+  return [...names];
+}
+
+// Was this submission a correction of a prior suggestion? In the conversational
+// flow there are no Accept/Adjust/Skip buttons: the model proposes and applies,
+// and a follow-up that answers a soft-confirm or clarification (the last assistant
+// turn carried questions) is the adjust signal. Otherwise it is an accept.
+function lastTurnHadQuestions(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (!m || m.type === "user") continue;
+    return Array.isArray(m.questions) && m.questions.length > 0;
+  }
+  return false;
+}
+
+// Capture the mappings that committed from a user note as per-user examples. The
+// phrasing is the user's own note; the Function redacts names at write time. One
+// content-free analytics event per submission, enums only.
+function captureLearnedMappings({ message, noteText, participants, priorMessages }) {
+  const learned = message?.learned;
+  if (!Array.isArray(learned) || !learned.length || !noteText) return;
+  const wasAdjusted = lastTurnHadQuestions(priorMessages || []);
+  const action = wasAdjusted ? "adjust" : "accept";
+  const redactNames = redactNamesFor(participants);
+  learned.forEach((item) => {
+    captureExample({
+      phrasing: noteText,
+      redactNames,
+      mappingOutcome: item.outcome,
+      axis: item.axis,
+      action,
+      confidence: item.confidence,
+      wasAdjusted,
+    });
+  });
+  trackNetwork("example_captured", { action_type: action, was_adjusted: wasAdjusted });
 }
 
 // influence clarification copy stays about the ring, never about power/interest.
@@ -729,6 +794,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       let influenced = 0;
       const clarificationQuestions = [];
       const confirmQuestions = [];
+      // Mappings that actually committed, surfaced so the caller can capture them
+      // as per-user learning examples. Each is { axis, outcome, confidence }.
+      const learned = [];
       const caps = commandCapabilities(sourceCommand);
 
       update.people.forEach((item) => {
@@ -750,6 +818,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         if (caps.grid && item.position && item.position !== currentDecision?.positions?.[id]) {
           store.setPosition(targetDecisionId, id, item.position);
           positions += 1;
+          if (item.position !== "unknown") learned.push({ axis: "stance", outcome: item.position, confidence: item.confidence });
         }
         if (caps.grid && item.power != null && item.interest != null) {
           const currentPlacement = currentDecision?.placements?.[id] || {};
@@ -764,6 +833,10 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           }
           store.setPlacement(targetDecisionId, id, item.power, item.interest, item.confidence);
           placements += 1;
+          const powerBand = gridBand(item.power);
+          const interestBand = gridBand(item.interest);
+          if (powerBand) learned.push({ axis: "power", outcome: powerBand, confidence: item.confidence });
+          if (interestBand) learned.push({ axis: "interest", outcome: interestBand, confidence: item.confidence });
           if (item.confidence === "low" && !confirmQuestions.length) {
             confirmQuestions.push(softGridConfirm(store.getPerson(id) || item, item.power, item.interest));
           }
@@ -778,6 +851,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           if (verdict === "write") {
             store.setInfluence(targetDecisionId, id, item.influenceLevel, false);
             influenced += 1;
+            learned.push({ axis: "influence", outcome: item.influenceLevel, confidence: item.confidence });
           } else if (verdict === "ask" && clarificationQuestions.length < 2) {
             clarificationQuestions.push(influenceClarification(store.getPerson(id) || item));
           }
@@ -841,6 +915,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         label: commandResultLabel(sourceCommand),
         body,
         questions: [...clarificationQuestions, ...confirmQuestions, ...modelQuestions].slice(0, 2),
+        learned,
       };
     },
     [decision, ensurePersonForUpdate, findPersonRef, room, store]
@@ -1038,6 +1113,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           });
           if (resp.kind === "update") {
             const message = applyRoomUpdate(resp.update, "map") || { label: "Room updated", body: "Updated the room." };
+            captureLearnedMappings({ message, noteText: q, participants: store.getParticipants(decision.id), priorMessages });
             store.pushMessage(decision.id, { type: "updated", ...message });
             let nextParticipants = store.getParticipants(decision.id);
             let recheck = checkPlayReadiness({ participants: nextParticipants, decision: store.getDecision(decision.id) });
@@ -1110,6 +1186,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             if (resp.kind === "update") {
               const message = applyRoomUpdate(resp.update, "note") || { label: "Note saved", body: `Updated ${target.name}.` };
               trackEvent("observation_create", { source: "chat_note" });
+              captureLearnedMappings({ message, noteText: body, participants: store.getParticipants(decision.id), priorMessages });
               store.pushMessage(decision.id, { type: "updated", ...message });
             } else {
               const text = cleanShortNote(body);
@@ -1166,6 +1243,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           if (resp.kind === "update") {
             const message = applyRoomUpdate(resp.update, command) || { label: "Map updated", body: "Updated the room." };
             trackEvent("room_map_update", { command });
+            captureLearnedMappings({ message, noteText: text, participants: store.getParticipants(decision.id), priorMessages });
             store.pushMessage(decision.id, { type: "updated", ...message });
           } else {
             store.pushMessage(decision.id, { type: "fallback", body: resp.body });

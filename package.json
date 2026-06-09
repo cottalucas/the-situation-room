@@ -25,7 +25,8 @@
     "verify:influence": "node scripts/verify-influence.mjs",
     "verify:influence-ring": "node scripts/verify-influence-ring.mjs",
     "verify:network": "node scripts/verify-network-influence.mjs",
-    "verify:classify": "node scripts/verify-classify.mjs"
+    "verify:classify": "node scripts/verify-classify.mjs",
+    "verify:learning": "node scripts/verify-learning.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",

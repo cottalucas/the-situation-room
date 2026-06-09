@@ -4,6 +4,7 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
+import { buildExample, buildUserPriorsBlock, selectUserPriors } from "./learning-store.js";
 
 initializeApp();
 
@@ -622,6 +623,7 @@ async function recordUsage(uid, meta) {
     groundingVersion: meta.groundingVersion || null,
     learningsVersion: meta.learningsVersion || null,
     systemPrefixTokens: meta.systemPrefixTokens || null,
+    userPriorsCount: meta.userPriorsCount || 0,
     validation: meta.validation || null,
     latencyMs: meta.latencyMs || null,
     usage: meta.usage || null,
@@ -638,6 +640,25 @@ async function recordUsage(uid, meta) {
   await batch.commit();
 }
 
+// Read this user's recent learning examples for the soft-prior slice. Over-fetch
+// past the cap (skip negatives are filtered out and the rest capped by
+// selectUserPriors) and order by recency through the automatic single-field
+// index, so no composite index is needed. Best-effort: a read failure must never
+// break a command, it just means no personalization this call.
+async function readUserExamples(uid) {
+  try {
+    const snap = await db.collection(`users/${uid}/learningExamples`).orderBy("createdAt", "desc").limit(12).get();
+    return snap.docs.map((doc) => {
+      const data = doc.data() || {};
+      const created = data.createdAt;
+      const millis = created && typeof created.toMillis === "function" ? created.toMillis() : Number(created) || 0;
+      return { ...data, createdAt: millis };
+    });
+  } catch {
+    return [];
+  }
+}
+
 function publicMeta(meta) {
   return {
     traceId: meta.traceId,
@@ -649,6 +670,7 @@ function publicMeta(meta) {
     groundingVersion: meta.groundingVersion || null,
     learningsVersion: meta.learningsVersion || null,
     systemPrefixTokens: meta.systemPrefixTokens || null,
+    userPriorsCount: meta.userPriorsCount || 0,
     validation: meta.validation || null,
     latencyMs: meta.latencyMs || null,
     usage: meta.usage || null,
@@ -704,8 +726,28 @@ export const api = onRequest({ secrets: [anthropicApiKey], timeoutSeconds: 60, m
 
   try {
     decoded = await authenticate(req);
-    await assertBudget(decoded.uid);
     const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+
+    // Capture a confirmed/corrected mapping into the user's private example store.
+    // No model call and no API key needed, so it runs before the LLM budget gate.
+    // The phrasing is name-redacted here, at write time, by buildExample: the raw
+    // note text and the names never reach Firestore. Writes go through the Admin
+    // SDK only; security rules deny the client both read and write.
+    if (endpoint === "/capture-example") {
+      const built = buildExample({
+        phrasing: payload.phrasing,
+        names: Array.isArray(payload.redactNames) ? payload.redactNames : [],
+        mappingOutcome: payload.mappingOutcome,
+        axis: payload.axis,
+        action: payload.action,
+        confidence: payload.confidence,
+      });
+      if (!built) return sendJson(res, 400, { error: "Unusable example." });
+      await db.collection(`users/${decoded.uid}/learningExamples`).add({ ...built, createdAt: FieldValue.serverTimestamp() });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    await assertBudget(decoded.uid);
     const apiKey = anthropicApiKey.value();
     if (!apiKey) return sendJson(res, 500, { error: "ANTHROPIC_API_KEY secret is missing." });
 
@@ -718,10 +760,18 @@ export const api = onRequest({ secrets: [anthropicApiKey], timeoutSeconds: 60, m
       if (!ALLOWED_COMMANDS.has(command)) return sendJson(res, 400, { error: "Unsupported room command." });
       const maxTokens = maxTokensForCommand(command);
       const prompt = roomCommandPrompt({ command, text, context, focusPerson });
-      const llm = await callAnthropicJson({ apiKey, system: COMMAND_SYSTEM_BLOCKS, content: prompt, maxTokens, model });
+      // Personalization without breaking the cache: the static grounding +
+      // global-learnings prefix stays byte-identical and cached; this user's small
+      // soft-prior slice is appended as one extra system block AFTER the
+      // cache_control breakpoint, so it never invalidates the cached prefix.
+      const userExamples = await readUserExamples(decoded.uid);
+      const priorsBlock = buildUserPriorsBlock(userExamples);
+      const userPriorsCount = priorsBlock ? selectUserPriors(userExamples).length : 0;
+      const system = priorsBlock ? [...COMMAND_SYSTEM_BLOCKS, { type: "text", text: priorsBlock }] : COMMAND_SYSTEM_BLOCKS;
+      const llm = await callAnthropicJson({ apiKey, system, content: prompt, maxTokens, model });
       const update = normalizeRoomUpdate(llm.parsed);
       const estimatedCostUsd = estimateCostUsd(llm.usage);
-      const meta = { traceId: id, endpoint: "interpret-room-command", command, status: update ? "ok" : "invalid", model, promptVersion: COMMAND_PROMPT_VERSION, groundingVersion: GROUNDING_VERSION, learningsVersion: GLOBAL_LEARNINGS_VERSION, systemPrefixTokens: COMMAND_SYSTEM_PREFIX_TOKENS, latencyMs: Date.now() - started, usage: llm.usage, estimatedCostUsd, validation: update ? "valid_room_update" : "invalid_room_update_shape", request: { command, text, context, focusPerson }, rawText: llm.rawText, normalized: update };
+      const meta = { traceId: id, endpoint: "interpret-room-command", command, status: update ? "ok" : "invalid", model, promptVersion: COMMAND_PROMPT_VERSION, groundingVersion: GROUNDING_VERSION, learningsVersion: GLOBAL_LEARNINGS_VERSION, systemPrefixTokens: COMMAND_SYSTEM_PREFIX_TOKENS, userPriorsCount, latencyMs: Date.now() - started, usage: llm.usage, estimatedCostUsd, validation: update ? "valid_room_update" : "invalid_room_update_shape", request: { command, text, context, focusPerson }, rawText: llm.rawText, normalized: update };
       await recordUsage(decoded.uid, meta);
       if (!update) return sendJson(res, 422, { error: "Claude returned an invalid mapping shape.", meta: publicMeta(meta) });
       return sendJson(res, 200, { update, meta: publicMeta(meta) });

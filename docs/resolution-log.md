@@ -5,6 +5,69 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-09 - Per-user self-learning example store
+
+Built the third personalization layer: a per-user store of confirmed/corrected
+mappings, injected at call time as soft priors below the cached prefix.
+
+Capture. `applyRoomUpdate` now returns `learned` (the grid/stance/influence
+mappings that actually committed, grid numbers reduced to bands via `gridBand`).
+The command handlers (`@map`/`@energy`/`@grid`/`@network`, `@note`, and the
+`@play` coaching reply) call `captureLearnedMappings`, which posts to the new
+`/api/capture-example` endpoint. The Function name-redacts the phrasing at write
+time (`functions/learning-store.js#buildExample` -> `redactPattern`: every
+participant name and first name, plus emails and `@handles`, becomes `[person]`;
+emails/handles are redacted first so name redaction cannot break an address into
+an unmatchable form), then writes one doc to
+`users/{uid}/learningExamples/{exampleId}`:
+`{ phrasingPattern, mappingOutcome, axis, action, confidence, weight, createdAt }`.
+Raw note text and names never reach Firestore. `action` is accept | adjust |
+skip; adjust (a correction) is the strongest signal, skip a low-weight negative.
+
+Privacy. Two enforcement points: redaction before storage, and
+`firestore.rules` denying the client both read and write on `learningExamples`
+(only the Admin SDK in the Function touches it, with verified auth). Verified the
+store logic and contents are absent from the built `dist/`. Analytics are
+content-free: one fire-and-forget `example_captured { action_type, was_adjusted }`
+via `trackNetwork`, never phrasing, names, or note text.
+
+Use at call time. The static cached prefix (grounding + global learnings) is
+unchanged and stays cached. The Function reads the user's recent examples
+(`readUserExamples`, ordered by recency through the automatic single-field index,
+over-fetched then capped, best-effort so a read failure never breaks a command),
+builds a soft-prior block, and appends it as one extra system block AFTER the
+`cache_control` breakpoint. Hard rule, stated in the block and enforced by
+selection: curated grounding + global learnings ALWAYS outweigh user priors; skip
+negatives are never surfaced; the slice is capped at five (`MAX_USER_PRIORS`) so
+repeated user mistakes cannot dominate. Traces record `userPriorsCount`.
+
+Dependency interpretation flagged (orchestration loop step 2). The task said it
+"depends on the suggestion confirm/adjust/skip flow existing." That flow exists
+conversationally, not as discrete Accept/Adjust/Skip buttons: the model proposes
+and applies, low-confidence reads append a soft-confirm, and extreme changes are
+held for a clarification. Mapping chosen and documented: ACCEPT = a mapping that
+committed from a user note; ADJUST = a submission that answers a prior soft-confirm
+or clarification (the last assistant turn carried questions, `lastTurnHadQuestions`);
+SKIP = supported end-to-end in the Function, store, and evals but not actively
+UI-triggered in v1 (no clean dismiss action; the spec marks skip optional). If a
+discrete button flow lands later, only the capture trigger changes.
+
+Eval. `npm run verify:learning` (18/18), imports the pure helpers and proves
+(a) name redaction before storage (names, full names, possessives, emails,
+handles, plus substring safety), (b) user examples are soft priors that never
+override a clear grounding rule (block marks them lowest priority, states the
+grounding always outweighs, never surfaces skip negatives), (c) the five-example
+cap holds and keeps the most recent. No live eval changes this pass; each stored
+example is shaped as input phrasing -> expected mapping so it can seed one later.
+
+Server-only module. `functions/learning-store.js` is bundled with the Function
+and never imported by `src/`. The Vite dev bridge redacts through the same helper
+for parity but does not persist examples or inject priors (production-only
+feature, the same accepted dev gap as grounding/global learnings). Offline evals
+19/19, build clean. Deployed Functions + hosting + rules; pushed.
+
+---
+
 ## 2026-06-09 - GLOBAL_LEARNINGS: curated phrasing heuristics in the cached prefix
 
 Added a second server-only static module, `GLOBAL_LEARNINGS`
