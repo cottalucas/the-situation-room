@@ -110,18 +110,27 @@ user prose
   vocabulary, the suggestion-versus-note output contract). No named people, no
   worked cases, no colleague data: examples live in a separate example store. It
   is bundled with the Function only, never in Firestore and never in `src/lib`
-  (which ships to the browser), so the client cannot read it. It is the cached
-  system prefix on `@note`/`@grid`/`@network`/`@map` (and internal `create`/`net`):
-  the system is two static blocks, grounding then `COMMAND_SYSTEM_PROMPT`, with
-  `cache_control: { type: "ephemeral" }` on the last; per-call note text and room
-  snapshot stay below it in the user turn. On Haiku 4.5 the cache needs a
-  4096-token prefix to activate, and the static prefix is ~1.4k tokens, so
+  (which ships to the browser), so the client cannot read it. A second server-only
+  static module, `GLOBAL_LEARNINGS` (`GLOBAL_LEARNINGS_VERSION`), follows it:
+  curated, name-agnostic phrasing-to-mapping heuristics that hold across users
+  (for example, "rubber-stamped it" maps to interest low, not stance supportive),
+  each a concrete `[person]` phrasing mapped to an axis or stance with a short
+  reason, shaped so it could become an eval case. It is curated by hand, never
+  auto-grown from user data; grounding plus learnings stays under ~900 words by
+  tightening, not adding. The two are the cached system prefix on
+  `@note`/`@grid`/`@network`/`@map` (and internal `create`/`net`): the system is
+  three static blocks, grounding then `GLOBAL_LEARNINGS` then
+  `COMMAND_SYSTEM_PROMPT`, with `cache_control: { type: "ephemeral" }` on the last;
+  per-call note text and room snapshot stay below it in the user turn. On Haiku 4.5
+  the cache needs a 4096-token prefix to activate, and the static prefix is ~1.8k
+  tokens, so
   `cache_read_input_tokens` is 0 today by design (density wins over padding); the
   wiring is correct, free, and auto-activates if the shared prefix later crosses
-  4096. Traces log `groundingVersion` and an approximate `systemPrefixTokens`. The
-  grounding is not mirrored in `src/`, so it has its own version and is excluded
-  from the `COMMAND_PROMPT_VERSION` sync check (`COMMAND_SYSTEM_PROMPT` stays
-  identical across both files); the Vite dev bridge does not carry it.
+  4096 as the curated learnings grow. Traces log `groundingVersion`,
+  `learningsVersion`, and an approximate `systemPrefixTokens`. The grounding and
+  learnings are not mirrored in `src/`, so they have their own versions and are
+  excluded from the `COMMAND_PROMPT_VERSION` sync check (`COMMAND_SYSTEM_PROMPT`
+  stays identical across both files); the Vite dev bridge does not carry them.
 
 ### Source of truth vs hand-synced copy (the one drift risk)
 

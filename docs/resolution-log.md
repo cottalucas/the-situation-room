@@ -5,6 +5,50 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-09 - GLOBAL_LEARNINGS: curated phrasing heuristics in the cached prefix
+
+Added a second server-only static module, `GLOBAL_LEARNINGS`
+(`GLOBAL_LEARNINGS_VERSION = global-learnings-v1-2026-06-09`), to
+`functions/index.js`, appended to the cached command prefix immediately after
+`FRAMEWORK_GROUNDING` and before `COMMAND_SYSTEM_PROMPT`. The system is now three
+static blocks (grounding, learnings, parser prompt) with
+`cache_control: { type: "ephemeral" }` still on the last, so the static prefix
+caches as one block; per-call note text and room snapshot stay below it in the
+user turn.
+
+Content: 12 curated, name-agnostic phrasing-to-mapping heuristics that hold across
+all users, each a concrete phrasing with a `[person]`/`[other]` placeholder mapped
+to an axis or stance plus a short reason (for example, "rubber-stamped it" ->
+interest low not stance supportive; "others run things past [person]" -> power
+high; "went quiet after raising concerns" -> stance unknown; "keeps re-raising the
+same objection" -> interest high, stance resistant). It refines the grounding's
+signal-mapping with concrete language. Each rule is phrased as input phrasing ->
+expected mapping so it can later be turned into an eval case (no eval changes in
+this pass, as instructed).
+
+Curation and budget: the set is curated by hand, NOT auto-grown from user data
+(this is the boundary that keeps it a static, reviewable, name-agnostic asset and
+not a per-user data sink). Grounding plus learnings is 701 words, under the ~900
+budget; the rule is to tighten rather than add when it grows.
+
+Same privacy as the grounding: server-only, bundled with the Function, not in
+Firestore and not in `src/lib` (browser-bundled), so the client cannot read it. No
+Firestore path touched, so `firestore.rules` is unchanged. Verified absent from
+the built `dist/` bundle.
+
+Caching unchanged in spirit: cached prefix is now ~1753 tokens, still below the
+Haiku 4.5 4096-token floor, so `cache_read_input_tokens` stays 0 by design; the
+wiring is correct and free and auto-activates when the curated learnings push the
+prefix past 4096. This is the expected growth path the earlier decision named.
+Traces now also record `learningsVersion`. Version sync still holds: the learnings
+are functions-only with their own version, excluded from the
+`COMMAND_PROMPT_VERSION` check, and `COMMAND_SYSTEM_PROMPT` is byte-identical
+across `src/` and `functions/`. The Vite dev bridge does not carry the learnings
+(same accepted dev parity gap as the grounding). Offline evals 19/19. Deployed
+Functions + hosting; pushed.
+
+---
+
 ## 2026-06-09 - Server-only framework grounding as cached command prefix
 
 Added a private `FRAMEWORK_GROUNDING` constant (`GROUNDING_VERSION =

@@ -98,6 +98,32 @@ OUTPUT CONTRACT.
 - When the signal does not support an inference, return unknown or omit the field. Never fabricate a value to fill the shape.
 `.trim();
 
+// Global learnings. Curated, name-agnostic phrasing-to-mapping heuristics that
+// hold across all users. Same privacy as the grounding: server-only, bundled with
+// the Function, never in Firestore and never in src/lib, so the client cannot read
+// it. This set is CURATED by hand, not auto-grown from user data. Each rule is one
+// concrete phrasing (with a [person]/[other] placeholder) mapped to an axis or
+// stance plus a short reason, phrased so it could later become an eval case
+// (input phrasing -> expected mapping). Extend by tightening, not bloating: keep
+// grounding + learnings under ~900 words.
+const GLOBAL_LEARNINGS_VERSION = "global-learnings-v1-2026-06-09";
+const GLOBAL_LEARNINGS = `
+Global learnings. Curated, name-agnostic phrasing-to-mapping heuristics that hold across users. They refine the framework signals above with concrete phrasings. [person] and [other] stand for whoever the user names. Apply a rule only when the note matches it; the framework grounding still governs.
+
+- "[person] rubber-stamped it" or "did not push back" -> interest: low, not stance: supportive. Compliance is not engagement.
+- "others run things past [person]" or "wait for [person]'s read" -> power: high. Deference reveals power.
+- "[person] went quiet after raising concerns" -> stance: unknown. Silence is not assent.
+- "[person] keeps re-raising the same objection" -> interest: high, stance: resistant.
+- "[person] signs off on budget, headcount, or scope" -> power: high. Resource control.
+- "needs [person]'s approval" or "[person] can block this" -> influence: high. Decision gate on this decision.
+- "[person] was cc'd but has not weighed in" -> interest: low, stance: unknown. Non-response is not agreement.
+- "[person] is championing this" or "pushing hard for it" -> interest: high, stance: supportive.
+- "[person] reports to [other]" -> edge defers from [person] to [other]. One reporting line is one defers edge, nothing more.
+- "[person] gets interrupted or talked over" -> power: low. Low deference.
+- "[person] agreed in the room but has not acted" -> stance: unknown. A stated position is not a real interest; watch behavior.
+- "[person] only cares how this hits their team or headcount" -> interest: high, with a SCARF status or fairness threat and a guarded stance.
+`.trim();
+
 // Rough token estimate, only for watching the cached prefix grow toward the
 // Haiku 4.5 4096-token cache floor. Heuristic (~4 chars/token), not a tokenizer.
 function approxTokens(text) {
@@ -105,17 +131,19 @@ function approxTokens(text) {
 }
 
 // Cached static system prefix for every structured command call (@note, @grid,
-// @network, @map, plus the internal create/net). Grounding first, then the static
-// parser prompt; cache_control marks the static prefix so the two cache as one
-// block. Per-call note text and room context ride in the user turn, never inside
+// @network, @map, plus the internal create/net). Grounding first, then the curated
+// global learnings that refine its signal-mapping with concrete phrasings, then the
+// static parser prompt; cache_control marks the static prefix so the three cache as
+// one block. Per-call note text and room context ride in the user turn, never inside
 // this prefix. On Haiku 4.5 the prefix must reach 4096 tokens before the cache
 // activates, so cache_read can read 0 until the prefix grows past the floor.
 const COMMAND_SYSTEM_BLOCKS = [
   { type: "text", text: FRAMEWORK_GROUNDING },
+  { type: "text", text: GLOBAL_LEARNINGS },
   { type: "text", text: COMMAND_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
 ];
-const COMMAND_SYSTEM_PREFIX_TOKENS = approxTokens(FRAMEWORK_GROUNDING) + approxTokens(COMMAND_SYSTEM_PROMPT);
-console.log(`[grounding] ${GROUNDING_VERSION} cached system prefix ~${COMMAND_SYSTEM_PREFIX_TOKENS} tokens (Haiku 4.5 cache floor 4096).`);
+const COMMAND_SYSTEM_PREFIX_TOKENS = approxTokens(FRAMEWORK_GROUNDING) + approxTokens(GLOBAL_LEARNINGS) + approxTokens(COMMAND_SYSTEM_PROMPT);
+console.log(`[grounding] ${GROUNDING_VERSION} + ${GLOBAL_LEARNINGS_VERSION} cached system prefix ~${COMMAND_SYSTEM_PREFIX_TOKENS} tokens (Haiku 4.5 cache floor 4096).`);
 
 const PLAY_SYSTEM_PROMPT = `
 You are The Situation Room's play generator.
@@ -592,6 +620,7 @@ async function recordUsage(uid, meta) {
     model: meta.model,
     promptVersion: meta.promptVersion,
     groundingVersion: meta.groundingVersion || null,
+    learningsVersion: meta.learningsVersion || null,
     systemPrefixTokens: meta.systemPrefixTokens || null,
     validation: meta.validation || null,
     latencyMs: meta.latencyMs || null,
@@ -618,6 +647,7 @@ function publicMeta(meta) {
     model: meta.model,
     promptVersion: meta.promptVersion,
     groundingVersion: meta.groundingVersion || null,
+    learningsVersion: meta.learningsVersion || null,
     systemPrefixTokens: meta.systemPrefixTokens || null,
     validation: meta.validation || null,
     latencyMs: meta.latencyMs || null,
@@ -691,7 +721,7 @@ export const api = onRequest({ secrets: [anthropicApiKey], timeoutSeconds: 60, m
       const llm = await callAnthropicJson({ apiKey, system: COMMAND_SYSTEM_BLOCKS, content: prompt, maxTokens, model });
       const update = normalizeRoomUpdate(llm.parsed);
       const estimatedCostUsd = estimateCostUsd(llm.usage);
-      const meta = { traceId: id, endpoint: "interpret-room-command", command, status: update ? "ok" : "invalid", model, promptVersion: COMMAND_PROMPT_VERSION, groundingVersion: GROUNDING_VERSION, systemPrefixTokens: COMMAND_SYSTEM_PREFIX_TOKENS, latencyMs: Date.now() - started, usage: llm.usage, estimatedCostUsd, validation: update ? "valid_room_update" : "invalid_room_update_shape", request: { command, text, context, focusPerson }, rawText: llm.rawText, normalized: update };
+      const meta = { traceId: id, endpoint: "interpret-room-command", command, status: update ? "ok" : "invalid", model, promptVersion: COMMAND_PROMPT_VERSION, groundingVersion: GROUNDING_VERSION, learningsVersion: GLOBAL_LEARNINGS_VERSION, systemPrefixTokens: COMMAND_SYSTEM_PREFIX_TOKENS, latencyMs: Date.now() - started, usage: llm.usage, estimatedCostUsd, validation: update ? "valid_room_update" : "invalid_room_update_shape", request: { command, text, context, focusPerson }, rawText: llm.rawText, normalized: update };
       await recordUsage(decoded.uid, meta);
       if (!update) return sendJson(res, 422, { error: "Claude returned an invalid mapping shape.", meta: publicMeta(meta) });
       return sendJson(res, 200, { update, meta: publicMeta(meta) });

@@ -279,21 +279,38 @@ the Function only, never written to Firestore and never placed in `src/lib`
 note; the Function prepends the grounding and calls Haiku; only the normalized
 result returns to the client. It is wired as the cached system prefix on every
 structured command (`@note`, `@grid`/`@energy`, `@network`, `@map`, plus the
-internal `create`/`net`): the system is two static text blocks, the grounding
-then `COMMAND_SYSTEM_PROMPT`, with `cache_control: { type: "ephemeral" }` on the
-last so the static prefix caches as one block. The per-call note text and room
-snapshot ride in the user turn, always below the cached prefix. The grounding is
-not mirrored in `src/`, so it carries its own `GROUNDING_VERSION` and is kept off
-the `COMMAND_PROMPT_VERSION` sync check (`COMMAND_SYSTEM_PROMPT` stays
-byte-identical across the two files). On Haiku 4.5 the cache only activates above
-a 4096-token prefix; the current static prefix is ~1.4k tokens, so
+internal `create`/`net`): the system is three static text blocks, the grounding,
+then `GLOBAL_LEARNINGS`, then `COMMAND_SYSTEM_PROMPT`, with
+`cache_control: { type: "ephemeral" }` on the last so the static prefix caches as
+one block. The per-call note text and room snapshot ride in the user turn, always
+below the cached prefix.
+
+`GLOBAL_LEARNINGS` (`GLOBAL_LEARNINGS_VERSION`) is a second server-only static
+module under the same privacy rules: curated, name-agnostic phrasing-to-mapping
+heuristics that hold across all users (for example, "rubber-stamped it" maps to
+interest low rather than stance supportive). Each rule is one concrete phrasing
+with a `[person]`/`[other]` placeholder mapped to an axis or stance plus a short
+reason, deliberately shaped so it could later become an eval case (input phrasing
+to expected mapping). It refines the grounding's signal-mapping with concrete
+language. It is curated by hand, never auto-grown from user data, and the
+combined grounding plus learnings prose is held under ~900 words by tightening
+rather than adding. It is bundled with the Function only, never in Firestore or
+`src/lib`.
+
+The grounding and learnings are
+not mirrored in `src/`, so they carry their own `GROUNDING_VERSION` and
+`GLOBAL_LEARNINGS_VERSION` and are kept off the `COMMAND_PROMPT_VERSION` sync
+check (`COMMAND_SYSTEM_PROMPT` stays byte-identical across the two files). On
+Haiku 4.5 the cache only activates above a 4096-token prefix; the current static
+prefix is ~1.8k tokens, so
 `cache_read_input_tokens` reads 0 today. The wiring is correct and free (a
 sub-floor prefix is not charged a write) and activates automatically if the
 shared prefix later grows past 4096. Each command trace records `groundingVersion`
 and an approximate `systemPrefixTokens` so the prefix size is logged as it
-approaches the floor. The local Vite bridge imports `COMMAND_SYSTEM_PROMPT` from
-`src/lib`, so it does not carry the grounding; this is an accepted dev parity gap
-in service of keeping the theory off the client.
+approaches the floor, plus `groundingVersion` and `learningsVersion`. The local
+Vite bridge imports `COMMAND_SYSTEM_PROMPT` from `src/lib`, so it does not carry
+the grounding or the learnings; this is an accepted dev parity gap in service of
+keeping the theory off the client.
 
 Runtime knobs live in `functions/.env.example`. The production key is never in
 source control; set it with `firebase functions:secrets:set ANTHROPIC_API_KEY`.
