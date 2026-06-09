@@ -5,6 +5,62 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-09 - Server-only framework grounding as cached command prefix
+
+Added a private `FRAMEWORK_GROUNDING` constant (`GROUNDING_VERSION =
+framework-grounding-v1-2026-06-09`) to `functions/index.js` and wired it as the
+cached system prefix on every structured command (`@note`, `@grid`/`@energy`,
+`@network`, `@map`, plus internal `create`/`net`). Content is timeless theory
+only: power versus interest as independent axes (with the explicit rule that
+disengagement, lateness, and "does not care" are interest signals that never
+lower a power read), Mendelow quadrants, one operational signal line each for
+SCARF / Cialdini / Thomas-Kilmann / Fisher and Ury, the signal-reading lenses
+(silence is not assent, loss aversion in reorg and budget fights, stated reason
+is not the real reason, deference reveals power, one data point is low
+confidence), the stance vocabulary (supportive/resistant/neutral/unknown, unknown
+terminal), and the output contract (note applies verbatim; stance/grid/influence
+are suggestions with a <=12-word reason each, omit rather than fabricate). No
+named people, worked cases, or colleague data: examples are explicitly deferred
+to a separate example store. ~452 words, ~699 tokens.
+
+Privacy. It is bundled with the Function only. It is NOT in Firestore and NOT in
+`src/lib/llm-prompts.js` (which is browser-bundled), so the browser client cannot
+read it. No Firestore path was touched, so `firestore.rules` needed no change
+(the requirement to set client read = false only applies if a path is added). The
+browser still sends only a note; the Function prepends grounding, calls Haiku, and
+returns the normalized result.
+
+Caching. System is two static text blocks, grounding then `COMMAND_SYSTEM_PROMPT`,
+with `cache_control: { type: "ephemeral" }` on the last so the static prefix
+caches as one block; per-call note text and room snapshot stay below it in the
+user turn (`roomCommandPrompt`). Cache token fields already flow through
+`usage` -> `estimateCostUsd`/`publicMeta`/`recordUsage`.
+
+Conflict flagged and resolved (orchestration loop step 2). Haiku 4.5 only caches
+prefixes >= 4096 tokens, but the dense module plus `COMMAND_SYSTEM_PROMPT` is
+~1356 tokens, so "cached prefix" and "verify cache hits" cannot both hold on
+Haiku-only without padding. The user chose density over forcing a hit: wire
+`cache_control` as specced, do not pad, accept `cache_read_input_tokens = 0` at
+current size (the wiring is correct and free, since a sub-floor prefix is not
+charged a write, and auto-activates if the shared prefix later crosses 4096 as
+global learnings and per-user examples grow). The verification step was replaced:
+instead of asserting non-zero cache hits, confirm (a) the static prefix and
+dynamic note text are correctly separated (static in `system`, per-call content
+in the user turn) and (b) the prefix token count is logged so the approach to
+4096 is visible. Each command trace now records `groundingVersion` and an
+approximate `systemPrefixTokens` (heuristic ~4 chars/token), and the Function logs
+the prefix size on cold start.
+
+Version sync. The grounding is functions-only, so it carries its own
+`GROUNDING_VERSION` and is excluded from the `COMMAND_PROMPT_VERSION` sync check;
+`COMMAND_SYSTEM_PROMPT` stays byte-identical across `src/` and `functions/`, and
+the prompt-version diff still passes. The Vite dev bridge imports
+`COMMAND_SYSTEM_PROMPT` from `src/lib`, so it does not carry the grounding: an
+accepted dev parity gap in service of keeping the theory off the client. Offline
+evals 19/19. Deployed Functions + hosting; pushed.
+
+---
+
 ## 2026-06-08 - Fix: Commands modal hidden behind the mobile companion
 
 Follow-up from a user report that the "/" button "did not open the command list"

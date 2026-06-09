@@ -102,6 +102,26 @@ user prose
   `defers` edge and nothing more.
 - **Anaphora:** the system prompt resolves pronouns ("she", "he", "they", "this",
   "too") against `recentTurns` and the roster; it never invents a person.
+- **Server-only framework grounding (cached prefix).** Structured commands run on
+  top of a private `FRAMEWORK_GROUNDING` constant in `functions/index.js`
+  (`GROUNDING_VERSION`): timeless theory only (power versus interest as
+  independent axes, Mendelow quadrants, one signal line each for SCARF, Cialdini,
+  Thomas-Kilmann, Fisher and Ury, the signal-reading lenses, the stance
+  vocabulary, the suggestion-versus-note output contract). No named people, no
+  worked cases, no colleague data: examples live in a separate example store. It
+  is bundled with the Function only, never in Firestore and never in `src/lib`
+  (which ships to the browser), so the client cannot read it. It is the cached
+  system prefix on `@note`/`@grid`/`@network`/`@map` (and internal `create`/`net`):
+  the system is two static blocks, grounding then `COMMAND_SYSTEM_PROMPT`, with
+  `cache_control: { type: "ephemeral" }` on the last; per-call note text and room
+  snapshot stay below it in the user turn. On Haiku 4.5 the cache needs a
+  4096-token prefix to activate, and the static prefix is ~1.4k tokens, so
+  `cache_read_input_tokens` is 0 today by design (density wins over padding); the
+  wiring is correct, free, and auto-activates if the shared prefix later crosses
+  4096. Traces log `groundingVersion` and an approximate `systemPrefixTokens`. The
+  grounding is not mirrored in `src/`, so it has its own version and is excluded
+  from the `COMMAND_PROMPT_VERSION` sync check (`COMMAND_SYSTEM_PROMPT` stays
+  identical across both files); the Vite dev bridge does not carry it.
 
 ### Source of truth vs hand-synced copy (the one drift risk)
 
