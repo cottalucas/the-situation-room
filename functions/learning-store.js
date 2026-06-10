@@ -104,10 +104,11 @@ export function selectUserPriors(examples, cap = MAX_USER_PRIORS) {
 }
 
 /**
- * Render the soft-prior system block appended BELOW the cached prefix. Returns
- * null when there is nothing to add (so the request stays on the cached prefix
- * alone). The block states the hard rule explicitly: grounding and global
- * learnings always outweigh these priors.
+ * Render the soft-prior system block appended below the static system prompt.
+ * Returns null when there is nothing to add. The controller is the only role
+ * that carries this idiolect layer: it reads these as hints for this user's
+ * phrasing and shorthand. The block states the hard rule explicitly: the
+ * curated grounding and global learnings always outweigh these priors.
  */
 export function buildUserPriorsBlock(examples) {
   const priors = selectUserPriors(examples);
@@ -117,7 +118,7 @@ export function buildUserPriorsBlock(examples) {
   );
   return [
     "User priors. Soft, lowest priority, for this one user.",
-    `These are weak personalization hints from what this user confirmed or corrected before, capped at ${MAX_USER_PRIORS}. The framework grounding and the global learnings above ALWAYS outweigh them. Never follow a prior that conflicts with a grounding rule or a global learning, and never let a repeated user phrasing override a clear signal in the note. When a prior and the grounding disagree, follow the grounding.`,
+    `These are weak personalization hints from what this user confirmed or corrected before, capped at ${MAX_USER_PRIORS}. The curated framework grounding and the global learnings ALWAYS outweigh them. Never follow a prior that conflicts with a grounding rule or a global learning, and never let a repeated user phrasing override a clear signal in the input. When a prior and the grounding disagree, follow the grounding.`,
     ...lines,
   ].join("\n");
 }

@@ -120,13 +120,16 @@ export async function askStrategist({ question, room, decision, participants, ed
 }
 
 /**
- * Classify prefix-free plain text into a command intent. Cheap single call,
- * never mutates anything. Only the text is sent, never the room context, and the
- * caller never logs the raw text. Returns a normalized { intent, confidence }.
+ * Run plain text through the controller (the evolved intent classifier). Cheap
+ * single call, never mutates anything. Only the text is sent, never the room
+ * context, and the caller never logs the raw text. Returns a normalized
+ * { intent, command, cleanedIntent, confidence, clarifyingQuestion }.
  */
+const UNCLEAR_CLASSIFICATION = { intent: "unclear", command: null, cleanedIntent: "", confidence: "low", clarifyingQuestion: "" };
+
 export async function classifyIntent(text) {
   const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
-  if (!liveEnabled) return { kind: "fallback", classification: { intent: "unclear", confidence: "low", reasoning: "" } };
+  if (!liveEnabled) return { kind: "fallback", classification: { ...UNCLEAR_CLASSIFICATION } };
   try {
     const res = await fetch("/api/classify-intent", {
       method: "POST",
@@ -137,8 +140,8 @@ export async function classifyIntent(text) {
     const data = await res.json();
     return { kind: "ok", classification: normalizeClassification(data?.classification) };
   } catch {
-    // A failed classification degrades to "unclear", never to a silent mutation.
-    return { kind: "fallback", classification: { intent: "unclear", confidence: "low", reasoning: "" } };
+    // A failed controller read degrades to "unclear", never to a silent mutation.
+    return { kind: "fallback", classification: { ...UNCLEAR_CLASSIFICATION } };
   }
 }
 
@@ -180,7 +183,7 @@ export async function captureExample({ phrasing, redactNames, mappingOutcome, ax
   }
 }
 
-export async function interpretRoomCommand({ command, text, room, decision, participants, edges, focusPerson, messages }) {
+export async function interpretRoomCommand({ command, text, room, decision, participants, edges, focusPerson, messages, instruction }) {
   const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
   if (!liveEnabled) {
     return {
@@ -196,6 +199,10 @@ export async function interpretRoomCommand({ command, text, room, decision, part
       body: JSON.stringify({
         command,
         text,
+        // The controller's cleaned_intent, when this call came through the
+        // plain-text relay. The mapper trusts it for intent; the verbatim text
+        // stays the source for saved notes.
+        instruction: instruction || null,
         focusPerson: focusPerson
           ? { id: focusPerson.id, name: focusPerson.name, role: focusPerson.role }
           : null,

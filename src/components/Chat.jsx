@@ -138,14 +138,19 @@ function CoachMessage({ message, people, latest, isRead, onCiteClick }) {
   );
 }
 
-// Plain-text classification, routing flag off: a guidance pill that runs the
-// suggested command on tap. Never mutates state on its own.
+// Controller read, routing flag off: a guidance pill that dispatches the stored
+// controller plan on tap. Never mutates state on its own.
+function suggestPillLabel(message) {
+  if (message.intent === "advise") return "Run @ask";
+  if (message.intent === "both") return `Run @${message.command || "map"} plus advice`;
+  return `Run @${message.command || message.intent}`;
+}
 function SuggestMessage({ message, latest, onRunSuggestion }) {
   return (
     <SimpleMessage label="Suggestion" variant="chat-suggest" latest={latest}>
       <p>{message.body}</p>
-      <button type="button" className="suggest-pill" onClick={() => onRunSuggestion?.(message.intent, message.text)}>
-        Run @{message.intent}
+      <button type="button" className="suggest-pill" onClick={() => onRunSuggestion?.(message)}>
+        {suggestPillLabel(message)}
       </button>
     </SimpleMessage>
   );

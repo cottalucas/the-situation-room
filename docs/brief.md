@@ -13,9 +13,13 @@ either coaches the user to close the biggest gap or generates a grounded,
 pinned, immutable play card. The signed-in user is a first-class participant
 (rendered as "You"), so plays can reason about the operator's own position. The
 mapping read is grounded server-side in three layers the browser never sees:
-curated framework theory, curated cross-user phrasing heuristics, and a per-user
-store of the operator's own confirmed mappings (name-redacted, soft priors that
-never override the curated rules). Open (non-command) plain-text chat stays parked
+curated framework theory and curated cross-user phrasing heuristics (one shared
+module behind both the mapper and the strategist), and a per-user store of the
+operator's own confirmed mappings (name-redacted, soft priors that never
+override the curated rules, carried by the controller as its idiolect layer).
+Open (non-command) plain-text chat enters through a three-role relay: a
+controller reads intent and dispatches to the mapper and/or strategist,
+surfacing a tappable suggestion pill in production; silent routing stays parked
 behind the live flag until mapping, trace capture, and evals are stronger. Next
 step is the privacy surface for export, delete, and clear data location.
 

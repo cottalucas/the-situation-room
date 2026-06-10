@@ -190,39 +190,54 @@ export function influenceDecision(item, current = {}, command) {
   return "write";
 }
 
-const INTENTS = new Set(["network", "energy", "note", "ask", "map", "unclear"]);
 
 /**
- * Validate the plain-text intent classifier output. Anything off-contract becomes
- * "unclear" at low confidence, so a malformed model response never routes.
+ * Validate the controller output (the evolved intent classifier). Anything
+ * off-contract becomes "unclear" at low confidence, so a malformed model
+ * response never routes. A map/both intent always carries a mapping command;
+ * an off-contract command falls back to the broad "map" intake.
  */
+const CONTROLLER_INTENTS = new Set(["map", "advise", "both", "unclear"]);
+const CONTROLLER_COMMANDS = new Set(["note", "energy", "network", "map"]);
+
 export function normalizeClassification(raw) {
-  if (!raw || typeof raw !== "object") return { intent: "unclear", confidence: "low", reasoning: "" };
-  const validIntent = INTENTS.has(raw.intent);
+  if (!raw || typeof raw !== "object") return { intent: "unclear", command: null, cleanedIntent: "", confidence: "low", clarifyingQuestion: "" };
+  const validIntent = CONTROLLER_INTENTS.has(raw.intent);
   const intent = validIntent ? raw.intent : "unclear";
+  const needsCommand = intent === "map" || intent === "both";
+  const command = needsCommand ? (CONTROLLER_COMMANDS.has(raw.command) ? raw.command : "map") : null;
   // A malformed or unclear intent never carries usable confidence into routing.
   const confidence = validIntent && CONFIDENCE.has(raw.confidence) ? raw.confidence : "low";
-  return { intent, confidence, reasoning: cleanText(raw.reasoning, 200) };
+  // Accept both the raw model keys (snake_case) and an already-normalized
+  // object (camelCase): the client re-normalizes the Function's response.
+  return {
+    intent,
+    command,
+    cleanedIntent: cleanText(raw.cleaned_intent ?? raw.cleanedIntent, 500),
+    confidence,
+    clarifyingQuestion: cleanText(raw.clarifying_question ?? raw.clarifyingQuestion, 240),
+  };
 }
 
 /**
- * Decide what the app does with a classification, given the routing flag.
- * Flag ON  (after offline evals pass): high routes silently with a label,
- *           medium routes with a confirmation, low/unclear shows suggestions.
- * Flag OFF (production default): nothing mutates. A confident intent surfaces a
- *           tappable pill ("Looks like @network, tap to run it"); low/unclear
- *           shows the command suggestions. State only changes when the user taps.
- * Pure, so the routing table is covered by offline evals.
+ * Decide what the app does with a controller read, given the routing flag.
+ * Sequenced dispatch table, never an LLM-to-LLM loop:
+ * - unclear or low confidence: "clarify". The controller asks its one clarifying
+ *   question and never guesses. Nothing mutates.
+ * Flag OFF (production default): nothing mutates on its own. A confident read
+ *   surfaces a tappable pill; state only changes when the user taps it.
+ * Flag ON  (after offline evals pass): high routes silently with a "treated as"
+ *   label, medium routes with a confirmation note.
+ * Pure, so the dispatch table is covered by offline evals.
  */
 export function planClassificationAction(classification, enabled) {
-  const { intent, confidence } = normalizeClassification(classification);
-  const confident = intent !== "unclear" && (confidence === "high" || confidence === "medium");
-  if (!enabled) {
-    return confident ? { action: "pill", intent, confidence } : { action: "suggest", intent, confidence };
+  const { intent, command, cleanedIntent, confidence, clarifyingQuestion } = normalizeClassification(classification);
+  if (intent === "unclear" || confidence === "low") {
+    return { action: "clarify", intent: "unclear", command: null, confidence, question: clarifyingQuestion };
   }
-  if (intent === "unclear" || confidence === "low") return { action: "suggest", intent, confidence };
-  if (confidence === "high") return { action: "route", intent, confidence };
-  return { action: "confirm", intent, confidence };
+  if (!enabled) return { action: "pill", intent, command, confidence, cleanedIntent };
+  if (confidence === "high") return { action: "route", intent, command, confidence, cleanedIntent };
+  return { action: "confirm", intent, command, confidence, cleanedIntent };
 }
 
 export function normalizeRoomUpdate(raw) {

@@ -259,8 +259,12 @@ authenticated HTTPS function, `api`, with these same-origin endpoints:
 - `/api/strategist` for the grounded `@ask` stakeholder coach.
 - `/api/generate-play` for the `@play` generator, behind the deterministic
   readiness gate, and play evals.
-- `/api/classify-intent` for plain-text intent classification (a cheap call that
-  never writes; gated behind `ENABLE_PLAIN_TEXT_ROUTING`, off in production).
+- `/api/classify-intent` for the controller, the evolved plain-text intent
+  classifier and the dispatcher of the three-role relay (a cheap call that never
+  writes; it returns intent, mapping command, a cleaned instruction for the next
+  expert, confidence, and one optional clarifying question; silent routing is
+  gated behind `ENABLE_PLAIN_TEXT_ROUTING`, off in production). It is the only
+  call that carries the per-user idiolect priors.
 - `/api/capture-example` records one confirmed or corrected mapping into the
   user's private learning example store. No model call: it name-redacts the
   phrasing and writes one Firestore doc, so it runs before the LLM budget gate.
@@ -272,8 +276,8 @@ normalizes the JSON response, records usage and trace metadata, and returns a
 small public meta object to the browser. Raw prompts and raw Claude responses
 are not returned to the browser.
 
-Server-only framework grounding. `functions/index.js` carries a private
-`FRAMEWORK_GROUNDING` constant (`GROUNDING_VERSION`): timeless stakeholder theory
+Server-only shared knowledge base. `functions/knowledge.js` carries
+`FRAMEWORK_GROUNDING` (`GROUNDING_VERSION`): timeless stakeholder theory
 (power versus interest as independent axes, Mendelow quadrants, one operational
 signal line each for SCARF, Cialdini, Thomas-Kilmann, and Fisher and Ury, the
 signal-reading lenses, the stance vocabulary, and the suggestion-versus-note
@@ -281,17 +285,20 @@ output contract). It holds no named people, worked cases, or colleague data;
 concrete examples live in a separate example store, not here. It is bundled with
 the Function only, never written to Firestore and never placed in `src/lib`
 (which ships to the browser), so the client cannot read it. The browser sends a
-note; the Function prepends the grounding and calls Haiku; only the normalized
-result returns to the client. It is wired as the cached system prefix on every
-structured command (`@note`, `@grid`/`@energy`, `@network`, `@map`, plus the
-internal `create`/`net`): the system is three static text blocks, the grounding,
-then `GLOBAL_LEARNINGS`, then `COMMAND_SYSTEM_PROMPT`, with
+note; the Function prepends the knowledge and calls Haiku; only the normalized
+result returns to the client. The module feeds two cached system prefixes. The
+mapper prefix rides on every structured command (`@note`, `@grid`/`@energy`,
+`@network`, `@map`, plus the internal `create`/`net`): three static text blocks,
+the grounding, then `GLOBAL_LEARNINGS`, then `COMMAND_SYSTEM_PROMPT`, with
 `cache_control: { type: "ephemeral" }` on the last so the static prefix caches as
-one block. The per-call note text and room snapshot ride in the user turn, always
-below the cached prefix.
+one block. The strategist prefix (`/api/strategist`) is the grounding, then
+`GLOBAL_LEARNINGS`, then `STRATEGIST_SYSTEM_PROMPT`; the strategist shares the
+knowledge but never the extraction contract. Per-call text and room snapshot
+ride in the user turn, always below the cached prefix. The controller gets
+neither block: it is a language and intent expert only.
 
-`GLOBAL_LEARNINGS` (`GLOBAL_LEARNINGS_VERSION`) is a second server-only static
-module under the same privacy rules: curated, name-agnostic phrasing-to-mapping
+`GLOBAL_LEARNINGS` (`GLOBAL_LEARNINGS_VERSION`) is the second half of that
+module, under the same privacy rules: curated, name-agnostic phrasing-to-mapping
 heuristics that hold across all users (for example, "rubber-stamped it" maps to
 interest low rather than stance supportive). Each rule is one concrete phrasing
 with a `[person]`/`[other]` placeholder mapped to an axis or stance plus a short
@@ -320,16 +327,19 @@ capture call carries no analytics content: the client fires one fire-and-forget
 `example_captured { action_type, was_adjusted }` event (enums only, never
 phrasing, names, or note text).
 
-At call time the Function reads this user's recent examples
-(`readUserExamples`, ordered by recency through the automatic single-field index,
-over-fetched then capped), builds a soft-prior block (`buildUserPriorsBlock`,
-`selectUserPriors`), and appends it as one extra system block BELOW the cached
-prefix, after the `cache_control` breakpoint, so the cached grounding plus
-learnings stays byte-identical and cached. Hard rules: the block states that the
-curated grounding and global learnings ALWAYS outweigh the priors; skip negatives
-are never surfaced as priors; and the slice is capped at five
-(`MAX_USER_PRIORS`) so a user's repeated mistakes can never dominate the read
-(the loop must not learn errors as truth). Each command trace records
+At controller time (`/api/classify-intent`) the Function reads this user's
+recent examples (`readUserExamples`, ordered by recency through the automatic
+single-field index, over-fetched then capped), builds a soft-prior block
+(`buildUserPriorsBlock`, `selectUserPriors`), and appends it as one extra system
+block below the controller prompt. The controller, and only the controller,
+carries this idiolect layer: the priors teach it how this one user phrases
+things, so the cleaned instruction it hands the mapper already reflects the
+user's shorthand. The mapper and strategist never receive the priors, so their
+cached knowledge prefixes stay byte-identical and cached. Hard rules: the block
+states that the curated grounding and global learnings ALWAYS outweigh the
+priors; skip negatives are never surfaced as priors; and the slice is capped at
+five (`MAX_USER_PRIORS`) so a user's repeated mistakes can never dominate the
+read (the loop must not learn errors as truth). Each controller trace records
 `userPriorsCount`. `functions/learning-store.js` is server-only (bundled with the
 Function, never imported by `src/`), the same boundary as the grounding. The Vite
 dev bridge redacts through the same helper for parity but does not persist
@@ -337,17 +347,18 @@ examples or inject priors (the store is production-only). Offline eval:
 `npm run verify:learning` proves redaction-before-storage, the soft-prior
 precedence rule, and the five-example cap.
 
-The grounding and learnings are
-not mirrored in `src/`, so they carry their own `GROUNDING_VERSION` and
-`GLOBAL_LEARNINGS_VERSION` and are kept off the `COMMAND_PROMPT_VERSION` sync
+The knowledge module (`functions/knowledge.js`) is
+not mirrored in `src/`, so it carries its own `GROUNDING_VERSION` and
+`GLOBAL_LEARNINGS_VERSION` and is kept off the `COMMAND_PROMPT_VERSION` sync
 check (`COMMAND_SYSTEM_PROMPT` stays byte-identical across the two files). On
 Haiku 4.5 the cache only activates above a 4096-token prefix; the current static
-prefix is ~1.8k tokens, so
+prefixes are ~2k tokens, so
 `cache_read_input_tokens` reads 0 today. The wiring is correct and free (a
-sub-floor prefix is not charged a write) and activates automatically if the
-shared prefix later grows past 4096. Each command trace records `groundingVersion`
+sub-floor prefix is not charged a write) and activates automatically if a
+prefix later grows past 4096. Each command trace records `groundingVersion`
 and an approximate `systemPrefixTokens` so the prefix size is logged as it
-approaches the floor, plus `groundingVersion` and `learningsVersion`. The local
+approaches the floor; strategist traces record `groundingVersion` and
+`learningsVersion` too. The local
 Vite bridge imports `COMMAND_SYSTEM_PROMPT` from `src/lib`, so it does not carry
 the grounding or the learnings; this is an accepted dev parity gap in service of
 keeping the theory off the client.
@@ -431,16 +442,21 @@ model. Token budget per call stays small: eight short turns plus the room snapsh
 is well under the per-command max tokens.
 
 Open chat (experimental). When `VITE_ENABLE_LIVE_LLM` is on, plain text that is
-not a command routes to the grounded strategist through `/api/strategist`, so the
-chat can hold an open conversation without becoming a generic chatbot. Two layers
-of defense: `src/lib/chat-guard.js#screenOpenMessage` runs first and blocks empty,
-oversized, jailbreak/prompt-injection, and short pure-abuse input with a calm
-redirect and no model call; whatever passes goes to the strategist, which stays on
-the room, declines off-topic and roleplay (`grounded: false`), converts profanity
-to professional behavior, never diagnoses, and ignores embedded instructions. The
-strategist prompt is `strategist-v2`. Venting that carries real room content is
-allowed through and neutralized by the model. Analytics: `open_chat`,
-`open_chat_blocked {reason}`.
+not a command enters the three-role relay: `src/lib/chat-guard.js#screenOpenMessage`
+runs first and blocks empty, oversized, jailbreak/prompt-injection, and short
+pure-abuse input with a calm redirect and no model call; whatever passes goes to
+the controller (`/api/classify-intent`), which reads intent and either asks one
+clarifying question, surfaces a suggestion pill (production default), or, with
+`ENABLE_PLAIN_TEXT_ROUTING` on, dispatches to the mapper
+(`/api/interpret-room-command`, with the controller's cleaned instruction) and/or
+the strategist (`/api/strategist`); a "both" read maps first, then advises on the
+updated room. The strategist stays on the room, declines off-topic and roleplay
+(`grounded: false`), converts profanity to professional behavior, never
+diagnoses, and ignores embedded instructions. Its prompt is `strategist-v4`,
+running on the shared server-only knowledge base. Venting that carries real room
+content is allowed through and neutralized by the model. Analytics: `open_chat`,
+`open_chat_blocked {reason}`, `plain_text_classified { intent, command,
+confidence, routed_to, resolution, acted }` (enums only, never text).
 
 Guided Setup (one engine, two doors). New account creation marks a one-shot
 local onboarding flag. The conversation engine lives in `src/lib/onboarding.js`
@@ -498,8 +514,9 @@ myself) to the self record before any create, so the apply path attaches updates
 to the operator instead of creating a duplicate. The command context
 (`compactRoomCommandContext`) flags the self person with `isSelf`, and the
 command system prompt instructs the model to bind first-person to that id and
-never create a new person for the operator (prompt version
-`room-command-v4-self-2026-06-06`, mirrored in `functions/index.js`). Self
+never create a new person for the operator (added in `room-command-v4-self`;
+the current command prompt is `room-command-v7-relay-2026-06-09`, mirrored in
+`functions/index.js`). Self
 renders distinctly as "You" in the People lens, roster, Energy grid
 (`chip-self`), and network, and is excluded from the "Add from directory" list
 so neither the user nor the model can create a duplicate. Local preview seeds one
@@ -543,7 +560,9 @@ returns `{ answer, moves, cites, grounded }`. `normalizeStrategistAnswer` ground
 coach cannot reference invented people. It also enforces house style
 deterministically: it strips em and en dashes, and a decline (`grounded: false`)
 carries an empty `moves` array regardless of what the model returns. The system
-prompt (`strategist-v3`) keeps answers to two to four sentences with at most three
+prompt (`strategist-v4`, riding on the shared server-only knowledge base in
+production, never the extraction contract) keeps answers to two to four sentences
+with at most three
 one-sentence moves, declines off-topic / roleplay with `grounded: false`, and when
 the room is too thin for a confident play it asks one focused question or names
 what to map next instead of forcing a full play. It runs on Haiku with a 900 token
@@ -743,6 +762,7 @@ src/
     Room.jsx              the app, wires store and UI state together
 functions/
   index.js                authenticated Claude API and trace writer
+  knowledge.js            server-only shared knowledge base: grounding, learnings
   learning-store.js       server-only per-user example store: redaction, priors
   package.json            Firebase Functions runtime dependencies
   .env.example            function runtime knobs, no API key

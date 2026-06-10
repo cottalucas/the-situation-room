@@ -33,13 +33,27 @@ const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 // Open (non-command) chat is experimental and routes to the grounded strategist
 // behind the input guard. It rides on the live LLM flag.
 const OPEN_CHAT = LIVE_LLM;
-// Plain-text routing. OFF in production: plain text is classified and surfaced as
-// a tappable suggestion pill, never routed silently and never mutating state.
-// Flip to true (VITE_ENABLE_PLAIN_TEXT_ROUTING=true) only once the offline evals
-// and live trace review say the classifier is good enough to act on its own.
+// Plain-text routing. OFF in production: plain text runs through the controller
+// and surfaces as a tappable suggestion pill, never routed silently and never
+// mutating state. Flip to true (VITE_ENABLE_PLAIN_TEXT_ROUTING=true) only once
+// the offline evals and live trace review say the controller is good enough to
+// act on its own.
 const ENABLE_PLAIN_TEXT_ROUTING = import.meta.env.VITE_ENABLE_PLAIN_TEXT_ROUTING === "true";
-// Map a classified intent back to the command a user would type.
-const INTENT_PREFIX = { network: "@network", energy: "@energy", note: "@note", ask: "@ask", map: "@map" };
+
+// One-line description of a controller plan, for pills and "treated as" labels.
+function describeControllerPlan(plan) {
+  if (plan.intent === "advise") return "@ask";
+  if (plan.intent === "both") return `@${plan.command} plus advice`;
+  return `@${plan.command}`;
+}
+
+// Content-free analytics value: where the controller routed, never what was said.
+function controllerRoutedTo(plan) {
+  if (plan.intent === "advise") return "strategist";
+  if (plan.intent === "both") return `${plan.command}+strategist`;
+  if (plan.intent === "map") return plan.command;
+  return "none";
+}
 
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
@@ -921,6 +935,82 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     [decision, ensurePersonForUpdate, findPersonRef, room, store]
   );
 
+  // Sequenced dispatch for a controller plan: mapper first, then (for "both")
+  // the strategist on the UPDATED room. A state machine, never an LLM-to-LLM
+  // loop: each expert runs at most once, and the only relay back is the mapper's
+  // single clarification, which the controller hands to the user.
+  const dispatchControllerPlan = useCallback(
+    async (plan, text, priorMessages) => {
+      if (!decision || !plan) return;
+      setIsGenerating(true);
+      try {
+        if (plan.intent === "map" || plan.intent === "both") {
+          // @energy is the user-facing name; "grid" is the internal command.
+          let command = plan.command === "energy" ? "grid" : plan.command || "map";
+          let focusPerson = null;
+          if (command === "note") {
+            // A note needs a resolvable focus person. Without one, fall back to
+            // the broad @map intake (the safe minimum) instead of guessing.
+            const split = splitLeadingPersonRef(text, [participants, Object.values(store.getAllPeople())]);
+            if (split.person) focusPerson = split.person;
+            else command = "map";
+          }
+          const resp = await interpretRoomCommand({
+            command,
+            text,
+            instruction: plan.cleanedIntent || null,
+            room,
+            decision,
+            participants,
+            edges: store.getEdges(decision.id),
+            focusPerson,
+            messages: priorMessages,
+          });
+          if (resp.kind !== "update") {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+            return;
+          }
+          const message = applyRoomUpdate(resp.update, command) || { label: "Room updated", body: "Updated the room." };
+          // One voice, one pass: the controller relays at most one mapper
+          // clarification, never a question chain.
+          message.questions = (message.questions || []).slice(0, 1);
+          trackEvent("room_map_update", { command });
+          captureLearnedMappings({ message, noteText: text, participants: store.getParticipants(decision.id), priorMessages });
+          store.pushMessage(decision.id, { type: "updated", ...message });
+        }
+        if (plan.intent === "advise" || plan.intent === "both") {
+          // Advice reads the room AFTER the mapper write: fresh decision,
+          // participants, and edges from the store.
+          const freshDecision = store.getDecision(decision.id) || decision;
+          const freshParticipants = store.getParticipants(decision.id);
+          const resp = await askStrategist({
+            question: text,
+            room,
+            decision: freshDecision,
+            participants: freshParticipants,
+            edges: store.getEdges(decision.id),
+            messages: store.getChat(decision.id),
+          });
+          if (resp.kind === "coach") {
+            trackEvent("strategist_ask");
+            store.pushMessage(decision.id, {
+              type: "coach",
+              body: resp.answer.answer,
+              questions: resp.answer.moves,
+              cites: resp.answer.cites,
+              grounded: resp.answer.grounded,
+            });
+          } else {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+          }
+        }
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [applyRoomUpdate, decision, participants, room, store]
+  );
+
   const completeOnboarding = useCallback(
     async (answers, nameOverride) => {
       if (!LIVE_LLM) {
@@ -1292,10 +1382,10 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       }
 
       // Plain text (no command prefix). When live reasoning is off, only commands
-      // run. Otherwise classify the intent and, in production (routing flag off),
-      // surface a tappable suggestion pill. Nothing mutates here: state changes
-      // only when the user taps the pill, which re-runs the text as a prefixed
-      // command through this same handler.
+      // run. Otherwise the controller reads the intent and, in production
+      // (routing flag off), surfaces a tappable suggestion pill. Nothing mutates
+      // here: state changes only when the user taps the pill, which dispatches
+      // the controller plan.
       if (!OPEN_CHAT) {
         store.pushMessage(decision.id, {
           type: "fallback",
@@ -1314,32 +1404,64 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       try {
         const { classification } = await classifyIntent(q);
         plan = planClassificationAction(classification, ENABLE_PLAIN_TEXT_ROUTING);
-        // Privacy-safe analytics: intent and confidence only, never the raw text.
-        trackNetwork("plain_text_classified", { intent: classification.intent, confidence: classification.confidence, acted: false });
+        // Privacy-safe analytics: route and resolution enums only, never the raw
+        // text and never the cleaned digest.
+        trackNetwork("plain_text_classified", {
+          intent: plan.intent,
+          command: plan.command || null,
+          confidence: plan.confidence,
+          routed_to: controllerRoutedTo(plan),
+          resolution: plan.action,
+          acted: plan.action === "route" || plan.action === "confirm",
+        });
       } finally {
         setIsGenerating(false);
       }
       if (!plan) return;
-      if (plan.action === "pill") {
-        store.pushMessage(decision.id, { type: "suggest", intent: plan.intent, text: q, body: `Looks like @${plan.intent}. Tap to run it.` });
-      } else if (plan.action === "suggest") {
-        store.pushMessage(decision.id, { type: "suggest-list", body: "I'm not sure how to use this. Did you mean to:" });
+      if (plan.action === "clarify") {
+        // The controller asks its one clarifying question and never guesses.
+        // The reply comes back through this same handler as fresh plain text.
+        if (plan.question) store.pushMessage(decision.id, { type: "fallback", body: plan.question });
+        else store.pushMessage(decision.id, { type: "suggest-list", body: "I'm not sure how to use this. Did you mean to:" });
+      } else if (plan.action === "pill") {
+        store.pushMessage(decision.id, {
+          type: "suggest",
+          intent: plan.intent,
+          command: plan.command,
+          cleanedIntent: plan.cleanedIntent,
+          confidence: plan.confidence,
+          text: q,
+          body: `Looks like ${describeControllerPlan(plan)}. Tap to run it.`,
+        });
       } else if (plan.action === "route" || plan.action === "confirm") {
-        // Routing flag on: run the command, labeling it so the user can see the call.
-        const label = plan.action === "route" ? `↳ treated as @${plan.intent}` : `I read this as @${plan.intent}, running it. Tell me if that was wrong.`;
+        // Routing flag on: dispatch the plan, labeling it so the user sees the call.
+        const label =
+          plan.action === "route"
+            ? `↳ treated as ${describeControllerPlan(plan)}`
+            : `I read this as ${describeControllerPlan(plan)}, running it. Tell me if that was wrong.`;
         store.pushMessage(decision.id, { type: "fallback", body: label });
-        await onSubmit(`${INTENT_PREFIX[plan.intent]} ${q}`);
+        await dispatchControllerPlan(plan, q, priorMessages);
       }
     },
-    [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, playCoaching, room, runPlay, store]
+    [applyRoomUpdate, decision, dispatchControllerPlan, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, playCoaching, room, runPlay, store]
   );
-  // A suggestion pill re-runs the plain text as its prefixed command.
+  // A suggestion pill tap dispatches the stored controller plan: same mapper and
+  // strategist path as silent routing, but only on an explicit user tap.
   const onRunSuggestion = useCallback(
-    (intent, text) => {
-      const prefix = INTENT_PREFIX[intent];
-      if (prefix) onSubmit(`${prefix} ${text}`);
+    (message) => {
+      if (!message?.text || !message?.intent) return;
+      const plan = { intent: message.intent, command: message.command || null, cleanedIntent: message.cleanedIntent || "" };
+      trackNetwork("plain_text_classified", {
+        intent: plan.intent,
+        command: plan.command,
+        confidence: message.confidence || "medium",
+        routed_to: controllerRoutedTo(plan),
+        resolution: "pill_tapped",
+        acted: true,
+      });
+      dispatchControllerPlan(plan, message.text, store.getChat(decision?.id));
     },
-    [onSubmit]
+    [decision, dispatchControllerPlan, store]
   );
   const showOnNetwork = useCallback(() => {
     setShowPath(true);

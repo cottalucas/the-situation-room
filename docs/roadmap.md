@@ -140,11 +140,12 @@
 - Clean folder structure. Docs.
 
 ## Next
-- Open (non-deterministic) chat is in experimental testing: plain text routes to
-  the grounded strategist behind a deterministic input guard (jailbreak / abuse /
-  oversized blocked pre-call) and the strategist-v2 harness (off-topic and
-  roleplay refusal, profanity neutralized). Harden further from real test logs
-  before making it the default surface.
+- Open (non-deterministic) chat is in experimental testing: plain text enters
+  the three-role relay (controller -> mapper and/or strategist) behind a
+  deterministic input guard (jailbreak / abuse / oversized blocked pre-call) and
+  the strategist-v4 harness (off-topic and roleplay refusal, profanity
+  neutralized, shared knowledge base). Harden further from real test logs before
+  making it the default surface.
 - Live eval runs and model comparisons once the local prompt and command
   contract feel stable enough to spend credits deliberately.
 - Production trace review workflow. Surface privacy-safe trace metadata in the
@@ -155,12 +156,14 @@
   relationships should become reliable enough to pass live trace-derived evals.
   `@network` now owns influence level as well as edges (prompt v6, offline evals
   in `verify:network`); harden the influence inference from live traces next.
-- Plain-text intent routing exists behind `ENABLE_PLAIN_TEXT_ROUTING`, off in
-  production. Today plain text is classified and offered as a tappable suggestion
-  pill, never routed silently and never mutating state. Flip the flag on only
-  after live trace review and eval scores say the classifier is good enough to act
-  on its own. This is the safe, incremental version of re-opening plain chat:
-  command mapping with a human tap in the loop, not a coaching response.
+- Plain-text routing exists behind `ENABLE_PLAIN_TEXT_ROUTING`, off in
+  production. Today plain text runs through the controller (intent, mapping
+  command, cleaned instruction, per-user idiolect priors) and surfaces as a
+  tappable suggestion pill, never routed silently and never mutating state; an
+  unclear read asks one clarifying question. Flip the flag on only after live
+  trace review and eval scores say the controller is good enough to act on its
+  own. This is the safe, incremental version of re-opening plain chat: a
+  dispatched relay with a human tap in the loop.
 - Re-open fully silent plain-text routing only after command mapping, trace
   capture, and eval scores are good enough to prevent vague, expensive responses.
 - Privacy surface: export, delete, and a clear statement of where data lives.

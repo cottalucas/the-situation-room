@@ -5,6 +5,69 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-09 - Three-role relay: controller -> (mapper | strategist)
+
+Open English now enters one chat through a controller that understands intent
+and dispatches; the "three model surfaces" framing in llm-pipeline.md is
+replaced by the relay. Everything evolved in place: the intent classifier became
+the controller (same `/api/classify-intent` endpoint, same
+`ENABLE_PLAIN_TEXT_ROUTING` flag, same `verify:classify` script), and the mapper
+and strategist kept their behavior; only their caller changed. Explicit
+@commands bypass the controller, unchanged.
+
+What moved and why:
+
+- Controller (`controller-v1-2026-06-09`, mirrored in `src/lib/llm-prompts.js`
+  and `functions/index.js`). Output is now `{ intent: map|advise|both|unclear,
+  command: note|energy|network|map|null, cleaned_intent, confidence,
+  clarifying_question }`. `cleaned_intent` hands the mapper a pre-digested
+  instruction instead of raw English; the verbatim user text still rides along
+  and stays the source for saved notes, so the user's record is never
+  paraphrased. Decision: confidence stays categorical (high/medium/low), not
+  0-1; the dispatch table is banded and the eval suite is built on the bands.
+- Idiolect moved to the controller. `buildUserPriorsBlock` (the per-user
+  name-redacted soft priors) now attaches to the controller call only; the
+  mapper no longer receives it. The 5-cap, redaction-before-storage, and
+  curated-knowledge-always-outweighs rules are unchanged (`verify:learning`
+  still 18/18). Accepted tradeoff: mapping personalization is now indirect,
+  through the controller's digest. Note: explicit @commands skip the controller
+  and therefore carry no priors; that is by design (idiolect belongs at the
+  language stage).
+- Shared knowledge base. `FRAMEWORK_GROUNDING` + `GLOBAL_LEARNINGS` extracted
+  from inline `functions/index.js` constants into server-only
+  `functions/knowledge.js`, now the cached prefix for BOTH the mapper (with the
+  extraction contract) and the strategist (without it, ever). Strategist bumped
+  to `strategist-v4-grounded-2026-06-09` in both files; its traces now record
+  grounding/learnings versions.
+- Sequenced dispatch, never an LLM-to-LLM loop. `planClassificationAction`
+  (pure, eval-covered) + `Room.jsx#dispatchControllerPlan`. unclear/low asks
+  the controller's ONE clarifying question and never guesses. Flag off
+  (production default, unchanged): one tappable pill, including a single
+  "both" pill that runs map-then-advise on tap; nothing mutates without the
+  tap. Flag on: high routes with the "treated as" label, medium with a confirm.
+  "both" maps first, then fires the strategist on the updated room.
+- Mapper self-check, one pass (`room-command-v7-relay-2026-06-09` in both
+  files): when genuinely unsure WHICH mapping, resolve to the safe minimum (a
+  note) or return exactly one openQuestion up to the controller, which asks the
+  user; the relay caps relayed mapper questions at one. A controller-dispatched
+  note without a resolvable focus person falls back to the broad @map intake
+  rather than guessing a target.
+- Analytics stay content-free: `plain_text_classified` gains `command`,
+  `routed_to`, and `resolution` enums; raw text and the cleaned digest are never
+  logged, and controller traces store only enums unless
+  `LLM_STORE_RAW_TRACES=true`.
+
+Evals: all suites green before AND after (classify 12/12 -> rewritten 23/23 for
+the new shape incl. the four relay goldens; offline eval 19/19, learning 18/18,
+play 29/29, network 9/9, influence 7/7, self 13/13, guard 12/12). Build clean.
+Prompt-version sync verified across `src/` and `functions/`, and all four system
+prompts byte-identical. Controller call cost: ~700 input + ~250 output tokens,
+about $0.002 per plain-text message on Haiku.
+
+Decisions a future agent should not relitigate: categorical confidence;
+controller-only idiolect; pass-both (cleaned_intent for intent, verbatim text
+for notes); one pill for "both"; production routing default stays the pill.
+
 ## 2026-06-09 - Per-user self-learning example store
 
 Built the third personalization layer: a per-user store of confirmed/corrected

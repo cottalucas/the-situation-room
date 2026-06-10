@@ -9,12 +9,12 @@ import {
   PLAY_SYSTEM_PROMPT,
   STRATEGIST_PROMPT_VERSION,
   STRATEGIST_SYSTEM_PROMPT,
-  CLASSIFY_PROMPT_VERSION,
-  CLASSIFY_SYSTEM_PROMPT,
+  CONTROLLER_PROMPT_VERSION,
+  CONTROLLER_SYSTEM_PROMPT,
   playPrompt,
   roomCommandPrompt,
   strategistPrompt,
-  classifyPrompt,
+  controllerPrompt,
 } from "./src/lib/llm-prompts.js";
 import { estimateCostUsd, makeTraceId, writeLlmTrace } from "./src/lib/llm-trace.js";
 import { buildExample } from "./functions/learning-store.js";
@@ -289,30 +289,33 @@ function localAnthropicPlugin(env) {
           const text = String(payload?.text || "").trim().slice(0, 700);
           if (!text) return sendJson(res, 400, { error: "Missing text." });
           const traceId = makeTraceId({ endpoint: "classify-intent", command: "classify" });
-          const content = classifyPrompt(text);
+          const content = controllerPrompt(text);
           const started = Date.now();
+          // Dev parity gap: the production Function appends the per-user idiolect
+          // priors below this prompt; the dev bridge does not (the example store
+          // is production-only).
           const { parsed, rawText, rawResponse, usage, latencyMs } = await callAnthropicJson({
-            system: CLASSIFY_SYSTEM_PROMPT,
+            system: CONTROLLER_SYSTEM_PROMPT,
             content,
-            maxTokens: 120,
+            maxTokens: 300,
           });
           const classification = normalizeClassification(parsed);
           const estimatedCostUsd = estimateCostUsd(usage, model);
-          // Trace metadata stays privacy-safe: the classified intent, never the raw text.
+          // Trace metadata stays privacy-safe: the routed intent, never the raw text.
           writeLlmTrace({
             id: traceId,
             endpoint: "classify-intent",
             command: "classify",
             status: "ok",
             model,
-            maxTokens: 120,
+            maxTokens: 300,
             latencyMs: Date.now() - started,
             apiLatencyMs: latencyMs,
             usage,
             estimatedCostUsd,
-            promptVersions: { classify: CLASSIFY_PROMPT_VERSION },
-            request: { intent: classification.intent, confidence: classification.confidence },
-            system: CLASSIFY_SYSTEM_PROMPT,
+            promptVersions: { controller: CONTROLLER_PROMPT_VERSION },
+            request: { intent: classification.intent, command: classification.command, confidence: classification.confidence },
+            system: CONTROLLER_SYSTEM_PROMPT,
             rawText,
             rawResponse,
             parsed,
@@ -338,13 +341,14 @@ function localAnthropicPlugin(env) {
           const text = String(payload?.text || "").trim().slice(0, 5000);
           const context = payload?.context;
           const focusPerson = payload?.focusPerson || null;
+          const instruction = String(payload?.instruction || "").trim().slice(0, 600) || null;
           if (!command || !text || !context?.decision || !Array.isArray(context?.people)) {
             return sendJson(res, 400, { error: "Missing command text or room context." });
           }
 
           const maxTokens = maxTokensForCommand(command);
           const traceId = makeTraceId({ endpoint: "interpret-room-command", command });
-          const content = roomCommandPrompt({ command, text, context, focusPerson });
+          const content = roomCommandPrompt({ command, text, context, focusPerson, instruction });
           const started = Date.now();
           const { parsed, rawText, rawResponse, usage, latencyMs } = await callAnthropicJson({
             system: COMMAND_SYSTEM_PROMPT,
@@ -365,7 +369,7 @@ function localAnthropicPlugin(env) {
             usage,
             estimatedCostUsd,
             promptVersions: { command: COMMAND_PROMPT_VERSION },
-            request: { command, text, context, focusPerson },
+            request: { command, text, context, focusPerson, instruction },
             system: COMMAND_SYSTEM_PROMPT,
             prompt: content,
             rawText,
