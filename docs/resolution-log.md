@@ -5,6 +5,32 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-10 - Persist the active decision across refresh
+
+Refreshing while inside a decision restored the room but dropped the decision,
+landing the user in the room with no decision open. Root cause: the URL hash
+`#/decision/:id` was only written by explicit `selectRoom`/`selectDecision`
+clicks. A decision reached by auto-restore or auto-selection never wrote the
+hash, so the URL stayed empty; the next refresh had no durable decision id and
+fell back to the racier browser/synced restore path (which fires when
+`remoteReady` flips but does not guarantee the specific decision is applied),
+nulling the decision out and latching `restoredSelection`.
+
+Fix (client only, `src/views/Room.jsx`): an effect now keeps the URL hash synced
+to the active decision whenever the lenses own the hash, not just on explicit
+selection. The hash is the most durable restore source (it lives in the URL and
+is read synchronously at init by `parseHash`, driving the reliable route path in
+the restore effect). The effect reads the live `window.location.hash` rather than
+route state and bails on any non-`#/decision/` hash, so person and frameworks
+sub-pages keep ownership and navigation is never clobbered. `clearDecisionHash`
+drops a stale decision hash when no decision is active. Verified via build and
+the offline + persistence eval suites; the firestore-mode load race is not
+reproducible under local preview (which sets `remoteReady` synchronously), so
+this was validated by build, evals, and the hash-guard reasoning. Deployed to
+hosting only (no functions or rules touched).
+
+---
+
 ## 2026-06-09 - Three-role relay: controller -> (mapper | strategist)
 
 Open English now enters one chat through a controller that understands intent

@@ -48,9 +48,12 @@
   mobile it focuses on tap so the keyboard never opens the product out of view on
   load. Last room and decision persist to the user in Firestore and restore on
   reload; same-browser state also remembers the visible room, decision, and
-  active lens before synced settings finish loading. Selecting a decision writes
-  `#/decision/:decisionId`, so hard refresh keeps the selected decision even
-  before browser storage or Firestore has rehydrated. Local preview entry uses
+  active lens before synced settings finish loading. The active decision is
+  continuously synced into the URL as `#/decision/:decisionId` (not only on
+  explicit selection but also when a decision is auto-restored or auto-selected),
+  so a hard refresh keeps the exact decision even before browser storage or
+  Firestore has rehydrated; the sync reads the live hash and yields to person and
+  frameworks sub-pages. Local preview entry uses
   the `#/` app route so localhost refreshes stay inside the room. The main
   workspace stays quiet when a room has no decision open because chat already
   owns that state; no-room-selected uses a mobile-only "Select your room" card,
