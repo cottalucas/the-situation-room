@@ -144,6 +144,14 @@ function replaceDecisionHash(decisionId) {
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
 }
 
+// Drop a stale #/decision/ hash when no decision is active, so a refresh does not
+// try to restore a decision that is gone. Leaves person/frameworks hashes alone.
+function clearDecisionHash() {
+  if (typeof window === "undefined") return;
+  if (!window.location.hash.startsWith("#/decision/")) return;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+}
+
 function gridValueIsExtreme(value) {
   return value != null && (value <= 10 || value >= 90);
 }
@@ -480,6 +488,22 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     }
     writeBrowserUiState({ activeRoomId, activeDecisionId, activeTab });
   }, [activeRoomId, activeDecisionId, activeTab, browserStartedWithRoom, remoteReady, store, userSettingsReady]);
+
+  // Keep the URL hash carrying the active decision while the lenses own the hash.
+  // Selecting a decision already writes it, but an auto-restored or auto-selected
+  // decision never went through selectDecision, so without this a refresh lands on
+  // the room with no decision. The hash is the most durable restore source (it
+  // survives in the URL itself and is read synchronously at init), so a refresh
+  // then reliably restores the exact decision through the route path. We read the
+  // live hash instead of route state so we never clobber a person/frameworks
+  // sub-page that owns the hash.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (hash && !hash.startsWith("#/decision/")) return;
+    if (decision && decision.status === "active") replaceDecisionHash(decision.id);
+    else if (!activeDecisionId) clearDecisionHash();
+  }, [decision, activeDecisionId]);
 
   // Guided setup owns the screen, so close the mobile drawer whenever it
   // activates (e.g. "+ New room" started from inside the drawer).
