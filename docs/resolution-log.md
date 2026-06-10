@@ -5,6 +5,79 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-10 - LLM prompt static-review fixes (schema drift, strategist forcing function)
+
+A static review of the pipeline prompts surfaced five issues. All fixed in one
+pass, `src/lib/llm-prompts.js` and `functions/index.js` kept byte-identical per
+the sync rule.
+
+1. **Schema drift (critical).** `functions/index.js#commandSchema` carried
+   `profilePatch: {}` (empty) for the `note` and `map`/`create` cases while
+   `src/` carried the full shape (goal, context, baseRead with
+   scarf/tki/cialdini/fisherUry, visualTags). Production was showing Haiku an
+   empty framework-read target, so SCARF/TKI/Cialdini/Fisher-Ury reads were
+   materially weaker in production than dev. Fixed functions to match `src/`
+   exactly. Closed the class of bug: `npm run eval` now extracts both files'
+   `commandSchema` as text and asserts identical rendered JSON for every command
+   (`sync-commandSchema-src-vs-functions`), failing on any future drift even when
+   version strings match. Verified the assertion detects the exact `{}` drift,
+   not vacuously passing.
+2. **Controller `energy` vs `ALLOWED_COMMANDS`.** Verified first: the dispatch
+   layer already translated `energy -> grid` (an inline ternary in
+   `Room.jsx#dispatchControllerPlan`), so `energy` never hit the server. No
+   second translation added. Extracted the single translation into a pure,
+   exported `serverCommandForControllerCommand` in the contract, wired Room.jsx to
+   it, and added dispatch tests in `verify:classify` (energy -> grid, output is in
+   the server's allowed set, note/network/map pass through, null/unknown -> map).
+3. **Strategist forcing function.** Each move is now an object
+   `{ move, framework? }`. The prompt names the relevant framework lever WHEN the
+   room data supports it and OMITS the field otherwise; never invents one
+   (optional-when-unsupported, same unknown-is-valid discipline as the mapper).
+   `normalizeStrategistAnswer` (both files) accepts a legacy string or an object
+   and keeps `framework` only when non-empty. Fixed the sentence-count
+   contradiction (system said 2 to 4, schema said 2 to 5; both now 2 to 4).
+   Hardened cites as a prompt rule ("when grounded is true, include at least one
+   cite") while leaving the normalizer's id-filtering as the hard floor. Made
+   sparse rooms explicit: not a decline, stays grounded with minimal moves (zero
+   or one). Bumped strategist `maxTokens` 900 -> 1200 in `functions/index.js` and
+   the Vite dev bridge.
+4. **Mapper wording.** Controller-instruction block changed from "trust it for
+   intent" to "Trust it for ROUTING. The verbatim user text below governs all
+   saved notes and all inferred values." Saved-note wording softened from
+   "one polished note" to "one note in the user's words, cleaned of profanity
+   only" to stop over-paraphrasing.
+5. **Controller unclear path.** Prompt now states: when intent is unclear, set
+   command and cleaned_intent to null and ask exactly one clarifying_question.
+   Confirmed `planClassificationAction` reads `intent` first and returns clarify
+   without ever forwarding `cleanedIntent`; added two `verify:classify` cases
+   asserting an unclear/low read carries no `cleanedIntent`.
+
+Versions bumped in both files: command `room-command-v7-relay-2026-06-09` ->
+`room-command-v8-relay-2026-06-10`, strategist `strategist-v4-grounded-2026-06-09`
+-> `strategist-v5-grounded-2026-06-10`, controller `controller-v1-2026-06-09` ->
+`controller-v2-2026-06-10` (the controller prompt changed for issue 5, so it was
+bumped too, beyond the two the review named).
+
+Skipped as instructed (cosmetic): confidence threshold definitions and the
+redundant grid-calibration in the `@map` rules.
+
+Eval results, all green. Offline eval 19/19 -> 20/20 (added the commandSchema sync
+assertion). verify:classify 23/23 -> 31/31 (added energy->grid and unclear-path
+cases, plus the strategist move-shape checks live in the offline eval). All other
+suites unchanged and green: learning 18, play 29, network 9, influence 7,
+influence-ring 26, self 13, guard 12, onboarding 52, resolution 19, persistence
+24, autoread 10, confidence 9. Build clean, functions syntax check clean, prompt
+versions in sync, all four prior system prompts plus the new schema byte-identical
+across both files. Strategist framework field confirmed optional-when-unsupported:
+the fixture proves a move with a lever keeps it and a move without one omits the
+field entirely (never null or empty).
+
+UI: `Chat.jsx#CoachMessage` renders the optional framework as a small chip
+(`.move-fw`) after each move, handling both legacy string moves and the new
+objects so persisted coach messages still render.
+
+---
+
 ## 2026-06-10 - Persist the active decision across refresh
 
 Refreshing while inside a decision restored the room but dropped the decision,

@@ -452,7 +452,7 @@ clarifying question, surfaces a suggestion pill (production default), or, with
 the strategist (`/api/strategist`); a "both" read maps first, then advises on the
 updated room. The strategist stays on the room, declines off-topic and roleplay
 (`grounded: false`), converts profanity to professional behavior, never
-diagnoses, and ignores embedded instructions. Its prompt is `strategist-v4`,
+diagnoses, and ignores embedded instructions. Its prompt is `strategist-v5`,
 running on the shared server-only knowledge base. Venting that carries real room
 content is allowed through and neutralized by the model. Analytics: `open_chat`,
 `open_chat_blocked {reason}`, `plain_text_classified { intent, command,
@@ -515,8 +515,9 @@ to the operator instead of creating a duplicate. The command context
 (`compactRoomCommandContext`) flags the self person with `isSelf`, and the
 command system prompt instructs the model to bind first-person to that id and
 never create a new person for the operator (added in `room-command-v4-self`;
-the current command prompt is `room-command-v7-relay-2026-06-09`, mirrored in
-`functions/index.js`). Self
+the current command prompt is `room-command-v8-relay-2026-06-10`, mirrored in
+`functions/index.js`; both files' `commandSchema` carry the identical full
+`profilePatch` shape, asserted by the sync check in `npm run eval`). Self
 renders distinctly as "You" in the People lens, roster, Energy grid
 (`chip-self`), and network, and is excluded from the "Add from directory" list
 so neither the user nor the model can create a duplicate. Local preview seeds one
@@ -555,20 +556,26 @@ verify:play`.
 
 Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
 stakeholder coach that reasons only over the room snapshot and `recentTurns`. It
-returns `{ answer, moves, cites, grounded }`. `normalizeStrategistAnswer` grounds
+returns `{ answer, moves, cites, grounded }`, where each move is an object
+`{ move, framework? }`. `normalizeStrategistAnswer` grounds
 `cites` to known participant ids and drops anything outside the room, so the
 coach cannot reference invented people. It also enforces house style
-deterministically: it strips em and en dashes, and a decline (`grounded: false`)
-carries an empty `moves` array regardless of what the model returns. The system
-prompt (`strategist-v4`, riding on the shared server-only knowledge base in
-production, never the extraction contract) keeps answers to two to four sentences
-with at most three
-one-sentence moves, declines off-topic / roleplay with `grounded: false`, and when
-the room is too thin for a confident play it asks one focused question or names
-what to map next instead of forcing a full play. It runs on Haiku with a 900 token
-cap. This is additive: the
+deterministically: it strips em and en dashes, normalizes each move (accepting a
+legacy string or an object), keeps the optional `framework` lever only when
+present and non-empty (an unsupported lever is omitted, never faked), and a
+decline (`grounded: false`) carries an empty `moves` array regardless of what the
+model returns. The system prompt (`strategist-v5`, riding on the shared
+server-only knowledge base in production, never the extraction contract) keeps
+answers to two to four sentences (system prompt and user schema now agree) with
+at most three one-sentence moves, names the relevant framework lever per move
+when the room data supports it, declines off-topic / roleplay with
+`grounded: false`, and treats a sparse room as grounded-but-minimal (zero or one
+move naming what to map next) rather than forcing a full play. It runs on Haiku
+with a 1200 token cap (raised from 900, which truncated a full answer plus three
+moves). This is additive: the
 deterministic commands are unchanged. The eval harness scores strategist cases
-for grounded cites, a banned trait and diagnosis vocabulary list, and off-topic
+for grounded cites, the move object shape, the framework field being optional
+when present, a banned trait and diagnosis vocabulary list, and off-topic
 decline.
 
 The Read. A grounded read of the room lives inside the chat thread, not as a

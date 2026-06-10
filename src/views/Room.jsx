@@ -7,7 +7,7 @@ import { consumeOnboardingPending } from "../lib/auth.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 import { screenOpenMessage } from "../lib/chat-guard.js";
-import { commandCapabilities, influenceDecision, planClassificationAction } from "../lib/room-command-contract.js";
+import { commandCapabilities, influenceDecision, planClassificationAction, serverCommandForControllerCommand } from "../lib/room-command-contract.js";
 import {
   ONBOARDING_INTRO,
   ONBOARDING_INTRO_RETURNING,
@@ -969,8 +969,10 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       setIsGenerating(true);
       try {
         if (plan.intent === "map" || plan.intent === "both") {
-          // @energy is the user-facing name; "grid" is the internal command.
-          let command = plan.command === "energy" ? "grid" : plan.command || "map";
+          // @energy is the user-facing name; "grid" is the internal command. The
+          // single source for this translation lives in the contract so it stays
+          // testable and never reaches the server as "energy".
+          let command = serverCommandForControllerCommand(plan.command);
           let focusPerson = null;
           if (command === "note") {
             // A note needs a resolvable focus person. Without one, fall back to

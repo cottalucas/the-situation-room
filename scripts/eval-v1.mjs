@@ -34,6 +34,43 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
+// Extract a top-level `function name(...) { ... }` as source text by walking
+// braces from the opening brace. commandSchema contains no braces inside string
+// literals or comments, so plain brace matching is sufficient here.
+function extractFunctionSource(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error(`${name} not found in source`);
+  let depth = 0;
+  let started = false;
+  for (let i = source.indexOf("{", start); i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === "{") { depth += 1; started = true; }
+    else if (ch === "}") { depth -= 1; if (started && depth === 0) return source.slice(start, i + 1); }
+  }
+  throw new Error(`Unbalanced braces extracting ${name}`);
+}
+
+// Close the schema-drift class of bug: src/lib/llm-prompts.js (dev) and
+// functions/index.js (production) each keep their own commandSchema(). They must
+// render byte-identical JSON for every command, or production shows Haiku a
+// different target shape than dev. We extract both functions as text and compare
+// their JSON.stringify output, without importing functions/index.js (which runs
+// Firebase side effects at load).
+function commandSchemaSyncChecks() {
+  const srcText = fs.readFileSync(path.join(root, "src", "lib", "llm-prompts.js"), "utf8");
+  const fnText = fs.readFileSync(path.join(root, "functions", "index.js"), "utf8");
+  // eslint-disable-next-line no-eval
+  const srcSchema = (0, eval)(`(${extractFunctionSource(srcText, "commandSchema")})`);
+  // eslint-disable-next-line no-eval
+  const fnSchema = (0, eval)(`(${extractFunctionSource(fnText, "commandSchema")})`);
+  const commands = ["note", "grid", "network", "map", "create", "other"];
+  return commands.map((command) => {
+    const a = JSON.stringify(srcSchema(command), null, 2);
+    const b = JSON.stringify(fnSchema(command), null, 2);
+    return [`commandSchema_sync_${command}`, a === b];
+  });
+}
+
 function asText(value) {
   if (value == null) return "";
   if (typeof value === "string") return value;
@@ -148,6 +185,13 @@ function scoreStrategist(testCase, candidate) {
   checks.push(["cites_grounded", normalized.cites.every((id) => ids.has(id))]);
   checks.push(["no_trait_diagnosis_vocab", hasForbidden(normalized, BANNED_TRAIT_TERMS).length === 0]);
   checks.push(["forbidden_terms_absent", hasForbidden(normalized, expect.forbiddenTerms).length === 0]);
+  // Moves are objects { move, framework? }. The framework lever is optional and,
+  // when present, is a non-empty string: an unsupported lever is omitted, not faked.
+  checks.push(["moves_are_objects", normalized.moves.every((m) => m && typeof m === "object" && typeof m.move === "string" && m.move.length > 0)]);
+  checks.push([
+    "framework_optional_when_present",
+    normalized.moves.every((m) => !("framework" in m) || (typeof m.framework === "string" && m.framework.length > 0)),
+  ]);
   if (expect.requireCites) checks.push(["cites_present", normalized.cites.length > 0]);
   if (expect.requireMoves) checks.push(["moves_present", normalized.moves.length > 0]);
   if (expect.expectDecline) {
@@ -229,6 +273,20 @@ async function main() {
       meta: liveResult?.meta || null,
     });
   }
+
+  // Static drift guard: src/ and functions/ commandSchema must render identically.
+  // Runs in every mode; it reads files, never the network.
+  const syncChecks = commandSchemaSyncChecks();
+  results.push({
+    id: "sync-commandSchema-src-vs-functions",
+    kind: "sync",
+    tags: ["sync", "schema_drift"],
+    passed: syncChecks.every(([, ok]) => Boolean(ok)),
+    checks: Object.fromEntries(syncChecks),
+    error: null,
+    latencyMs: 0,
+    meta: null,
+  });
 
   const summary = {
     suite: suite.version,

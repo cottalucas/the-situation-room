@@ -112,9 +112,20 @@ function CoachMessage({ message, people, latest, isRead, onCiteClick }) {
       <p>{message.body}</p>
       {message.questions?.length > 0 && (
         <ul className="chat-questions">
-          {message.questions.map((m) => (
-            <li key={m}>{m}</li>
-          ))}
+          {message.questions.map((m, i) => {
+            // A move is a string (play coaching, legacy persisted) or an object
+            // { move, framework? } from the strategist. The framework chip shows
+            // only when the strategist named a lever the room data supported.
+            const text = typeof m === "string" ? m : m?.move;
+            const framework = typeof m === "object" && m ? m.framework : null;
+            if (!text) return null;
+            return (
+              <li key={i}>
+                {text}
+                {framework ? <span className="move-fw">{framework}</span> : null}
+              </li>
+            );
+          })}
         </ul>
       )}
       {cited.length > 0 && (

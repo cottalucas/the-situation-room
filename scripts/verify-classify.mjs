@@ -8,7 +8,7 @@
  * confident read surfaces a tappable pill; unclear or low confidence asks the
  * controller's one clarifying question and never guesses.
  */
-import { normalizeClassification, planClassificationAction } from "../src/lib/room-command-contract.js";
+import { normalizeClassification, planClassificationAction, serverCommandForControllerCommand } from "../src/lib/room-command-contract.js";
 
 let passed = 0;
 let failed = 0;
@@ -95,6 +95,33 @@ check("clarify plan carries the controller's question on flag ON too", (() => {
   const golden = { intent: "unclear", command: null, confidence: "low", clarifying_question: "Which decision is this about?" };
   const a = planClassificationAction(golden, true);
   return a.action === "clarify" && a.question === "Which decision is this about?";
+})());
+
+console.log("\n[5] controller command -> server command translation");
+// The controller emits the user-facing surface "energy"; the server's
+// ALLOWED_COMMANDS has "grid", not "energy". The translation must happen in the
+// dispatch layer so "energy" never reaches /interpret-room-command.
+check("energy -> grid (never reaches the server as energy)", serverCommandForControllerCommand("energy") === "grid");
+check("energy translation output is in the server's allowed set, energy is not", (() => {
+  const allowed = new Set(["note", "grid", "network", "net", "map", "create"]);
+  return allowed.has(serverCommandForControllerCommand("energy")) && !allowed.has("energy");
+})());
+check("note passes through", serverCommandForControllerCommand("note") === "note");
+check("network passes through", serverCommandForControllerCommand("network") === "network");
+check("map passes through", serverCommandForControllerCommand("map") === "map");
+check("null/unknown command falls back to broad map", serverCommandForControllerCommand(null) === "map" && serverCommandForControllerCommand("banana") === "map");
+
+console.log("\n[6] unclear path never forwards an improvised instruction");
+// Issue 5: cleaned_intent must not be acted on for an unclear read. The dispatch
+// reads intent first and returns clarify, carrying only the question, never a
+// cleanedIntent, even if the model improvised one.
+check("unclear plan carries no cleanedIntent", (() => {
+  const a = planClassificationAction({ intent: "unclear", confidence: "low", cleaned_intent: "improvised digest", clarifying_question: "What do you mean?" }, true);
+  return a.action === "clarify" && a.cleanedIntent === undefined && a.question === "What do you mean?";
+})());
+check("low-confidence read clarifies and forwards no cleanedIntent", (() => {
+  const a = planClassificationAction({ intent: "map", command: "note", confidence: "low", cleaned_intent: "improvised" }, false);
+  return a.action === "clarify" && a.cleanedIntent === undefined;
 })());
 
 console.log(`\nController dispatch: ${passed} passed, ${failed} failed`);

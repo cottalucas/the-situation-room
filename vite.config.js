@@ -228,7 +228,7 @@ function localAnthropicPlugin(env) {
           const { parsed, rawText, rawResponse, usage, latencyMs } = await callAnthropicJson({
             system: STRATEGIST_SYSTEM_PROMPT,
             content,
-            maxTokens: 900,
+            maxTokens: 1200,
           });
           const answer = normalizeStrategistAnswer(parsed, context.people);
           const estimatedCostUsd = estimateCostUsd(usage, model);
@@ -238,7 +238,7 @@ function localAnthropicPlugin(env) {
             command: "strategist",
             status: answer ? "ok" : "invalid",
             model,
-            maxTokens: 900,
+            maxTokens: 1200,
             latencyMs: Date.now() - started,
             apiLatencyMs: latencyMs,
             usage,

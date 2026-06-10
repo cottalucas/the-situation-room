@@ -138,6 +138,23 @@ function stripDashes(value) {
   return String(value || "").replace(/\s*[—–]\s*/g, ", ");
 }
 
+// Accept a legacy string move or { move|text, framework }. The framework lever is
+// optional: keep it only when present and non-empty, never as an empty string, so
+// an unsupported lever is omitted rather than faked. Unknown is a valid answer.
+function normalizeMove(m) {
+  if (typeof m === "string") {
+    const move = stripDashes(cleanText(m, 300));
+    return move ? { move } : null;
+  }
+  if (m && typeof m === "object") {
+    const move = stripDashes(cleanText(m.move ?? m.text, 300));
+    if (!move) return null;
+    const framework = stripDashes(cleanText(m.framework, 120));
+    return framework ? { move, framework } : { move };
+  }
+  return null;
+}
+
 export function normalizeStrategistAnswer(raw, participants = []) {
   if (!raw || typeof raw !== "object") return null;
   const known = new Set((participants || []).map((p) => p.id));
@@ -148,7 +165,7 @@ export function normalizeStrategistAnswer(raw, participants = []) {
   const moves = grounded
     ? (Array.isArray(raw.moves) ? raw.moves : [])
         .slice(0, 3)
-        .map((m) => stripDashes(cleanText(m, 300)))
+        .map(normalizeMove)
         .filter(Boolean)
     : [];
   const cites = [...new Set((Array.isArray(raw.cites) ? raw.cites : []).map((c) => cleanText(c, 120)))]
@@ -199,6 +216,16 @@ export function influenceDecision(item, current = {}, command) {
  */
 const CONTROLLER_INTENTS = new Set(["map", "advise", "both", "unclear"]);
 const CONTROLLER_COMMANDS = new Set(["note", "energy", "network", "map"]);
+
+// The controller speaks the user-facing surface name "energy"; the mapper's
+// server command is "grid" (the Energy lens writes the grid fields). Translate
+// once, here, so a controller command never reaches /interpret-room-command as
+// "energy", which is not in the server's ALLOWED_COMMANDS. note/network/map pass
+// through; anything missing or off-contract falls back to the broad "map" intake.
+const CONTROLLER_TO_SERVER_COMMAND = { energy: "grid", note: "note", network: "network", map: "map" };
+export function serverCommandForControllerCommand(command) {
+  return CONTROLLER_TO_SERVER_COMMAND[command] || "map";
+}
 
 export function normalizeClassification(raw) {
   if (!raw || typeof raw !== "object") return { intent: "unclear", command: null, cleanedIntent: "", confidence: "low", clarifyingQuestion: "" };

@@ -30,10 +30,17 @@ Haiku calls exist, but they are now roles in one relay with a defined caller.
    It reads one prefix-free message and returns
    `{ intent: map|advise|both|unclear, command: note|energy|network|map|null,
    cleaned_intent, confidence: high|medium|low, clarifying_question }`
-   (`controller-v1`, mirrored in `src/lib/llm-prompts.js` and
+   (`controller-v2`, mirrored in `src/lib/llm-prompts.js` and
    `functions/index.js`; normalized by `normalizeClassification`). It never
    writes anything. `cleaned_intent` is the digest handed to the next expert: a
-   pre-interpreted instruction, not raw English. **The controller, and only the
+   pre-interpreted instruction, not raw English. On the `unclear` path it is
+   explicitly `null` (never an improvised digest); the dispatch table reads
+   `intent` first and returns a clarify action that never forwards
+   `cleaned_intent`. The controller speaks the user-facing surface name `energy`;
+   the dispatch layer translates that to the server command `grid` through one
+   shared helper (`serverCommandForControllerCommand`), so `energy` never reaches
+   `/interpret-room-command` (which is not in `ALLOWED_COMMANDS`). **The
+   controller, and only the
    controller, carries the per-user idiolect layer**: in production the Function
    appends `buildUserPriorsBlock` (this user's name-redacted confirmed mappings,
    five-cap, skip negatives never surfaced, curated knowledge always outweighs)
@@ -52,10 +59,22 @@ Haiku calls exist, but they are now roles in one relay with a defined caller.
    apply capabilities keep it.
 3. **Strategist (grounded reasoning).** `/strategist` behind `@ask`, "The Read",
    and the relay's advise path. Prose question in, a grounded
-   `{ answer, moves, cites, grounded }` out. Reasons over the room, cites the
-   people/edges it used, declines off-topic and roleplay. It now shares the
-   server-only knowledge base with the mapper (see grounding below) but never
-   the extraction contract.
+   `{ answer, moves, cites, grounded }` out (`strategist-v5`). Each move is an
+   object `{ move, framework? }`: a forcing function that asks the strategist to
+   name the relevant framework lever (SCARF, Thomas-Kilmann, Cialdini, Fisher and
+   Ury) WHEN the room data supports it. The `framework` field is
+   optional-when-unsupported: the prompt omits it rather than inventing a lever,
+   and `normalizeStrategistAnswer` keeps it only when present and non-empty, so an
+   unsupported lever is omitted, not faked (same unknown-is-valid discipline used
+   for the mapper). A sparse room is not a decline: it stays grounded with minimal
+   moves (zero or one) that name what to map next. "When grounded is true, include
+   at least one cite" is a prompt rule; `normalizeStrategistAnswer` keeps its
+   id-filtering as the hard floor (an off-room id is dropped, never rejected).
+   Answer length is two to four sentences in both the system prompt and the user
+   schema. Reasons over the room, cites the people/edges it used, declines
+   off-topic and roleplay. It shares the server-only knowledge base with the
+   mapper (see grounding below) but never the extraction contract. Budget is 1200
+   max tokens (raised from 900, which truncated a full answer plus three moves).
 
 **Sequenced dispatch (a state machine, never an LLM-to-LLM loop).** The pure
 table is `planClassificationAction` in `src/lib/room-command-contract.js`;
@@ -84,7 +103,7 @@ resolution, acted }` only, enums and never text. Dispatch-table evals:
 
 Open chat is gated behind two layers: `src/lib/chat-guard.js` (deterministic
 input harness: empty / oversized / jailbreak / short pure-abuse blocked before any
-call) and the strategist prompt itself (`strategist-v4`: grounding, off-topic and
+call) and the strategist prompt itself (`strategist-v5`: grounding, off-topic and
 roleplay refusal, profanity neutralized, injection ignored). It rides on
 `VITE_ENABLE_LIVE_LLM` and is meant for deliberate testing.
 
@@ -100,8 +119,15 @@ power/interest (`powerScore`); that is the Energy lens (`@energy`) only. The
 contract validates levels in `normalizeRoomUpdate`, the boundary lives in
 `commandCapabilities`/`influenceDecision`, and the apply path writes
 `decision.influence`. The command prompt is
-`room-command-v7-relay-2026-06-09` in both `src/` and `functions/` (v7 adds the
-controller-instruction block and the one-pass self-check rule).
+`room-command-v8-relay-2026-06-10` in both `src/` and `functions/` (v7 added the
+controller-instruction block and the one-pass self-check rule; v8 sharpens that
+block to say "trust it for ROUTING; the verbatim user text governs all saved
+notes and all inferred values", and softens saved-note wording to "one note in
+the user's words, cleaned of profanity only" to stop over-paraphrasing). The full
+`profilePatch` shape (goal, context, baseRead, visualTags) is identical in both
+files' `commandSchema`; a sync assertion in `npm run eval` compares the rendered
+JSON for every command and fails on any drift, so production can never show Haiku
+an emptier framework-read target than dev again.
 Offline evals: `npm run verify:influence` (inference) and `npm run verify:network`
 (@network owns influence, never powerScore).
 
@@ -220,7 +246,11 @@ diff <(grep -hoE '"(room-command|play|strategist)-[a-z0-9-]+"' src/lib/llm-promp
      <(grep -hoE '"(room-command|play|strategist)-[a-z0-9-]+"' functions/index.js | sort)
 ```
 
-A shared module or a CI version-match assertion is the planned hardening.
+A shared module or a CI version-match assertion is the planned hardening. The
+`commandSchema()` structure is now guarded directly: `npm run eval` extracts both
+files' `commandSchema` as text and asserts their rendered JSON is identical for
+every command, so schema drift fails the suite even when the version strings
+happen to match.
 
 ## MLOps: evals, traces, cost, deploy
 
