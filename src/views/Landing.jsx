@@ -12,6 +12,7 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
   return (
     <div className="landing">
       <header className="landing-nav">
+        <span className="landing-brand">The Situation Room</span>
         <button className="landing-register" onClick={() => setAuthOpen(true)}>
           Get started
         </button>
@@ -19,11 +20,11 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
 
       <main className="landing-main">
         <section className="landing-hero">
-          <span className="eyebrow">Stakeholder strategy for product leaders</span>
+          <span className="eyebrow">For PMs and operators who move decisions through people</span>
           <h1 className="landing-title">The Situation Room</h1>
           <p className="landing-prop">
-            Read the room before you walk into it. Map the people behind a decision,
-            understand what moves each of them, and walk in with the play already half won.
+            Read the room before you walk into it. Map who holds power, who cares, and who
+            moves whom. Walk in with the play already half won.
           </p>
           <div className="landing-cta-row">
             <button className="landing-cta" onClick={() => setAuthOpen(true)}>
@@ -50,11 +51,23 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
           </p>
         </section>
 
+        <section className="landing-cta-section">
+          <p className="landing-cta-kicker">Ready to read the room?</p>
+          <div className="landing-cta-row">
+            <button className="landing-cta" onClick={() => setAuthOpen(true)}>
+              Get started →
+            </button>
+          </div>
+        </section>
+
         <section className="landing-foot">
           <p className="landing-frameworks">
             Grounded in Power and Interest mapping, <strong>SCARF</strong>,{" "}
             <strong>Thomas Kilmann</strong>, <strong>Cialdini</strong>, and interest based
             negotiation. Not vibes.
+          </p>
+          <p className="landing-privacy-note">
+            Your notes are encrypted and stay yours. No sharing, no training.
           </p>
         </section>
       </main>

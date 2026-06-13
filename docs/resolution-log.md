@@ -5,6 +5,30 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-13 - Landing page fills the four classical gaps
+
+The landing covered How and Why but missed what, who, and a path back to
+sign-up. A targeted patch closed the gaps without touching structure, section
+order, or component hierarchy. Edits confined to `src/views/Landing.jsx` and
+the `.landing*` rules in `src/styles.css`.
+
+- Brand mark. Added `.landing-brand` ("The Situation Room") to `landing-nav`
+  and changed the `flex-end` nav override back to `space-between` so the brand
+  stays visible at every width. Verified at desktop and 375px.
+- To whom. Eyebrow sharpened to "For PMs and operators who move decisions
+  through people", matching the brief's user definition in active voice.
+- What. Hero prop now names the three lenses in one phrase: "Map who holds
+  power, who cares, and who moves whom." No new metaphors.
+- Path back. New `.landing-cta-section` between Why and the foot with a serif
+  kicker and the existing `.landing-cta` button. Three CTAs total across the
+  single scroll, one per section.
+- Privacy. Added `.landing-privacy-note` in the foot: notes are encrypted and
+  stay yours, no sharing, no training. A trust signal for a tool about
+  sensitive colleague notes.
+
+Only existing color and font tokens used. No em dashes in any new copy. All new
+classes follow the `.landing-*` convention and collide with nothing existing.
+
 ## 2026-06-10 - LLM prompt static-review fixes (schema drift, strategist forcing function)
 
 A static review of the pipeline prompts surfaced five issues. All fixed in one
