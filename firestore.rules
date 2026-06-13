@@ -53,6 +53,13 @@ service cloud.firestore {
         allow read, delete: if isSelf(uid);
         allow create, update: if false;
       }
+
+      // Per-user self-learning example store. The browser never sees it: only the
+      // Firebase Function (Admin SDK, which bypasses these rules) reads and writes
+      // it, with verified auth. Client read and write are both denied.
+      match /learningExamples/{exampleId} {
+        allow read, write: if false;
+      }
     }
 
     match /people/{personId} {

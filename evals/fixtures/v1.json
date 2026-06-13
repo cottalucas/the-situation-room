@@ -583,9 +583,9 @@
       "golden": {
         "answer": "Rouven is your highest-power blocker and he is currently against, so start there before it hardens. Chad supports the work but defers to Rouven, so leaning on Chad alone will not move the room. Align Chad's framing first, then bring a tight evidence case to Rouven.",
         "moves": [
-          "Talk to Chad to lock the framing and surface what evidence Rouven needs.",
-          "Then meet Rouven directly with that evidence to address his skepticism.",
-          "Use Raluca's alignment with Rouven as a quiet supporting signal."
+          { "move": "Talk to Chad to lock the framing and surface what evidence Rouven needs.", "framework": "Fisher and Ury: interests over positions" },
+          { "move": "Then meet Rouven directly with that evidence to address his skepticism.", "framework": "Cialdini: authority" },
+          { "move": "Use Raluca's alignment with Rouven as a quiet supporting signal." }
         ],
         "cites": ["rouven", "chad", "raluca"],
         "grounded": true

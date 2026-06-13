@@ -15,11 +15,18 @@
     "verify:resolution": "node scripts/verify-resolution.mjs",
     "verify:guard": "node scripts/verify-guard.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
+    "verify:play": "node scripts/verify-play.mjs",
+    "verify:self": "node scripts/verify-self.mjs",
     "verify:emulator": "firebase emulators:exec --only firestore 'node tests/emulator/persistence.emulator.test.mjs'",
     "eval:live": "EVAL_ALLOW_LIVE=true node scripts/eval-v1.mjs --live",
     "eval:onboarding:live": "node scripts/eval-onboarding-live.mjs",
     "functions:lint": "npm --prefix functions run lint",
-    "trace:summary": "node scripts/trace-summary.mjs"
+    "trace:summary": "node scripts/trace-summary.mjs",
+    "verify:influence": "node scripts/verify-influence.mjs",
+    "verify:influence-ring": "node scripts/verify-influence-ring.mjs",
+    "verify:network": "node scripts/verify-network-influence.mjs",
+    "verify:classify": "node scripts/verify-classify.mjs",
+    "verify:learning": "node scripts/verify-learning.mjs"
   },
   "dependencies": {
     "firebase": "^12.14.0",

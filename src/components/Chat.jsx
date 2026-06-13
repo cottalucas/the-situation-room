@@ -2,12 +2,35 @@ import React, { useState, useRef, useEffect } from "react";
 import { highlight, RichText } from "./highlight.jsx";
 import { EXAMPLE_PROMPTS } from "../lib/reasoning.js";
 
-function PlayMessage({ response, people, latest, onShowNetwork }) {
+function parsePlay(message) {
+  if (message.response && typeof message.response === "object") return message.response;
+  try {
+    const parsed = JSON.parse(message.body || "null");
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A generated play: a pinned, immutable card frozen at generation time. Its
+ * inputs are snapshotted into the message (people names, situation), so it stays
+ * readable after the room changes or a reload. Visually distinct from chat
+ * bubbles, re-openable via the reasoning toggle.
+ */
+function PlayMessage({ message, people, latest, onShowNetwork }) {
   const [expanded, setExpanded] = useState(false);
-  const byId = (id) => people.find((p) => p.id === id);
+  const response = parsePlay(message);
+  if (!response) return null;
+  // Prefer the frozen snapshot people; fall back to the live participants.
+  const snapshot = Array.isArray(response.people) ? response.people : [];
+  const byId = (id) => snapshot.find((p) => p.id === id) || people.find((p) => p.id === id);
   return (
-    <div className={`chat-msg chat-play ${latest ? "is-latest" : ""}`}>
-      <span className="msg-label">The play</span>
+    <div className={`chat-msg chat-play chat-play-pinned ${latest ? "is-latest" : ""}`}>
+      <span className="msg-label play-pin-label">
+        <span className="play-pin" aria-hidden="true">📌</span>
+        {message.label || "Play"}
+      </span>
       <h3 className="play-headline">{highlight(response.headline, "hl")}</h3>
       <ol className="step-list">
         {response.steps.map((step) => {
@@ -89,9 +112,20 @@ function CoachMessage({ message, people, latest, isRead, onCiteClick }) {
       <p>{message.body}</p>
       {message.questions?.length > 0 && (
         <ul className="chat-questions">
-          {message.questions.map((m) => (
-            <li key={m}>{m}</li>
-          ))}
+          {message.questions.map((m, i) => {
+            // A move is a string (play coaching, legacy persisted) or an object
+            // { move, framework? } from the strategist. The framework chip shows
+            // only when the strategist named a lever the room data supported.
+            const text = typeof m === "string" ? m : m?.move;
+            const framework = typeof m === "object" && m ? m.framework : null;
+            if (!text) return null;
+            return (
+              <li key={i}>
+                {text}
+                {framework ? <span className="move-fw">{framework}</span> : null}
+              </li>
+            );
+          })}
         </ul>
       )}
       {cited.length > 0 && (
@@ -111,6 +145,48 @@ function CoachMessage({ message, people, latest, isRead, onCiteClick }) {
           ))}
         </p>
       )}
+    </SimpleMessage>
+  );
+}
+
+// Controller read, routing flag off: a guidance pill that dispatches the stored
+// controller plan on tap. Never mutates state on its own.
+function suggestPillLabel(message) {
+  if (message.intent === "advise") return "Run @ask";
+  if (message.intent === "both") return `Run @${message.command || "map"} plus advice`;
+  return `Run @${message.command || message.intent}`;
+}
+function SuggestMessage({ message, latest, onRunSuggestion }) {
+  return (
+    <SimpleMessage label="Suggestion" variant="chat-suggest" latest={latest}>
+      <p>{message.body}</p>
+      <button type="button" className="suggest-pill" onClick={() => onRunSuggestion?.(message)}>
+        {suggestPillLabel(message)}
+      </button>
+    </SimpleMessage>
+  );
+}
+
+// Low confidence or unclear intent: offer the command menu, no routing.
+const SUGGEST_OPTIONS = [
+  { label: "Note something about a person", cmd: "@note " },
+  { label: "Update someone's influence", cmd: "@network " },
+  { label: "Update power or interest", cmd: "@energy " },
+  { label: "Ask a question", cmd: "@ask " },
+];
+function SuggestListMessage({ message, latest, setDraft }) {
+  return (
+    <SimpleMessage label="Not sure" variant="chat-suggest" latest={latest}>
+      <p>{message.body || "I'm not sure how to use this. Did you mean to:"}</p>
+      <ul className="suggest-list">
+        {SUGGEST_OPTIONS.map((o) => (
+          <li key={o.cmd}>
+            <button type="button" className="suggest-option" onClick={() => setDraft?.(o.cmd)}>
+              {o.label} <code>{o.cmd.trim()}</code>
+            </button>
+          </li>
+        ))}
+      </ul>
     </SimpleMessage>
   );
 }
@@ -171,7 +247,7 @@ function EmptyConversation() {
  * The conversation. User prompts and assistant command confirmations alternate
  * in the thread. Person reads live in the floating profile, never in this stream.
  */
-export function Chat({ messages, participants, decision, onShowNetwork, onCiteClick, onOpenCommands, draft, setDraft, onSubmit, isGenerating, openChat, placeholder, autoFocusInput }) {
+export function Chat({ messages, participants, decision, onShowNetwork, onCiteClick, onOpenCommands, onRunSuggestion, draft, setDraft, onSubmit, isGenerating, openChat, placeholder, autoFocusInput }) {
   const endRef = useRef(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -196,7 +272,7 @@ export function Chat({ messages, participants, decision, onShowNetwork, onCiteCl
             if (m.type === "user") return <UserMessage key={m.id} body={m.body} latest={latest} />;
             if (m.type === "play")
               return (
-                <PlayMessage key={m.id} response={m.response} people={participants} latest={latest} onShowNetwork={() => onShowNetwork(m.response)} />
+                <PlayMessage key={m.id} message={m} people={participants} latest={latest} onShowNetwork={onShowNetwork} />
               );
             if (m.type === "note")
               return (
@@ -213,6 +289,8 @@ export function Chat({ messages, participants, decision, onShowNetwork, onCiteCl
             if (m.type === "updated") return <UpdatedMessage key={m.id} message={m} latest={latest} />;
             if (m.type === "coach") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} onCiteClick={onCiteClick} />;
             if (m.type === "read") return <CoachMessage key={m.id} message={m} people={participants} latest={latest} isRead onCiteClick={onCiteClick} />;
+            if (m.type === "suggest") return <SuggestMessage key={m.id} message={m} latest={latest} onRunSuggestion={onRunSuggestion} />;
+            if (m.type === "suggest-list") return <SuggestListMessage key={m.id} message={m} latest={latest} setDraft={setDraft} />;
             if (m.type === "welcome") return null;
             return (
               <SimpleMessage key={m.id} label="No read" variant="chat-fallback" latest={latest}>

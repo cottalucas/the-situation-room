@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { normalizePlay } from "./src/lib/play-contract.js";
-import { normalizeRoomUpdate, normalizeStrategistAnswer } from "./src/lib/room-command-contract.js";
+import { normalizeRoomUpdate, normalizeStrategistAnswer, normalizeClassification } from "./src/lib/room-command-contract.js";
 import {
   COMMAND_PROMPT_VERSION,
   COMMAND_SYSTEM_PROMPT,
@@ -9,11 +9,15 @@ import {
   PLAY_SYSTEM_PROMPT,
   STRATEGIST_PROMPT_VERSION,
   STRATEGIST_SYSTEM_PROMPT,
+  CONTROLLER_PROMPT_VERSION,
+  CONTROLLER_SYSTEM_PROMPT,
   playPrompt,
   roomCommandPrompt,
   strategistPrompt,
+  controllerPrompt,
 } from "./src/lib/llm-prompts.js";
 import { estimateCostUsd, makeTraceId, writeLlmTrace } from "./src/lib/llm-trace.js";
+import { buildExample } from "./functions/learning-store.js";
 
 const MAX_BODY_BYTES = 120_000;
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -224,7 +228,7 @@ function localAnthropicPlugin(env) {
           const { parsed, rawText, rawResponse, usage, latencyMs } = await callAnthropicJson({
             system: STRATEGIST_SYSTEM_PROMPT,
             content,
-            maxTokens: 900,
+            maxTokens: 1200,
           });
           const answer = normalizeStrategistAnswer(parsed, context.people);
           const estimatedCostUsd = estimateCostUsd(usage, model);
@@ -234,7 +238,7 @@ function localAnthropicPlugin(env) {
             command: "strategist",
             status: answer ? "ok" : "invalid",
             model,
-            maxTokens: 900,
+            maxTokens: 1200,
             latencyMs: Date.now() - started,
             apiLatencyMs: latencyMs,
             usage,
@@ -273,6 +277,57 @@ function localAnthropicPlugin(env) {
         }
       });
 
+      server.middlewares.use("/api/classify-intent", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "POST only." });
+        if (!isLocalRequest(req)) return sendJson(res, 403, { error: "Local requests only." });
+        if (!liveEnabled) return sendJson(res, 404, { error: "Live local LLM is disabled." });
+        if (!apiKey) return sendJson(res, 500, { error: "ANTHROPIC_API_KEY is missing in .env.local." });
+
+        try {
+          const body = await readBody(req);
+          const payload = JSON.parse(body);
+          const text = String(payload?.text || "").trim().slice(0, 700);
+          if (!text) return sendJson(res, 400, { error: "Missing text." });
+          const traceId = makeTraceId({ endpoint: "classify-intent", command: "classify" });
+          const content = controllerPrompt(text);
+          const started = Date.now();
+          // Dev parity gap: the production Function appends the per-user idiolect
+          // priors below this prompt; the dev bridge does not (the example store
+          // is production-only).
+          const { parsed, rawText, rawResponse, usage, latencyMs } = await callAnthropicJson({
+            system: CONTROLLER_SYSTEM_PROMPT,
+            content,
+            maxTokens: 300,
+          });
+          const classification = normalizeClassification(parsed);
+          const estimatedCostUsd = estimateCostUsd(usage, model);
+          // Trace metadata stays privacy-safe: the routed intent, never the raw text.
+          writeLlmTrace({
+            id: traceId,
+            endpoint: "classify-intent",
+            command: "classify",
+            status: "ok",
+            model,
+            maxTokens: 300,
+            latencyMs: Date.now() - started,
+            apiLatencyMs: latencyMs,
+            usage,
+            estimatedCostUsd,
+            promptVersions: { controller: CONTROLLER_PROMPT_VERSION },
+            request: { intent: classification.intent, command: classification.command, confidence: classification.confidence },
+            system: CONTROLLER_SYSTEM_PROMPT,
+            rawText,
+            rawResponse,
+            parsed,
+            normalized: classification,
+            validation: "valid_classification",
+          });
+          return sendJson(res, 200, { classification, meta: { model, usage, latencyMs: Date.now() - started, estimatedCostUsd, traceId } });
+        } catch (err) {
+          return sendJson(res, err?.status || 500, { error: err?.message || "Local classify endpoint failed." });
+        }
+      });
+
       server.middlewares.use("/api/interpret-room-command", async (req, res) => {
         if (req.method !== "POST") return sendJson(res, 405, { error: "POST only." });
         if (!isLocalRequest(req)) return sendJson(res, 403, { error: "Local requests only." });
@@ -286,13 +341,14 @@ function localAnthropicPlugin(env) {
           const text = String(payload?.text || "").trim().slice(0, 5000);
           const context = payload?.context;
           const focusPerson = payload?.focusPerson || null;
+          const instruction = String(payload?.instruction || "").trim().slice(0, 600) || null;
           if (!command || !text || !context?.decision || !Array.isArray(context?.people)) {
             return sendJson(res, 400, { error: "Missing command text or room context." });
           }
 
           const maxTokens = maxTokensForCommand(command);
           const traceId = makeTraceId({ endpoint: "interpret-room-command", command });
-          const content = roomCommandPrompt({ command, text, context, focusPerson });
+          const content = roomCommandPrompt({ command, text, context, focusPerson, instruction });
           const started = Date.now();
           const { parsed, rawText, rawResponse, usage, latencyMs } = await callAnthropicJson({
             system: COMMAND_SYSTEM_PROMPT,
@@ -313,7 +369,7 @@ function localAnthropicPlugin(env) {
             usage,
             estimatedCostUsd,
             promptVersions: { command: COMMAND_PROMPT_VERSION },
-            request: { command, text, context, focusPerson },
+            request: { command, text, context, focusPerson, instruction },
             system: COMMAND_SYSTEM_PROMPT,
             prompt: content,
             rawText,
@@ -351,6 +407,30 @@ function localAnthropicPlugin(env) {
             error: err?.message || "Local mapping endpoint failed.",
           });
           return sendJson(res, err?.status || 500, { error: err?.message || "Local mapping endpoint failed." });
+        }
+      });
+
+      // Dev parity for the capture path. It redacts the phrasing through the same
+      // pure helper the Function uses, so name redaction can be exercised locally,
+      // but the dev bridge does not persist examples or inject per-user priors
+      // (the example store is a production-only feature, the same accepted parity
+      // gap as the server-only grounding and global learnings).
+      server.middlewares.use("/api/capture-example", async (req, res) => {
+        if (req.method !== "POST") return sendJson(res, 405, { error: "POST only." });
+        if (!isLocalRequest(req)) return sendJson(res, 403, { error: "Local requests only." });
+        try {
+          const payload = JSON.parse(await readBody(req));
+          const built = buildExample({
+            phrasing: payload?.phrasing,
+            names: Array.isArray(payload?.redactNames) ? payload.redactNames : [],
+            mappingOutcome: payload?.mappingOutcome,
+            axis: payload?.axis,
+            action: payload?.action,
+            confidence: payload?.confidence,
+          });
+          return sendJson(res, built ? 200 : 400, built ? { ok: true } : { error: "Unusable example." });
+        } catch (err) {
+          return sendJson(res, 500, { error: err?.message || "Capture endpoint failed." });
         }
       });
     },

@@ -21,6 +21,11 @@ import * as repo from "./firestore-repo.js";
 
 export const WELCOME = "Select a participant to open their profile, or map the room below with a command.";
 
+/** Per-decision influence default. level null renders on the middle ring; not
+ * overridden, so @map may infer it. Influence is decision-scoped, like positions
+ * and placements: a person can be high-influence on one decision and low on another. */
+export const DEFAULT_INFLUENCE = { level: null, overridden: false };
+
 let _seq = 0;
 const mid = () => `m${++_seq}`;
 
@@ -82,9 +87,10 @@ function commit(next) {
   listeners.forEach((fn) => fn());
 }
 
-/** Message types persisted to Firestore and rehydrated on load. Welcome, play,
- * and loading cards stay transient UI only. */
-const PERSISTED_MESSAGE_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach", "read"]);
+/** Message types persisted to Firestore and rehydrated on load. Welcome and
+ * loading cards stay transient UI only. A generated play persists as a pinned,
+ * immutable card (its frozen snapshot rides in the encrypted body). */
+const PERSISTED_MESSAGE_TYPES = new Set(["user", "updated", "note", "added", "fallback", "coach", "read", "play"]);
 
 function welcomeMessage() {
   return [{ id: mid(), type: "welcome", body: WELCOME }];
@@ -259,7 +265,7 @@ export function setPref(key, value) {
 /* Settings synced to the signed-in user in Firestore (last room and decision),
    so the app restores them on reload and across devices. They also live in the
    local prefs mirror for synchronous reads and fast cold load. */
-const USER_SETTING_KEYS = ["lastRoomId", "lastDecisionId"];
+const USER_SETTING_KEYS = ["lastRoomId", "lastDecisionId", "selfSeeded"];
 
 export function setUserSetting(key, value) {
   const prefs = { ...state.prefs, [key]: value };
@@ -286,6 +292,61 @@ export async function saveProfile({ name, position } = {}) {
     const ok = await repo.putUserProfile(uid, { name, position });
     if (!ok) throw new Error("Profile could not be saved.");
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Self participant                                                    */
+/* ------------------------------------------------------------------ */
+
+/** The one self record that represents the signed-in operator, or null. */
+export function getSelf() {
+  return Object.values(state.people).find((p) => p?.isSelf) || null;
+}
+export function getSelfId() {
+  return getSelf()?.id || null;
+}
+
+/**
+ * Make the signed-in user a first-class participant. Idempotent.
+ *  1. Ensure exactly one self person exists, keyed to the uid (never duplicated).
+ *  2. Once per account (selfSeeded flag), attach self to every existing room
+ *     roster and every active decision. After that one migration, removal sticks,
+ *     so a user can take themselves off a room without it reappearing.
+ * Local preview seeds self in data/seed.js, so this only runs in Firestore mode.
+ */
+export function ensureSelf({ name, position } = {}) {
+  if (!fs() || !uid) return null;
+  let self = getSelf();
+  if (!self) {
+    const id = `${uid}_self`;
+    self = {
+      id,
+      name: name || "You",
+      role: position || "",
+      goal: "",
+      context: "",
+      isSelf: true,
+      fresh: false,
+      external: false,
+      baseRead: { scarf: "", tki: "", cialdini: "", fisherUry: "" },
+      visualTags: { scarfDimensions: [], tkiStyle: "", cialdiniLever: "", fuTeaser: "" },
+      relationships: [],
+      observations: [],
+    };
+    savePerson(self);
+  }
+  if (!state.prefs?.selfSeeded) {
+    state.rooms.forEach((room) => {
+      if (!(room.rosterIds || []).includes(self.id)) addToRoster(room.id, self.id);
+    });
+    state.decisions.forEach((d) => {
+      if (d.status !== "archived" && ![...(d.participantIds || []), ...(d.externalIds || [])].includes(self.id)) {
+        addParticipant(d.id, self.id);
+      }
+    });
+    setUserSetting("selfSeeded", true);
+  }
+  return self.id;
 }
 
 /* ------------------------------------------------------------------ */
@@ -369,7 +430,9 @@ function peopleWithout(idsToDelete) {
 
 export function createRoom(name = "New room") {
   const id = makeId(fs() && uid ? `${uid}_room` : "room");
-  const room = { id, name, rosterIds: [] };
+  // Self is a first-class member of every room by default. Removable later.
+  const selfId = getSelfId();
+  const room = { id, name, rosterIds: selfId ? [selfId] : [] };
   commit({ ...state, rooms: [...state.rooms, room] });
   if (fs()) repo.putRoom(uid, room);
   return id;
@@ -441,15 +504,17 @@ export function createDecision(roomId, { title, context, participants }) {
   const id = makeId(fs() && uid ? `${uid}_deci` : "deci");
   const positions = {};
   const placements = {};
+  const influence = {};
   ids.forEach((pid) => {
     positions[pid] = "unknown";
     placements[pid] = { ...DEFAULT_PLACEMENT };
+    influence[pid] = { ...DEFAULT_INFLUENCE };
   });
   const decision = {
     id, roomId, title,
     context: context || { deciding: "", goal: "", constraint: "" },
     decisionNotes: [], derivedSummary: "", deadline: "", status: "active",
-    participantIds: [...ids], externalIds: [], positions, placements, edges: [],
+    participantIds: [...ids], externalIds: [], positions, placements, influence, edges: [],
   };
   commit({ ...state, decisions: [...state.decisions, decision], chats: { ...state.chats, [id]: [{ id: mid(), type: "welcome", body: WELCOME }] } });
   if (fs()) repo.putDecision(roomId, decision);
@@ -504,24 +569,61 @@ export function addParticipant(decisionId, personId) {
   const participantIds = [...d.participantIds, personId];
   const positions = { ...d.positions, [personId]: "unknown" };
   const placements = { ...d.placements, [personId]: { ...DEFAULT_PLACEMENT } };
-  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, participantIds, positions, placements } : x)) });
-  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds, positions, placements });
+  const influence = { ...(d.influence || {}), [personId]: { ...DEFAULT_INFLUENCE } };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, participantIds, positions, placements, influence } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds, positions, placements, influence });
 }
 export function removeParticipant(decisionId, personId) {
   const d = getDecision(decisionId);
   if (!d) return;
   const positions = { ...d.positions };
   const placements = { ...d.placements };
+  const influence = { ...(d.influence || {}) };
   delete positions[personId];
   delete placements[personId];
+  delete influence[personId];
   const next = {
     ...d,
     participantIds: d.participantIds.filter((x) => x !== personId),
     externalIds: d.externalIds.filter((x) => x !== personId),
-    positions, placements,
+    positions, placements, influence,
   };
   commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? next : x)) });
-  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds: next.participantIds, externalIds: next.externalIds, positions, placements });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { participantIds: next.participantIds, externalIds: next.externalIds, positions, placements, influence });
+}
+
+/** Set a participant's influence over this decision. overridden true marks it a
+ * manual user choice that @map must not overwrite. angle (radians) is the node's
+ * angular position on the ring; when omitted the existing angle is preserved, so
+ * an @map level change never disturbs where the node sits. */
+export function setInfluence(decisionId, personId, level, overridden = false, angle) {
+  const d = getDecision(decisionId);
+  if (!d) return;
+  const safeLevel = ["high", "medium", "low"].includes(level) ? level : null;
+  const prev = d.influence?.[personId] || {};
+  const rec = { level: safeLevel, overridden: !!overridden };
+  const nextAngle = Number.isFinite(angle) ? angle : prev.angle;
+  if (Number.isFinite(nextAngle)) rec.angle = nextAngle;
+  const influence = { ...(d.influence || {}), [personId]: rec };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, influence } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { influence });
+}
+
+/** Persist only a node's angular position, preserving its level and overridden
+ * flag. Used to claim a first-render default angle and for a within-ring drag,
+ * so one moved node is exactly one write and nobody else is touched. */
+export function setInfluenceAngle(decisionId, personId, angle) {
+  if (!Number.isFinite(angle)) return;
+  const d = getDecision(decisionId);
+  if (!d) return;
+  const prev = d.influence?.[personId] || { ...DEFAULT_INFLUENCE };
+  if (prev.angle === angle) return;
+  const influence = { ...(d.influence || {}), [personId]: { ...prev, angle } };
+  commit({ ...state, decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, influence } : x)) });
+  if (fs()) repo.updateDecisionFields(d.roomId, decisionId, { influence });
+}
+export function getInfluence(decisionId, personId) {
+  return getDecision(decisionId)?.influence?.[personId] || DEFAULT_INFLUENCE;
 }
 
 /** Create a decision scoped external and attach them. Returns id. */
@@ -537,15 +639,16 @@ export function addExternal(decisionId, { name, role }) {
   };
   const positions = { ...d.positions, [id]: "unknown" };
   const placements = { ...d.placements, [id]: { ...DEFAULT_PLACEMENT } };
+  const influence = { ...(d.influence || {}), [id]: { ...DEFAULT_INFLUENCE } };
   const externalIds = [...d.externalIds, id];
   commit({
     ...state,
     people: { ...state.people, [id]: person },
-    decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, externalIds, positions, placements } : x)),
+    decisions: state.decisions.map((x) => (x.id === decisionId ? { ...x, externalIds, positions, placements, influence } : x)),
   });
   if (fs()) {
     repo.putPerson(uid, person);
-    repo.updateDecisionFields(d.roomId, decisionId, { externalIds, positions, placements });
+    repo.updateDecisionFields(d.roomId, decisionId, { externalIds, positions, placements, influence });
   }
   return id;
 }

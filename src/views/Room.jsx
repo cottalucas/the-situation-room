@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useStore } from "../hooks/useStore.js";
-import { interpretRoomCommand, askStrategist } from "../lib/context.js";
-import { trackEvent } from "../lib/firebase.js";
+import { interpretRoomCommand, askStrategist, buildContext, generatePlay, classifyIntent, captureExample } from "../lib/context.js";
+import { checkPlayReadiness, buildPlayCoaching, nextCoachingStep, playStamp, playSituation } from "../lib/play-readiness.js";
+import { trackEvent, trackNetwork } from "../lib/firebase.js";
 import { consumeOnboardingPending } from "../lib/auth.js";
 import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 import { screenOpenMessage } from "../lib/chat-guard.js";
+import { commandCapabilities, influenceDecision, planClassificationAction, serverCommandForControllerCommand } from "../lib/room-command-contract.js";
 import {
   ONBOARDING_INTRO,
   ONBOARDING_INTRO_RETURNING,
@@ -31,6 +33,27 @@ const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 // Open (non-command) chat is experimental and routes to the grounded strategist
 // behind the input guard. It rides on the live LLM flag.
 const OPEN_CHAT = LIVE_LLM;
+// Plain-text routing. OFF in production: plain text runs through the controller
+// and surfaces as a tappable suggestion pill, never routed silently and never
+// mutating state. Flip to true (VITE_ENABLE_PLAIN_TEXT_ROUTING=true) only once
+// the offline evals and live trace review say the controller is good enough to
+// act on its own.
+const ENABLE_PLAIN_TEXT_ROUTING = import.meta.env.VITE_ENABLE_PLAIN_TEXT_ROUTING === "true";
+
+// One-line description of a controller plan, for pills and "treated as" labels.
+function describeControllerPlan(plan) {
+  if (plan.intent === "advise") return "@ask";
+  if (plan.intent === "both") return `@${plan.command} plus advice`;
+  return `@${plan.command}`;
+}
+
+// Content-free analytics value: where the controller routed, never what was said.
+function controllerRoutedTo(plan) {
+  if (plan.intent === "advise") return "strategist";
+  if (plan.intent === "both") return `${plan.command}+strategist`;
+  if (plan.intent === "map") return plan.command;
+  return "none";
+}
 
 import { Rail } from "../components/Rail.jsx";
 import { Chat } from "../components/Chat.jsx";
@@ -49,7 +72,7 @@ import { GridTab } from "../components/tabs/GridTab.jsx";
 import { NetworkTab } from "../components/tabs/NetworkTab.jsx";
 import { RoomSettings } from "../components/modals/RoomSettings.jsx";
 import { DecisionSettings } from "../components/modals/DecisionSettings.jsx";
-import { AddExternal } from "../components/modals/AddExternal.jsx";
+import { AddParticipant } from "../components/modals/AddParticipant.jsx";
 import { NewDecision } from "../components/modals/NewDecision.jsx";
 import { CommandsModal } from "../components/modals/CommandsModal.jsx";
 import { ConfirmModal } from "../components/modals/ConfirmModal.jsx";
@@ -121,6 +144,14 @@ function replaceDecisionHash(decisionId) {
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
 }
 
+// Drop a stale #/decision/ hash when no decision is active, so a refresh does not
+// try to restore a decision that is gone. Leaves person/frameworks hashes alone.
+function clearDecisionHash() {
+  if (typeof window === "undefined") return;
+  if (!window.location.hash.startsWith("#/decision/")) return;
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+}
+
 function gridValueIsExtreme(value) {
   return value != null && (value <= 10 || value >= 90);
 }
@@ -141,13 +172,74 @@ function softGridConfirm(person, power, interest) {
   return `I read ${person.name} as roughly ${power} power and ${interest} interest, but I was not certain. Adjust if that is off.`;
 }
 
-function commandCapabilities(sourceCommand) {
-  return {
-    notes: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
-    profile: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
-    grid: sourceCommand === "grid" || sourceCommand === "map" || sourceCommand === "create",
-    edges: sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
-  };
+// Map a calibrated grid value to its band label, so a captured example stores the
+// qualitative read ("high") rather than a brittle exact number. Mirrors the
+// calibration rubric: very low 10-20, low 25-35, moderate 45-55, high 70-80,
+// very high 85-95.
+function gridBand(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 20) return "very low";
+  if (n <= 35) return "low";
+  if (n <= 55) return "moderate";
+  if (n <= 80) return "high";
+  return "very high";
+}
+
+// Names to redact from a captured phrasing: every participant's full name and
+// first name. The Function redacts these to [person] before storing, so the raw
+// names never persist.
+function redactNamesFor(participants) {
+  const names = new Set();
+  for (const p of participants || []) {
+    const full = (p?.name || "").trim();
+    if (!full) continue;
+    names.add(full);
+    const first = full.split(/\s+/)[0];
+    if (first) names.add(first);
+  }
+  return [...names];
+}
+
+// Was this submission a correction of a prior suggestion? In the conversational
+// flow there are no Accept/Adjust/Skip buttons: the model proposes and applies,
+// and a follow-up that answers a soft-confirm or clarification (the last assistant
+// turn carried questions) is the adjust signal. Otherwise it is an accept.
+function lastTurnHadQuestions(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (!m || m.type === "user") continue;
+    return Array.isArray(m.questions) && m.questions.length > 0;
+  }
+  return false;
+}
+
+// Capture the mappings that committed from a user note as per-user examples. The
+// phrasing is the user's own note; the Function redacts names at write time. One
+// content-free analytics event per submission, enums only.
+function captureLearnedMappings({ message, noteText, participants, priorMessages }) {
+  const learned = message?.learned;
+  if (!Array.isArray(learned) || !learned.length || !noteText) return;
+  const wasAdjusted = lastTurnHadQuestions(priorMessages || []);
+  const action = wasAdjusted ? "adjust" : "accept";
+  const redactNames = redactNamesFor(participants);
+  learned.forEach((item) => {
+    captureExample({
+      phrasing: noteText,
+      redactNames,
+      mappingOutcome: item.outcome,
+      axis: item.axis,
+      action,
+      confidence: item.confidence,
+      wasAdjusted,
+    });
+  });
+  trackNetwork("example_captured", { action_type: action, was_adjusted: wasAdjusted });
+}
+
+// influence clarification copy stays about the ring, never about power/interest.
+function influenceClarification(person) {
+  return `Does ${person.name || "this person"} actually have a say on this decision, or are they just kept informed? Tell me high, medium, or low influence.`;
 }
 
 function commandResultLabel(sourceCommand) {
@@ -197,6 +289,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const [route, setRoute] = useState(initialRoute);
   const [draft, setDraft] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  // When @play is blocked, the next free-text reply is parsed back through @map to
+  // close the gap. Cleared when the decision changes or the gap is filled.
+  const [playCoaching, setPlayCoaching] = useState(null);
   const [showPath, setShowPath] = useState(false);
   const [modal, setModal] = useState(null); // { type, id }
   const [pendingOnboarding, setPendingOnboarding] = useState(false);
@@ -223,7 +318,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const participants = activeDecisionId ? store.getParticipants(activeDecisionId) : [];
   const messages = activeDecisionId ? store.getChat(activeDecisionId) : [];
   const lastPlay = [...messages].reverse().find((m) => m.type === "play");
-  const sequence = lastPlay?.response?.sequence;
+  const lastPlayResponse = lastPlay?.response || (() => {
+    try {
+      return JSON.parse(lastPlay?.body || "null");
+    } catch {
+      return null;
+    }
+  })();
+  const sequence = lastPlayResponse?.sequence;
   const roomHasPeople = (room?.rosterIds?.length || 0) > 0;
   const userSettingsReady = store.getPref("userSettingsReady") !== false;
   const remoteReady = store.getPref("remoteReady") !== false;
@@ -279,6 +381,51 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     [activeDecisionId, store]
   );
 
+  /* @play: deterministic readiness gate, then either a coaching turn that closes
+     the biggest gap, or a grounded, pinned, immutable play card. */
+  const runPlay = useCallback(async () => {
+    if (!decision) return;
+    const currentParticipants = store.getParticipants(decision.id);
+    const currentDecision = store.getDecision(decision.id);
+    const readiness = checkPlayReadiness({ participants: currentParticipants, decision: currentDecision });
+    if (!readiness.ready) {
+      trackEvent("play_blocked", { reason: readiness.reason });
+      const coaching = buildPlayCoaching(readiness, currentParticipants);
+      store.pushMessage(decision.id, { type: "coach", body: coaching.body, questions: coaching.questions, grounded: true });
+      setPlayCoaching({ decisionId: decision.id, reason: readiness.reason, missing: readiness.missing, attempts: 0 });
+      return;
+    }
+    setPlayCoaching(null);
+    setIsGenerating(true);
+    try {
+      const edges = store.getEdges(decision.id);
+      const ctx = buildContext({ decision: currentDecision, participants: currentParticipants, edges });
+      const resp = await generatePlay(playSituation(currentDecision), ctx);
+      if (resp.kind === "play") {
+        // Freeze the generating inputs into the card so it stays readable after
+        // the room changes or a reload. Body is encrypted at rest like other text.
+        const snapshot = {
+          headline: resp.headline,
+          steps: resp.steps,
+          sequence: resp.sequence,
+          risk: resp.risk,
+          reasoning: resp.reasoning,
+          people: currentParticipants.map((p) => ({ id: p.id, name: p.isSelf ? "You" : p.name })),
+          situation: playSituation(currentDecision),
+          generatedAt: new Date().toISOString(),
+        };
+        store.pushMessage(decision.id, { type: "play", label: `PLAY · ${playStamp()}`, response: snapshot, body: JSON.stringify(snapshot) });
+        store.savePlay(decision.id, { situation: snapshot.situation, output: snapshot });
+        // Analytics logs the event only, never play content.
+        trackEvent("play_generated", { participants: currentParticipants.length, edges: edges.length });
+      } else {
+        store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [decision, store]);
+
   const startOnboarding = useCallback(
     ({ auto = false, mode = "first-run" } = {}) => {
       store.setPref("onboardingPrompted", true);
@@ -312,6 +459,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     setPendingOnboarding(consumeOnboardingPending(userId));
   }, [userId]);
 
+  // Make the signed-in user a first-class participant once their account has
+  // loaded. Idempotent: seeds the self record and migrates existing rooms once.
+  useEffect(() => {
+    if (!userId || !remoteReady) return;
+    const profile = store.getProfile();
+    store.ensureSelf({ name: profile.name || userName || "", position: profile.position || "" });
+  }, [userId, userName, remoteReady, store]);
+
   // Hash is the single source for the Tier 2 person page and Tier 3 frameworks
   // page, so they are linkable and the browser back button works.
   useEffect(() => {
@@ -333,6 +488,22 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     }
     writeBrowserUiState({ activeRoomId, activeDecisionId, activeTab });
   }, [activeRoomId, activeDecisionId, activeTab, browserStartedWithRoom, remoteReady, store, userSettingsReady]);
+
+  // Keep the URL hash carrying the active decision while the lenses own the hash.
+  // Selecting a decision already writes it, but an auto-restored or auto-selected
+  // decision never went through selectDecision, so without this a refresh lands on
+  // the room with no decision. The hash is the most durable restore source (it
+  // survives in the URL itself and is read synchronously at init), so a refresh
+  // then reliably restores the exact decision through the route path. We read the
+  // live hash instead of route state so we never clobber a person/frameworks
+  // sub-page that owns the hash.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (hash && !hash.startsWith("#/decision/")) return;
+    if (decision && decision.status === "active") replaceDecisionHash(decision.id);
+    else if (!activeDecisionId) clearDecisionHash();
+  }, [decision, activeDecisionId]);
 
   // Guided setup owns the screen, so close the mobile drawer whenever it
   // activates (e.g. "+ New room" started from inside the drawer).
@@ -373,19 +544,19 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     }
   }, [pendingOnboarding, startOnboarding, store, usableRoom]);
 
-  const skipOnboarding = useCallback(() => {
+  // Dismissing guided setup lands the user in the live empty room with the rail
+  // and command surface visible, never in a modal. Manual room editing stays
+  // reachable through the existing room-settings entry point (rail, empty state).
+  const dismissOnboarding = useCallback(() => {
     store.setPref("onboardingPrompted", true);
     store.setPref("railCollapsed", false);
-    trackEvent("onboarding_skipped", { mode: onboarding.mode });
+    trackEvent("onboarding_dismissed", { mode: onboarding.mode });
     setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
-    // Connect guided and manual: "I'll set it up myself" drops into the existing
-    // Room Settings modal. Reuse an empty room if one exists, else create one.
     const emptyRoom = store.getRooms().find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
     const roomId = emptyRoom?.id || store.createRoom();
     setActiveRoomId(roomId);
     setActiveDecisionId(null);
     setActiveTab("people");
-    setModal({ type: "roomSettings", id: roomId });
   }, [store, onboarding.mode]);
 
   const openOnboardingRoom = useCallback(() => {
@@ -398,6 +569,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const selectRoom = useCallback(
     (id) => {
       setActiveRoomId(id);
+      setPlayCoaching(null);
       store.setUserSetting("lastRoomId", id);
       const first = store.getDecisions(id).find((d) => d.status === "active");
       if (first) {
@@ -420,6 +592,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       const selected = store.getDecision(id);
       const selectedRoomId = selected?.roomId || activeRoomId;
       store.ensureChat(id);
+      setPlayCoaching(null);
       if (selected?.roomId && selected.roomId !== activeRoomId) setActiveRoomId(selected.roomId);
       setActiveDecisionId(id);
       store.setUserSetting("lastRoomId", selectedRoomId);
@@ -656,8 +829,12 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       let positions = 0;
       let edges = 0;
       let created = 0;
+      let influenced = 0;
       const clarificationQuestions = [];
       const confirmQuestions = [];
+      // Mappings that actually committed, surfaced so the caller can capture them
+      // as per-user learning examples. Each is { axis, outcome, confidence }.
+      const learned = [];
       const caps = commandCapabilities(sourceCommand);
 
       update.people.forEach((item) => {
@@ -679,6 +856,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         if (caps.grid && item.position && item.position !== currentDecision?.positions?.[id]) {
           store.setPosition(targetDecisionId, id, item.position);
           positions += 1;
+          if (item.position !== "unknown") learned.push({ axis: "stance", outcome: item.position, confidence: item.confidence });
         }
         if (caps.grid && item.power != null && item.interest != null) {
           const currentPlacement = currentDecision?.placements?.[id] || {};
@@ -693,8 +871,27 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           }
           store.setPlacement(targetDecisionId, id, item.power, item.interest, item.confidence);
           placements += 1;
+          const powerBand = gridBand(item.power);
+          const interestBand = gridBand(item.interest);
+          if (powerBand) learned.push({ axis: "power", outcome: powerBand, confidence: item.confidence });
+          if (interestBand) learned.push({ axis: "interest", outcome: interestBand, confidence: item.confidence });
           if (item.confidence === "low" && !confirmQuestions.length) {
             confirmQuestions.push(softGridConfirm(store.getPerson(id) || item, item.power, item.interest));
+          }
+        }
+        // Influence is owned by @network, @map, and @create. Never set it for the
+        // self user, and never overwrite a level the user set by hand on the ring.
+        // @network gates on confidence: an uncertain read asks instead of writing.
+        if (caps.influence && item.influenceLevel) {
+          const target = store.getPerson(id);
+          const current = { isSelf: target?.isSelf, overridden: store.getInfluence(targetDecisionId, id).overridden };
+          const verdict = influenceDecision(item, current, sourceCommand);
+          if (verdict === "write") {
+            store.setInfluence(targetDecisionId, id, item.influenceLevel, false);
+            influenced += 1;
+            learned.push({ axis: "influence", outcome: item.influenceLevel, confidence: item.confidence });
+          } else if (verdict === "ask" && clarificationQuestions.length < 2) {
+            clarificationQuestions.push(influenceClarification(store.getPerson(id) || item));
           }
         }
         currentDecision = store.getDecision(targetDecisionId);
@@ -713,7 +910,19 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       });
 
       if (update.decisionNote) store.addDecisionNote(targetDecisionId, update.decisionNote);
-      if (edges) setActiveTab("network");
+      if (caps.influence && influenced) {
+        const pts = store.getParticipants(targetDecisionId);
+        const inf = store.getDecision(targetDecisionId)?.influence || {};
+        const leveled = (id) => ["high", "medium", "low"].includes(inf[id]?.level);
+        const nonSelf = pts.filter((p) => !p.isSelf);
+        trackNetwork("influence_inferred", {
+          roomId: targetRoomId,
+          participantCount: pts.length,
+          inferredCount: nonSelf.filter((p) => leveled(p.id)).length,
+          nullCount: nonSelf.filter((p) => !leveled(p.id)).length,
+        });
+      }
+      if (edges || (caps.influence && influenced)) setActiveTab("network");
       else if (placements || positions) setActiveTab("grid");
 
       const parts = [
@@ -722,21 +931,110 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         profiles ? `${profiles} ${profiles === 1 ? "read" : "reads"}` : "",
         placements || positions ? "grid" : "",
         edges ? "network" : "",
+        influenced ? `${influenced} influence ${influenced === 1 ? "level" : "levels"}` : "",
       ].filter(Boolean);
       let body = update.summary || (parts.length ? `Updated ${parts.join(", ")}.` : "No clear update found.");
-      if (sourceCommand === "network" && edges) body = `Added ${edges} network ${edges === 1 ? "relationship" : "relationships"}.`;
-      if (clarificationQuestions.length && !placements && !positions) body = "I need a quick check before moving the grid.";
-      else if (clarificationQuestions.length) body = `Updated ${parts.join(", ") || "the room"}, but held one extreme grid value for confirmation.`;
-      const concreteChanges = created + notes + profiles + placements + positions + edges;
+      if (sourceCommand === "network") {
+        // @network owns edges and influence. Name whichever it changed.
+        const bits = [];
+        if (edges) bits.push(`${edges} ${edges === 1 ? "relationship" : "relationships"}`);
+        if (influenced) bits.push(`${influenced} influence ${influenced === 1 ? "level" : "levels"}`);
+        if (bits.length) body = `Updated ${bits.join(" and ")}.`;
+        else if (clarificationQuestions.length) body = "Before I move anyone on the ring, one quick check.";
+      } else if (clarificationQuestions.length && !placements && !positions) {
+        body = "I need a quick check before moving the grid.";
+      } else if (clarificationQuestions.length) {
+        body = `Updated ${parts.join(", ") || "the room"}, but held one extreme grid value for confirmation.`;
+      }
+      const concreteChanges = created + notes + profiles + placements + positions + edges + influenced;
       const modelQuestions = concreteChanges || clarificationQuestions.length ? [] : update.openQuestions || [];
 
       return {
         label: commandResultLabel(sourceCommand),
         body,
         questions: [...clarificationQuestions, ...confirmQuestions, ...modelQuestions].slice(0, 2),
+        learned,
       };
     },
     [decision, ensurePersonForUpdate, findPersonRef, room, store]
+  );
+
+  // Sequenced dispatch for a controller plan: mapper first, then (for "both")
+  // the strategist on the UPDATED room. A state machine, never an LLM-to-LLM
+  // loop: each expert runs at most once, and the only relay back is the mapper's
+  // single clarification, which the controller hands to the user.
+  const dispatchControllerPlan = useCallback(
+    async (plan, text, priorMessages) => {
+      if (!decision || !plan) return;
+      setIsGenerating(true);
+      try {
+        if (plan.intent === "map" || plan.intent === "both") {
+          // @energy is the user-facing name; "grid" is the internal command. The
+          // single source for this translation lives in the contract so it stays
+          // testable and never reaches the server as "energy".
+          let command = serverCommandForControllerCommand(plan.command);
+          let focusPerson = null;
+          if (command === "note") {
+            // A note needs a resolvable focus person. Without one, fall back to
+            // the broad @map intake (the safe minimum) instead of guessing.
+            const split = splitLeadingPersonRef(text, [participants, Object.values(store.getAllPeople())]);
+            if (split.person) focusPerson = split.person;
+            else command = "map";
+          }
+          const resp = await interpretRoomCommand({
+            command,
+            text,
+            instruction: plan.cleanedIntent || null,
+            room,
+            decision,
+            participants,
+            edges: store.getEdges(decision.id),
+            focusPerson,
+            messages: priorMessages,
+          });
+          if (resp.kind !== "update") {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+            return;
+          }
+          const message = applyRoomUpdate(resp.update, command) || { label: "Room updated", body: "Updated the room." };
+          // One voice, one pass: the controller relays at most one mapper
+          // clarification, never a question chain.
+          message.questions = (message.questions || []).slice(0, 1);
+          trackEvent("room_map_update", { command });
+          captureLearnedMappings({ message, noteText: text, participants: store.getParticipants(decision.id), priorMessages });
+          store.pushMessage(decision.id, { type: "updated", ...message });
+        }
+        if (plan.intent === "advise" || plan.intent === "both") {
+          // Advice reads the room AFTER the mapper write: fresh decision,
+          // participants, and edges from the store.
+          const freshDecision = store.getDecision(decision.id) || decision;
+          const freshParticipants = store.getParticipants(decision.id);
+          const resp = await askStrategist({
+            question: text,
+            room,
+            decision: freshDecision,
+            participants: freshParticipants,
+            edges: store.getEdges(decision.id),
+            messages: store.getChat(decision.id),
+          });
+          if (resp.kind === "coach") {
+            trackEvent("strategist_ask");
+            store.pushMessage(decision.id, {
+              type: "coach",
+              body: resp.answer.answer,
+              questions: resp.answer.moves,
+              cites: resp.answer.cites,
+              grounded: resp.answer.grounded,
+            });
+          } else {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+          }
+        }
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [applyRoomUpdate, decision, participants, room, store]
   );
 
   const completeOnboarding = useCallback(
@@ -898,17 +1196,87 @@ export default function Room({ onExit, userId, userName, userEmail }) {
 
   /* chat */
   const onSubmit = useCallback(
-    async (e) => {
-      e.preventDefault();
-      const q = draft.trim();
+    async (eOrText) => {
+      // Accept a form event (reads the draft) or a string (a suggestion pill tap
+      // re-running the text as a prefixed command through this same path).
+      const fromPill = typeof eOrText === "string";
+      if (!fromPill) eOrText.preventDefault();
+      const q = (fromPill ? eOrText : draft).trim();
       if (!q || !decision || isGenerating) {
-        setDraft("");
+        if (!fromPill) setDraft("");
         return;
       }
+      if (!fromPill) setDraft("");
       setShowPath(false);
       // Capture prior turns before the new user message lands, for anaphora.
       const priorMessages = store.getChat(decision.id);
       store.pushMessage(decision.id, { type: "user", body: q });
+
+      // @play gap-closing: a free-text reply to a coaching question is parsed back
+      // through the same @map command path, then readiness is re-checked.
+      if (playCoaching && playCoaching.decisionId === decision.id && !q.startsWith("@")) {
+        setDraft("");
+        setIsGenerating(true);
+        try {
+          const resp = await interpretRoomCommand({
+            command: "map",
+            text: q,
+            room,
+            decision,
+            participants,
+            edges: store.getEdges(decision.id),
+            messages: priorMessages,
+          });
+          if (resp.kind === "update") {
+            const message = applyRoomUpdate(resp.update, "map") || { label: "Room updated", body: "Updated the room." };
+            captureLearnedMappings({ message, noteText: q, participants: store.getParticipants(decision.id), priorMessages });
+            store.pushMessage(decision.id, { type: "updated", ...message });
+            let nextParticipants = store.getParticipants(decision.id);
+            let recheck = checkPlayReadiness({ participants: nextParticipants, decision: store.getDecision(decision.id) });
+            let step = nextCoachingStep({ readiness: recheck, prev: playCoaching });
+            // Graceful exit: if the user answered twice without a clear stance,
+            // read the still-unknown people as neutral so the loop terminates.
+            if (step.kind === "neutralize") {
+              step.ids.forEach((id) => store.setPosition(decision.id, id, "neutral"));
+              const names = step.ids.map((id) => store.getPerson(id)).filter(Boolean).map((p) => (p.isSelf ? "you" : p.name.split(/\s+/)[0]));
+              store.pushMessage(decision.id, {
+                type: "updated",
+                label: "Reading as neutral",
+                body: `I could not pin a clear stance for ${names.join(" and ") || "them"}, so I will read them as neutral for the play. Adjust on the Energy lens if that is off.`,
+              });
+              nextParticipants = store.getParticipants(decision.id);
+              recheck = checkPlayReadiness({ participants: nextParticipants, decision: store.getDecision(decision.id) });
+              step = nextCoachingStep({ readiness: recheck, prev: null });
+            }
+            if (recheck.ready || step.kind === "ready") {
+              setPlayCoaching(null);
+              store.pushMessage(decision.id, { type: "updated", label: "Ready for a play", body: "That closes the gap. Send @play and I will lay out the move." });
+            } else if (step.kind === "manual") {
+              setPlayCoaching(null);
+              const tip =
+                recheck.reason === "missing_grid"
+                  ? "Place the remaining people on the Energy lens by dragging their chip, then send @play."
+                  : "Add who else is in the room with @add Name, role, then send @play.";
+              store.pushMessage(decision.id, { type: "updated", label: "One more step", body: tip });
+            } else {
+              const coaching = buildPlayCoaching(recheck, nextParticipants);
+              store.pushMessage(decision.id, { type: "coach", body: coaching.body, questions: coaching.questions, grounded: true });
+              setPlayCoaching({ decisionId: decision.id, reason: recheck.reason, missing: recheck.missing, attempts: step.attempts || 0 });
+            }
+          } else {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+          }
+        } finally {
+          setIsGenerating(false);
+        }
+        return;
+      }
+
+      if (/^@play\b/i.test(q)) {
+        setDraft("");
+        await runPlay();
+        return;
+      }
 
       const note = q.match(/^@notes?\s+([\s\S]+)$/i);
       if (note) {
@@ -934,6 +1302,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             if (resp.kind === "update") {
               const message = applyRoomUpdate(resp.update, "note") || { label: "Note saved", body: `Updated ${target.name}.` };
               trackEvent("observation_create", { source: "chat_note" });
+              captureLearnedMappings({ message, noteText: body, participants: store.getParticipants(decision.id), priorMessages });
               store.pushMessage(decision.id, { type: "updated", ...message });
             } else {
               const text = cleanShortNote(body);
@@ -966,7 +1335,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         setDraft("");
         return;
       }
-      const mapCommand = q.match(/^@(map|energy|grid|network|net|create)\s+([\s\S]+)$/i);
+      // @create is retired as a user command; @add covers adding people and @map
+      // covers prose intake. The internal "create" path still backs onboarding.
+      const mapCommand = q.match(/^@(map|energy|grid|network|net)\s+([\s\S]+)$/i);
       if (mapCommand) {
         const rawCommand = mapCommand[1].toLowerCase();
         // @energy is the user-facing name; @grid stays as a hidden alias. Both
@@ -988,6 +1359,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           if (resp.kind === "update") {
             const message = applyRoomUpdate(resp.update, command) || { label: "Map updated", body: "Updated the room." };
             trackEvent("room_map_update", { command });
+            captureLearnedMappings({ message, noteText: text, participants: store.getParticipants(decision.id), priorMessages });
             store.pushMessage(decision.id, { type: "updated", ...message });
           } else {
             store.pushMessage(decision.id, { type: "fallback", body: resp.body });
@@ -1035,17 +1407,18 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         return;
       }
 
-      // Open chat (experimental): plain text routes to the grounded strategist
-      // behind the input guard. Anything off-topic is declined by the strategist.
+      // Plain text (no command prefix). When live reasoning is off, only commands
+      // run. Otherwise the controller reads the intent and, in production
+      // (routing flag off), surfaces a tappable suggestion pill. Nothing mutates
+      // here: state changes only when the user taps the pill, which dispatches
+      // the controller plan.
       if (!OPEN_CHAT) {
-        setDraft("");
         store.pushMessage(decision.id, {
           type: "fallback",
-          body: "Use @note, @energy, @network, @map, @create, @ask, @read, or @add to work the room.",
+          body: "Use @note, @energy, @network, @map, @ask, @read, or @add to work the room.",
         });
         return;
       }
-      setDraft("");
       const screen = screenOpenMessage(q);
       if (screen.blocked) {
         trackEvent("open_chat_blocked", { reason: screen.reason });
@@ -1053,32 +1426,68 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         return;
       }
       setIsGenerating(true);
+      let plan = null;
       try {
-        const resp = await askStrategist({
-          question: q,
-          room,
-          decision,
-          participants,
-          edges: store.getEdges(decision.id),
-          messages: priorMessages,
+        const { classification } = await classifyIntent(q);
+        plan = planClassificationAction(classification, ENABLE_PLAIN_TEXT_ROUTING);
+        // Privacy-safe analytics: route and resolution enums only, never the raw
+        // text and never the cleaned digest.
+        trackNetwork("plain_text_classified", {
+          intent: plan.intent,
+          command: plan.command || null,
+          confidence: plan.confidence,
+          routed_to: controllerRoutedTo(plan),
+          resolution: plan.action,
+          acted: plan.action === "route" || plan.action === "confirm",
         });
-        if (resp.kind === "coach") {
-          trackEvent("open_chat");
-          store.pushMessage(decision.id, {
-            type: "coach",
-            body: resp.answer.answer,
-            questions: resp.answer.moves,
-            cites: resp.answer.cites,
-            grounded: resp.answer.grounded,
-          });
-        } else {
-          store.pushMessage(decision.id, { type: "fallback", body: resp.body });
-        }
       } finally {
         setIsGenerating(false);
       }
+      if (!plan) return;
+      if (plan.action === "clarify") {
+        // The controller asks its one clarifying question and never guesses.
+        // The reply comes back through this same handler as fresh plain text.
+        if (plan.question) store.pushMessage(decision.id, { type: "fallback", body: plan.question });
+        else store.pushMessage(decision.id, { type: "suggest-list", body: "I'm not sure how to use this. Did you mean to:" });
+      } else if (plan.action === "pill") {
+        store.pushMessage(decision.id, {
+          type: "suggest",
+          intent: plan.intent,
+          command: plan.command,
+          cleanedIntent: plan.cleanedIntent,
+          confidence: plan.confidence,
+          text: q,
+          body: `Looks like ${describeControllerPlan(plan)}. Tap to run it.`,
+        });
+      } else if (plan.action === "route" || plan.action === "confirm") {
+        // Routing flag on: dispatch the plan, labeling it so the user sees the call.
+        const label =
+          plan.action === "route"
+            ? `↳ treated as ${describeControllerPlan(plan)}`
+            : `I read this as ${describeControllerPlan(plan)}, running it. Tell me if that was wrong.`;
+        store.pushMessage(decision.id, { type: "fallback", body: label });
+        await dispatchControllerPlan(plan, q, priorMessages);
+      }
     },
-    [applyRoomUpdate, decision, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, room, store]
+    [applyRoomUpdate, decision, dispatchControllerPlan, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, playCoaching, room, runPlay, store]
+  );
+  // A suggestion pill tap dispatches the stored controller plan: same mapper and
+  // strategist path as silent routing, but only on an explicit user tap.
+  const onRunSuggestion = useCallback(
+    (message) => {
+      if (!message?.text || !message?.intent) return;
+      const plan = { intent: message.intent, command: message.command || null, cleanedIntent: message.cleanedIntent || "" };
+      trackNetwork("plain_text_classified", {
+        intent: plan.intent,
+        command: plan.command,
+        confidence: message.confidence || "medium",
+        routed_to: controllerRoutedTo(plan),
+        resolution: "pill_tapped",
+        acted: true,
+      });
+      dispatchControllerPlan(plan, message.text, store.getChat(decision?.id));
+    },
+    [decision, dispatchControllerPlan, store]
   );
   const showOnNetwork = useCallback(() => {
     setShowPath(true);
@@ -1136,6 +1545,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     onOpenProfile: openPersonPage,
     onCiteClick: openReadChip,
     onOpenCommands: () => setModal({ type: "commands" }),
+    onRunSuggestion,
     draft,
     setDraft,
     onSubmit,
@@ -1210,7 +1620,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                   error={onboarding.error}
                   headline={onboarding.mode === "guided" ? "Set up a new room" : "Build your first room"}
                   onSubmit={submitOnboarding}
-                  onSkip={skipOnboarding}
+                  onDismiss={dismissOnboarding}
                   onOpenRoom={openOnboardingRoom}
                 />
               </main>
@@ -1269,7 +1679,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                             participants={participants}
                             decision={decision}
                             onOpenProfile={openPersonPage}
-                            onAddExternal={() => setModal({ type: "external" })}
+                            onAddPerson={() => setModal({ type: "addParticipant" })}
                             onRemoveParticipant={(id) => {
                               store.removeParticipant(decision.id, id);
                               trackEvent("decision_participant_remove");
@@ -1290,11 +1700,13 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                             participants={participants}
                             decision={decision}
                             edges={store.getEdges(decision.id)}
-                            onRemoveEdge={(index) => store.removeEdge(decision.id, index)}
+                            roomId={activeRoomId}
                             selectedId={nodeSummaryId}
                             onOpenProfile={openNodeSummary}
-                            sequence={sequence}
-                            showPath={showPath}
+                            onSetInfluence={(personId, level, angle) => store.setInfluence(decision.id, personId, level, true, angle)}
+                            onPersistAngle={(personId, angle) => store.setInfluenceAngle(decision.id, personId, angle)}
+                            onCreateEdge={(from, to, type) => store.addEdge(decision.id, { from, to, type })}
+                            onRemoveEdge={(index) => store.removeEdge(decision.id, index)}
                           />
                         )}
                       </div>
@@ -1420,9 +1832,17 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           }}
         />
       )}
-      {modal?.type === "external" && decision && (
-        <AddExternal
-          onAdd={(name, role) => {
+      {modal?.type === "addParticipant" && decision && room && (
+        <AddParticipant
+          rosterAvailable={(room.rosterIds || [])
+            .map((id) => store.getPerson(id))
+            .filter(Boolean)
+            .filter((p) => ![...decision.participantIds, ...decision.externalIds].includes(p.id))}
+          onAddExisting={(id) => {
+            store.addParticipant(decision.id, id);
+            trackEvent("decision_participant_add", { source: "roster" });
+          }}
+          onAddExternal={(name, role) => {
             const id = store.addExternal(decision.id, { name, role });
             trackEvent("external_add");
             setModal(null);

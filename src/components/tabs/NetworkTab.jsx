@@ -1,161 +1,477 @@
-import React, { useMemo } from "react";
-import { networkPositions, EDGE_META } from "../../data/seed.js";
-import { Chip } from "../Chip.jsx";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { trackNetwork } from "../../lib/firebase.js";
+import {
+  CENTER,
+  VIEWBOX,
+  RING_RADIUS,
+  EDGE_LABEL,
+  EDGE_TYPES,
+  ringLayout,
+  ringLabelPositions,
+  annulusPath,
+  pickerAnchor,
+  angleFromCenter,
+  clipLine,
+  edgeColor,
+  edgeStrokeWidth,
+  gestureForRadius,
+  nearestRing,
+  levelForRing,
+  dist,
+} from "../../lib/influence-ring.js";
 
-function trimLine(from, to, sp, ep) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy) || 1;
-  return {
-    x1: from.x + (dx / len) * sp,
-    y1: from.y + (dy / len) * sp,
-    x2: to.x - (dx / len) * ep,
-    y2: to.y - (dy / len) * ep,
-  };
-}
-const FB = { x: 50, y: 50 };
+const MOVE_THRESHOLD = 6; // viewBox units before a press counts as a drag, not a click
 
-function firstName(person) {
-  return (person?.name || "").split(" ")[0].toLowerCase();
-}
-
-function seedPositionFor(person) {
-  return networkPositions[person.id] || networkPositions[firstName(person)] || null;
-}
-
-function roleLevel(role) {
-  const value = String(role || "").toLowerCase();
-  if (/\bceo\b|chief executive/.test(value)) return 0;
-  if (/\bcpo\b|chief product/.test(value)) return 1;
-  if (/head|lead/.test(value)) return 2;
-  return 3;
+function firstLabel(node) {
+  if (node.isSelf) return "You";
+  const first = String(node.name || "").trim().split(/\s+/)[0] || "?";
+  return first.length > 7 ? `${first.slice(0, 6)}…` : first;
 }
 
-function laneWeight(person) {
-  const value = `${person.name || ""} ${person.role || ""}`.toLowerCase();
-  if (/\bceo\b|chief executive|\bcpo\b|chief product|head of product/.test(value)) return 50;
-  if (/engineer|engineering/.test(value)) return 24;
-  if (/professional|seller/.test(value)) return 36;
-  if (/\bweb\b/.test(value)) return 64;
-  if (/sales/.test(value)) return 76;
-  if (/ux|design/.test(value)) return 84;
-  return 50;
+function levelLabel(level) {
+  if (level === "high") return "High influence";
+  if (level === "medium") return "Medium influence";
+  if (level === "low") return "Low influence";
+  return "Influence unknown";
 }
 
-function spreadRow(row) {
-  const sorted = [...row].sort((a, b) => laneWeight(a.person) - laneWeight(b.person) || a.index - b.index);
-  if (sorted.length === 1) return [[sorted[0], laneWeight(sorted[0].person)]];
-  return sorted.map((item, itemIndex) => [item, 16 + (68 * itemIndex) / (sorted.length - 1)]);
+// The render level a null/unknown influence maps to for badge and class styling.
+function badgeLevel(level) {
+  return level === "high" || level === "medium" || level === "low" ? level : "unknown";
 }
 
-function autoNetworkPositions(participants, edges) {
-  if (!participants.length) return {};
-  const visible = new Set(participants.map((p) => p.id));
-  const levels = new Map(participants.map((person) => [person.id, roleLevel(person.role)]));
-  const defersEdges = edges.filter((edge) => visible.has(edge.from) && visible.has(edge.to) && edge.type === "defers");
-
-  for (let i = 0; i < participants.length; i += 1) {
-    let changed = false;
-    defersEdges.forEach((edge) => {
-      const fromLevel = levels.get(edge.from) ?? 3;
-      const toLevel = levels.get(edge.to) ?? 2;
-      const next = Math.max(fromLevel, toLevel + 1);
-      if (next !== fromLevel) {
-        levels.set(edge.from, next);
-        changed = true;
-      }
-    });
-    if (!changed) break;
-  }
-
-  const ranked = participants.map((person, index) => ({ person, index, level: levels.get(person.id) ?? 3 }));
-  const levelValues = [...new Set(ranked.map((item) => item.level))].sort((a, b) => a - b);
-  const rows = levelValues.map((level) => ranked.filter((item) => item.level === level));
-  const yByRows = rows.length === 1 ? [50] : rows.map((_, index) => 14 + (70 * index) / (rows.length - 1));
-  const out = {};
-
-  rows.forEach((row, rowIndex) => {
-    spreadRow(row).forEach(([item, x]) => {
-      out[item.person.id] = { x, y: yByRows[rowIndex] };
-    });
-  });
-
-  return out;
+// Provenance line under the influence badge: did the user set it, or was it inferred?
+function provenanceLine(rawLevel, overridden) {
+  if (overridden) return "Influence set by you";
+  if (rawLevel) return "Influence inferred from notes";
+  return null;
 }
 
 /**
- * Influence map. Typed edges between participants, with the recommended
- * sequence lit up as an ordered path after a play.
+ * The Influence Ring. Concentric rings encode influence over this decision; You
+ * sits at the center. Desktop pointer interactions: drag a node's core to move it
+ * between rings (sets influence), drag its rim to draw a relationship. SVG only,
+ * no graph library. Touch drag is intentionally out of scope.
  */
-export function NetworkTab({ participants, decision, edges, onRemoveEdge, selectedId, onOpenProfile, sequence, showPath }) {
-  const visible = new Set(participants.map((p) => p.id));
-  const liveEdges = edges.filter((e) => visible.has(e.from) && visible.has(e.to));
-  const allSeeded = participants.length > 0 && participants.every((p) => seedPositionFor(p));
-  const layout = useMemo(() => {
-    if (allSeeded) return Object.fromEntries(participants.map((p) => [p.id, seedPositionFor(p)]));
-    return autoNetworkPositions(participants, liveEdges);
-  }, [allSeeded, participants, liveEdges]);
-  const pos = (id) => layout[id] || FB;
+export function NetworkTab({ participants, decision, edges, roomId, onOpenProfile, onSetInfluence, onPersistAngle, onCreateEdge, onRemoveEdge, selectedId }) {
+  const svgRef = useRef(null);
+  const dragRef = useRef(null);
+  const [drag, setDrag] = useState(null);
+  const [hover, setHover] = useState(null); // { id, zone: "move"|"edge" }
+  const [picker, setPicker] = useState(null);
 
-  const pathSegs = useMemo(() => {
-    if (!showPath || !sequence || sequence.length < 2) return [];
-    const segs = [];
-    for (let i = 0; i < sequence.length - 1; i++) {
-      segs.push(trimLine(pos(sequence[i]), pos(sequence[i + 1]), 7, 9));
-    }
-    return segs;
+  const influence = decision?.influence || {};
+  const layout = useMemo(() => ringLayout(participants, influence), [participants, influence]);
+  const nodeById = useMemo(() => new Map(layout.map((n) => [n.id, n])), [layout]);
+  const visible = useMemo(() => new Set(layout.map((n) => n.id)), [layout]);
+  const liveEdges = useMemo(
+    () => (edges || []).filter((e) => visible.has(e.from) && visible.has(e.to)),
+    [edges, visible]
+  );
+  const labels = useMemo(() => ringLabelPositions(), []);
+
+  // network_viewed once per mount.
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    if (viewedRef.current) return;
+    viewedRef.current = true;
+    trackNetwork("network_viewed", { roomId, participantCount: participants.length, edgeCount: liveEdges.length });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sequence, showPath]);
+  }, []);
 
-  const stepOf = useMemo(() => {
-    const m = {};
-    if (showPath && sequence) sequence.forEach((id, i) => (m[id] = i + 1));
-    return m;
-  }, [sequence, showPath]);
+  // Claim a default angle for any node that does not yet own one, so its position
+  // is stable from here on. Self-healing on purpose: it writes any node still
+  // missing a stored angle and retries until the write lands, which survives the
+  // async store hydration that can otherwise replace an early optimistic write.
+  // setInfluenceAngle dedupes an identical angle and needsPersist flips to false
+  // once stored, so this converges in a write or two and never loops. Never runs
+  // mid-drag, so it cannot fight a gesture in progress.
+  useEffect(() => {
+    if (!onPersistAngle || dragRef.current) return;
+    layout.forEach((n) => {
+      if (n.isSelf || !n.needsPersist) return;
+      onPersistAngle(n.id, n.angle);
+    });
+  }, [layout, onPersistAngle]);
+
+  const setDragState = (next) => {
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  // Escape cancels a drag or closes the picker with no write.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (dragRef.current) setDragState(null);
+      setPicker(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Map a pointer event to viewBox coords, accounting for preserveAspectRatio
+  // (xMidYMid meet) letterboxing when the element is not square.
+  const toViewBox = (e) => {
+    const rect = svgRef.current.getBoundingClientRect();
+    const scale = Math.min(rect.width, rect.height) / VIEWBOX;
+    const offsetX = (rect.width - VIEWBOX * scale) / 2;
+    const offsetY = (rect.height - VIEWBOX * scale) / 2;
+    return {
+      x: (e.clientX - rect.left - offsetX) / scale,
+      y: (e.clientY - rect.top - offsetY) / scale,
+    };
+  };
+
+  // Map viewBox coords to pixels relative to the canvas, for HTML overlays
+  // (tooltip, picker), accounting for the same letterboxing.
+  const toCanvasPx = (vx, vy) => {
+    const svg = svgRef.current;
+    if (!svg) return { left: 0, top: 0 };
+    const sr = svg.getBoundingClientRect();
+    const cr = (svg.parentElement || svg).getBoundingClientRect();
+    const scale = Math.min(sr.width, sr.height) / VIEWBOX;
+    const offX = (sr.width - VIEWBOX * scale) / 2;
+    const offY = (sr.height - VIEWBOX * scale) / 2;
+    return { left: sr.left - cr.left + offX + vx * scale, top: sr.top - cr.top + offY + vy * scale };
+  };
+
+  const startDrag = (e, node) => {
+    if (node.isSelf) return; // self never repositions and has no outbound edges
+    const { x, y } = toViewBox(e);
+    const mode = gestureForRadius(dist(x, y, node.x, node.y), node.r);
+    if (!mode) return;
+    e.stopPropagation();
+    try {
+      svgRef.current.setPointerCapture?.(e.pointerId);
+    } catch {
+      // Pointer capture is a convenience; a capture failure must not block the drag.
+    }
+    setPicker(null);
+    setDragState({ mode, id: node.id, startX: x, startY: y, x, y, moved: false, originLevel: node.rawLevel || null, hoverTargetId: null, snapRing: node.ring });
+  };
+
+  const onPointerMove = (e) => {
+    const cur = dragRef.current;
+    if (!cur) return;
+    const { x, y } = toViewBox(e);
+    const moved = cur.moved || dist(x, y, cur.startX, cur.startY) > MOVE_THRESHOLD;
+    let hoverTargetId = null;
+    let invalidTargetId = null;
+    let snapRing = cur.snapRing;
+    if (cur.mode === "move") {
+      snapRing = nearestRing(dist(x, y, CENTER, CENTER));
+    } else if (cur.mode === "edge") {
+      const over = layout.find((n) => n.id !== cur.id && dist(x, y, n.x, n.y) <= n.r);
+      // A node under the pointer is a valid target unless it is You (no inbound
+      // edges from a rim drag onto self). Self under the pointer reads as invalid.
+      if (over && !over.isSelf) hoverTargetId = over.id;
+      else if (over && over.isSelf) invalidTargetId = over.id;
+    }
+    setDragState({ ...cur, x, y, moved, hoverTargetId, invalidTargetId, snapRing });
+  };
+
+  const openPicker = (from, to) => {
+    const a = nodeById.get(from);
+    const b = nodeById.get(to);
+    if (!a || !b) return;
+    const existingIndex = (edges || []).findIndex((ed) => ed.from === from && ed.to === to);
+    setPicker({
+      from,
+      to,
+      existingType: existingIndex >= 0 ? edges[existingIndex].type : null,
+      existingIndex,
+    });
+  };
+
+  const onPointerUp = (e) => {
+    const cur = dragRef.current;
+    if (!cur) return;
+    try {
+      svgRef.current.releasePointerCapture?.(e.pointerId);
+    } catch {
+      // Ignore: the gesture must finalize even if capture was never held.
+    }
+    if (!cur.moved) {
+      // A press without a drag is a click: open the node summary.
+      setDragState(null);
+      onOpenProfile?.(cur.id);
+      return;
+    }
+    if (cur.mode === "move") {
+      const level = levelForRing(cur.snapRing ?? nearestRing(dist(cur.x, cur.y, CENTER, CENTER)));
+      // The drop point owns this node's new angle. One write moves exactly this node:
+      // its level (the ring it landed on) and its angular position (where it was dropped).
+      const angle = angleFromCenter(cur.x, cur.y);
+      onSetInfluence?.(cur.id, level, angle);
+      trackNetwork("influence_overridden", { roomId, newLevel: level, previousLevel: cur.originLevel || null });
+    } else if (cur.mode === "edge" && cur.hoverTargetId) {
+      openPicker(cur.id, cur.hoverTargetId);
+    }
+    setDragState(null);
+  };
+
+  const choosePickerType = (type) => {
+    if (!picker) return;
+    const { from, to, existingType, existingIndex } = picker;
+    if (existingType === type) {
+      setPicker(null);
+      return;
+    }
+    if (existingIndex >= 0) {
+      onRemoveEdge?.(existingIndex);
+      trackNetwork("edge_deleted", { roomId });
+    }
+    const created = onCreateEdge?.(from, to, type);
+    if (created) trackNetwork("edge_created", { roomId, type });
+    setPicker(null);
+  };
+
+  const removeExistingEdge = () => {
+    if (!picker || picker.existingIndex < 0) return;
+    onRemoveEdge?.(picker.existingIndex);
+    trackNetwork("edge_deleted", { roomId });
+    setPicker(null);
+  };
+
+  const onNodeHoverMove = (e, node) => {
+    if (dragRef.current || node.isSelf) return;
+    const { x, y } = toViewBox(e);
+    const zone = gestureForRadius(dist(x, y, node.x, node.y), node.r) || "move";
+    setHover({ id: node.id, zone });
+  };
+
+  const empty = participants.length < 2;
+  const draggingNode = drag && drag.moved ? drag : null;
+  const hoverNode = hover ? nodeById.get(hover.id) : null;
 
   return (
     <div className="net-zone">
-      <div className="net-canvas">
-        <svg className="net-svg">
+      <div className="ring-canvas">
+        <svg
+          ref={svgRef}
+          className="ring-svg"
+          viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          style={{ cursor: drag ? (drag.mode === "edge" ? (drag.invalidTargetId ? "not-allowed" : "crosshair") : "grabbing") : "default" }}
+        >
           <defs>
-            <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--ink-faint)" />
-            </marker>
-            <marker id="arr-hot" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--ink)" />
+            <marker id="ring-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </marker>
           </defs>
-          {liveEdges.map((e, i) => {
-            const t = trimLine(pos(e.from), pos(e.to), 7, e.type === "defers" ? 9 : 7);
-            return (
-              <React.Fragment key={i}>
-                <line x1={`${t.x1}%`} y1={`${t.y1}%`} x2={`${t.x2}%`} y2={`${t.y2}%`}
-                  stroke={EDGE_META[e.type].color} strokeWidth="1.5"
-                  strokeOpacity={showPath ? 0.2 : 0.8}
-                  markerEnd={e.type === "defers" ? "url(#arr)" : undefined}
-                  style={{ pointerEvents: "none" }} />
-              </React.Fragment>
-            );
-          })}
-          {pathSegs.map((t, i) => (
-            <line key={`p${i}`} className="net-path" x1={`${t.x1}%`} y1={`${t.y1}%`} x2={`${t.x2}%`} y2={`${t.y2}%`}
-              markerEnd="url(#arr-hot)" style={{ animationDelay: `${i * 0.18}s` }} />
+
+          {/* Influence zone bands: subtle tints so the rings read as zones, not just lines */}
+          {!empty && (
+            <>
+              <circle className="ring-zone ring-zone-high" cx={CENTER} cy={CENTER} r={RING_RADIUS[1]} />
+              <path className="ring-zone ring-zone-medium" d={annulusPath(RING_RADIUS[2], RING_RADIUS[1])} fillRule="evenodd" />
+              <path className="ring-zone ring-zone-low" d={annulusPath(RING_RADIUS[3], RING_RADIUS[2])} fillRule="evenodd" />
+            </>
+          )}
+
+          {/* Ring guides */}
+          {[1, 2, 3].map((ring) => (
+            <circle
+              key={ring}
+              className={`ring-guide ${draggingNode && draggingNode.mode === "move" && draggingNode.snapRing === ring ? "ring-guide-active" : ""}`}
+              cx={CENTER}
+              cy={CENTER}
+              r={RING_RADIUS[ring]}
+              fill="none"
+            />
           ))}
+          {labels.map((l) => (
+            <text key={l.ring} className="ring-label" x={l.x} y={l.y} textAnchor="middle">
+              {l.label}
+            </text>
+          ))}
+
+          {empty ? (
+            <g className="ring-empty-state" textAnchor="middle">
+              {/* Three concentric open arcs, an echo of the ring itself */}
+              {[20, 35, 50].map((r) => (
+                <path
+                  key={r}
+                  className="ring-empty-arc"
+                  d={`M ${CENTER - r} ${CENTER - 40} A ${r} ${r} 0 1 1 ${CENTER + r} ${CENTER - 40}`}
+                  fill="none"
+                />
+              ))}
+              <text className="ring-empty-title" x={CENTER} y={CENTER + 50}>
+                No one in the room yet
+              </text>
+              <text className="ring-empty-sub" x={CENTER} y={CENTER + 78}>
+                Use @note to add people and map their influence
+              </text>
+            </g>
+          ) : (
+            <>
+              {/* Edges first, so nodes sit on top */}
+              {liveEdges.map((e, i) => {
+                const a = nodeById.get(e.from);
+                const b = nodeById.get(e.to);
+                if (!a || !b) return null;
+                const l = clipLine(a, b);
+                return (
+                  <line
+                    key={`${e.from}-${e.to}-${e.type}-${i}`}
+                    x1={l.x1}
+                    y1={l.y1}
+                    x2={l.x2}
+                    y2={l.y2}
+                    stroke={edgeColor(e.type)}
+                    strokeWidth={edgeStrokeWidth(e.type)}
+                    markerEnd="url(#ring-arrow)"
+                  />
+                );
+              })}
+
+              {/* Ghost edge while drawing a relationship */}
+              {draggingNode && draggingNode.mode === "edge" && (() => {
+                const a = nodeById.get(draggingNode.id);
+                if (!a) return null;
+                return <line className="ring-ghost-edge" x1={a.x} y1={a.y} x2={draggingNode.x} y2={draggingNode.y} />;
+              })()}
+
+              {/* Nodes */}
+              {layout.map((node) => {
+                const isDraggingThis = draggingNode && draggingNode.id === node.id && draggingNode.mode === "move";
+                const cx = isDraggingThis ? draggingNode.x : node.x;
+                const cy = isDraggingThis ? draggingNode.y : node.y;
+                const r = isDraggingThis ? node.r * 1.1 : node.r;
+                const isHover = hover?.id === node.id;
+                const isTarget = draggingNode?.mode === "edge" && draggingNode.hoverTargetId === node.id;
+                const isInvalidTarget = draggingNode?.mode === "edge" && draggingNode.invalidTargetId === node.id;
+                // Both gestures get a hover affordance at once, but never on You and
+                // never on the node being dragged (its own affordance would lag the pointer).
+                const showAffordance = isHover && !node.isSelf && !drag;
+                return (
+                  <g
+                    key={node.id}
+                    className="ring-node-g"
+                    onPointerDown={(e) => startDrag(e, node)}
+                    onPointerEnter={() => setHover({ id: node.id, zone: "move" })}
+                    onPointerMove={(e) => onNodeHoverMove(e, node)}
+                    onPointerLeave={() => setHover((h) => (h?.id === node.id ? null : h))}
+                    onClick={() => node.isSelf && onOpenProfile?.(node.id)}
+                    style={{ cursor: node.isSelf ? "default" : drag ? "inherit" : isHover ? (hover.zone === "edge" ? "crosshair" : "grab") : "pointer" }}
+                  >
+                    {/* Valid drop target while drawing a relationship: a pulsing invite ring */}
+                    {isTarget && <circle className="ring-target-pulse" cx={cx} cy={cy} r={r} fill="none" />}
+                    {/* Invalid drop target (You has no inbound edges): a red veto tint */}
+                    {isInvalidTarget && <circle className="ring-target-invalid" cx={cx} cy={cy} r={r} />}
+                    {/* Rim gesture affordance: a dashed ring with N/E/S/W ticks signals the edge zone */}
+                    {showAffordance && (
+                      <g className="ring-rim-affordance" pointerEvents="none">
+                        <circle className="ring-rim-ring" cx={cx} cy={cy} r={r + 5} fill="none" />
+                        {[[0, -1], [1, 0], [0, 1], [-1, 0]].map(([ux, uy], i) => (
+                          <line
+                            key={i}
+                            className="ring-rim-tick"
+                            x1={cx + ux * (r + 5)}
+                            y1={cy + uy * (r + 5)}
+                            x2={cx + ux * (r + 10)}
+                            y2={cy + uy * (r + 10)}
+                          />
+                        ))}
+                      </g>
+                    )}
+                    {/* Center gesture affordance: a soft inner disc signals the reposition zone */}
+                    {showAffordance && (
+                      <circle className="ring-core-affordance" cx={cx} cy={cy} r={r * 0.55} pointerEvents="none" />
+                    )}
+                    {/* You is the fixed anchor: a thin halo separates it from the high ring */}
+                    {node.isSelf && <circle className="ring-node-self-halo" cx={cx} cy={cy} r={r + 8} fill="none" />}
+                    <circle
+                      className={`ring-node ring-node-${node.level} ${isHover ? "ring-node-hover" : ""} ${node.id === selectedId ? "ring-node-selected" : ""}`}
+                      cx={cx}
+                      cy={cy}
+                      r={r}
+                      opacity={isDraggingThis ? 0.9 : 1}
+                    />
+                    {node.isSelf ? (
+                      <text className="ring-node-label-self" x={cx} y={cy + r + 18} textAnchor="middle">
+                        You
+                      </text>
+                    ) : (
+                      <text className={`ring-node-label ring-node-label-${node.level}`} x={cx} y={cy} textAnchor="middle" dominantBaseline="central">
+                        {firstLabel(node)}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </>
+          )}
         </svg>
-        {participants.map((p) => {
-          const pp = pos(p.id);
+
+        {/* Hover tooltip */}
+        {hoverNode && !drag && (() => {
+          const px = toCanvasPx(hoverNode.x, hoverNode.y - hoverNode.r);
           return (
-            <Chip key={p.id} person={p} position={decision.positions[p.id]} selected={p.id === selectedId}
-              onClick={() => onOpenProfile(p.id)} badge={stepOf[p.id]}
-              style={{ left: `${pp.x}%`, top: `${pp.y}%`, "--ty": "-50%", animation: "none" }} />
+          <div
+            className="ring-tooltip"
+            style={{ left: px.left, top: px.top }}
+          >
+            <span className="ring-tooltip-name">{hoverNode.isSelf ? "You" : hoverNode.name}</span>
+            {hoverNode.isSelf ? (
+              <span className="ring-tooltip-meta">This map shows the room from your perspective.</span>
+            ) : (() => {
+              const lvl = badgeLevel(hoverNode.rawLevel);
+              const prov = provenanceLine(hoverNode.rawLevel, influence[hoverNode.id]?.overridden);
+              return (
+                <>
+                  {hoverNode.role && <span className="ring-tooltip-meta">{hoverNode.role}</span>}
+                  <span className={`ring-tooltip-badge ring-badge-${lvl}`}>{levelLabel(hoverNode.rawLevel)}</span>
+                  {prov && <span className="ring-tooltip-prov">{prov}</span>}
+                </>
+              );
+            })()}
+          </div>
           );
-        })}
+        })()}
+
+        {/* Relationship picker */}
+        {picker && (() => {
+          const a = nodeById.get(picker.from);
+          const b = nodeById.get(picker.to);
+          if (!a || !b) return null;
+          const anchor = pickerAnchor(a, b);
+          const pos = toCanvasPx(anchor.x, anchor.y);
+          return (
+          <>
+            <div className="ring-picker-scrim" onClick={() => setPicker(null)} />
+            <div className={`ring-picker ring-picker-${anchor.placement}`} style={{ left: pos.left, top: pos.top }}>
+              <span className="ring-picker-label">Set relationship</span>
+              <div className="ring-picker-pills">
+                {EDGE_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    className={`ring-pill ring-pill-${type} ${picker.existingType === type ? "ring-pill-active" : ""}`}
+                    onClick={() => choosePickerType(type)}
+                  >
+                    {EDGE_LABEL[type]}
+                  </button>
+                ))}
+              </div>
+              {picker.existingIndex >= 0 && (
+                <button className="ring-picker-remove" onClick={removeExistingEdge}>
+                  Remove relationship
+                </button>
+              )}
+            </div>
+          </>
+          );
+        })()}
       </div>
+
       <div className="legend">
         <span className="legend-item"><span className="edge-swatch edge-ally" />Ally</span>
         <span className="legend-item"><span className="edge-swatch edge-conflict" />Conflict</span>
         <span className="legend-item"><span className="edge-swatch edge-defers" />Defers to</span>
-        {showPath && <span className="legend-item"><span className="edge-swatch edge-path" />Sequence</span>}
+        <span className="legend-item ring-legend-hint">Drag a node's core to move rings, its rim to link</span>
       </div>
     </div>
   );

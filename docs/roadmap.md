@@ -20,7 +20,18 @@
 - Decisions inside a room, with context, deadline, archive, positions, and
   placements.
 - Three lenses: People, Energy (the draggable power/interest map, command
-  @energy with @grid as a hidden alias), Network (typed edges, sequence path).
+  @energy with @grid as a hidden alias), Network (the Influence Ring).
+- Influence Ring (Network lens). A concentric-ring SVG layout (no graph library)
+  where ring position encodes influence over the decision: You at center, then
+  high, medium, low. Influence is decision-scoped (decision.influence[personId] =
+  {level, overridden}); @network, @map, and @create infer it (never the self user,
+  never over a user-set level). Two desktop drag gestures: drag a node's core to move it
+  between rings (sets influence, persists), drag its rim to draw a relationship
+  through a three-pill picker (Ally, Conflict, Defers to). Edges arrowed and
+  colored by type, clipped to node edges. Novus events: network_viewed,
+  edge_created, edge_deleted, influence_overridden, influence_inferred (ids and
+  counts only). Offline evals: npm run verify:influence (5 inference cases) and
+  npm run verify:influence-ring (Suite A layout, B edges, C drag).
 - Desktop rail cleanup. Rooms and Decisions stay in the rail, selected rows use
   one quiet treatment, decision rows are plain and indented, New room and New
   decision share the same plus affordance, and rooms with many active decisions
@@ -37,9 +48,12 @@
   mobile it focuses on tap so the keyboard never opens the product out of view on
   load. Last room and decision persist to the user in Firestore and restore on
   reload; same-browser state also remembers the visible room, decision, and
-  active lens before synced settings finish loading. Selecting a decision writes
-  `#/decision/:decisionId`, so hard refresh keeps the selected decision even
-  before browser storage or Firestore has rehydrated. Local preview entry uses
+  active lens before synced settings finish loading. The active decision is
+  continuously synced into the URL as `#/decision/:decisionId` (not only on
+  explicit selection but also when a decision is auto-restored or auto-selected),
+  so a hard refresh keeps the exact decision even before browser storage or
+  Firestore has rehydrated; the sync reads the live hash and yields to person and
+  frameworks sub-pages. Local preview entry uses
   the `#/` app route so localhost refreshes stay inside the room. The main
   workspace stays quiet when a room has no decision open because chat already
   owns that state; no-room-selected uses a mobile-only "Select your room" card,
@@ -58,8 +72,9 @@
 - Visual first frameworks (SCARF, Thomas Kilmann, Cialdini, Fisher and Ury),
   rendered as state-label chips on the person and explained generically on the
   shared /frameworks page.
-- Command-first chat. Send is enabled only for `@` commands while open play
-  coaching is parked. Sent prompts appear in the thread as user bubbles before
+- Command-first chat. Send is enabled for `@` commands (and for a free-text reply
+  to a `@play` coaching question). Open non-command plain-text chat stays parked
+  behind the live flag. Sent prompts appear in the thread as user bubbles before
   structured assistant results.
 - Local-only Claude connection test bridge behind `VITE_ENABLE_LIVE_LLM=true`.
   It uses Vite dev server endpoints, keeps the Anthropic key server-side,
@@ -95,28 +110,45 @@
   or restoring a room or decision never triggers it; below threshold it returns
   basic insights and asks for more information with no model call.
 - Global person memory: observations and cross decision history.
-- Guided Setup, one engine behind three doors (first-run, "+ New room", and
-  manual). A warm three-question conversation (decision and outcome, make-or-break
-  people, relationships) reflects back the user's own words between answers,
-  shows one short naming confirm with a derived title, and builds the room through
-  the existing @create, @energy, and @network command pipeline. First-run opens
-  by default with the rooms rail collapsed and never shows to a user who already
-  has real content; "Skip, I'll set it up myself" drops into the manual Room
-  Settings modal. New room enters with a soft chat-expansion transition instead
-  of a hard panel swap. Building force-creates every extracted person (never
-  "No participants") while apply-time resolution dedupes role mentions, and the
-  closing names what it built specifically.
+- Guided Setup, one engine behind two doors (first-run and "+ New room"). A warm
+  three-question conversation (decision and outcome, make-or-break people,
+  relationships) reflects back the user's own words between answers, shows one
+  short naming confirm with a derived title, and builds the room through the
+  existing @create, @energy, and @network command pipeline. First-run opens by
+  default with the rooms rail collapsed and never shows to a user who already has
+  real content. Guided chat is the only setup entry: the "Skip, I'll set it up
+  myself" link is gone, replaced by a quiet close affordance that dismisses into
+  the live empty room (no modal), with manual room editing still reachable through
+  room settings. Both doors share one calm entrance animation. Building
+  force-creates every extracted person (never "No participants") while apply-time
+  resolution dedupes role mentions, and the closing names what it built
+  specifically.
+- @play, the gated terminal play. A deterministic client-side readiness check
+  (you plus at least one other, every stance set, every non-self participant
+  placed on Energy, no network requirement) decides whether to generate. Below
+  threshold it coaches the user with conversational, person-specific questions and
+  parses the free-text reply back through @map, emitting play_blocked with a reason
+  code (missing_people, missing_stance, missing_grid). At threshold it generates a
+  grounded, sequenced play and pins it as an immutable card labeled PLAY with a
+  timestamp, frozen at generation time, encrypted at rest, persisting across
+  reload. Offline eval: npm run verify:play.
+- Self as participant. The signed-in operator is a first-class person (isSelf),
+  seeded once per account and migrated into existing rooms and active decisions,
+  rendered as "You" across the roster, People, Energy, and network, removable,
+  never duplicated, and excluded from "Add from directory". First-person
+  references resolve to the self record. Offline eval: npm run verify:self.
 - LLM context helper for Claude command and play calls.
 - GitHub CI check for the app build, offline eval harness, and Firebase
   Function syntax check.
 - Clean folder structure. Docs.
 
 ## Next
-- Open (non-deterministic) chat is in experimental testing: plain text routes to
-  the grounded strategist behind a deterministic input guard (jailbreak / abuse /
-  oversized blocked pre-call) and the strategist-v2 harness (off-topic and
-  roleplay refusal, profanity neutralized). Harden further from real test logs
-  before making it the default surface.
+- Open (non-deterministic) chat is in experimental testing: plain text enters
+  the three-role relay (controller -> mapper and/or strategist) behind a
+  deterministic input guard (jailbreak / abuse / oversized blocked pre-call) and
+  the strategist-v4 harness (off-topic and roleplay refusal, profanity
+  neutralized, shared knowledge base). Harden further from real test logs before
+  making it the default surface.
 - Live eval runs and model comparisons once the local prompt and command
   contract feel stable enough to spend credits deliberately.
 - Production trace review workflow. Surface privacy-safe trace metadata in the
@@ -125,14 +157,23 @@
 - Stronger `@map` and `@network` extraction. Explicit reporting lines,
   micromanagement, control, alliances, conflict, close ties, and privileged
   relationships should become reliable enough to pass live trace-derived evals.
-- Re-open plain chat only after command mapping, trace capture, and eval scores
-  are good enough to prevent vague, expensive coaching responses.
+  `@network` now owns influence level as well as edges (prompt v6, offline evals
+  in `verify:network`); harden the influence inference from live traces next.
+- Plain-text routing exists behind `ENABLE_PLAIN_TEXT_ROUTING`, off in
+  production. Today plain text runs through the controller (intent, mapping
+  command, cleaned instruction, per-user idiolect priors) and surfaces as a
+  tappable suggestion pill, never routed silently and never mutating state; an
+  unclear read asks one clarifying question. Flip the flag on only after live
+  trace review and eval scores say the controller is good enough to act on its
+  own. This is the safe, incremental version of re-opening plain chat: a
+  dispatched relay with a human tap in the loop.
+- Re-open fully silent plain-text routing only after command mapping, trace
+  capture, and eval scores are good enough to prevent vague, expensive responses.
 - Privacy surface: export, delete, and a clear statement of where data lives.
 - Stronger zero knowledge encryption option based on a user held secret, if the
   product needs protection from server side key derivation.
-- Editable network edges and per person edge drawing.
-- A safer relationship editing surface. The network canvas should not delete
-  edges through accidental line clicks.
+- Influence Ring on touch: drag gestures are desktop only for now; a touch
+  interaction model (move between rings, draw relationships) is still to design.
 - Bundle splitting for Firebase modules if the production bundle warning starts
   to matter.
 - Bump the Firebase Functions runtime off the deprecated Node 20 (decommission

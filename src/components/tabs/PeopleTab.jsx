@@ -6,15 +6,15 @@ import { Avatar, PositionBadge } from "../primitives.jsx";
  * row opens the full profile. The whole roster joins by default; here you remove
  * a participant or add an external.
  */
-export function PeopleTab({ participants, decision, onOpenProfile, onAddExternal, onRemoveParticipant }) {
+export function PeopleTab({ participants, decision, onOpenProfile, onAddPerson, onRemoveParticipant }) {
   if (participants.length === 0) {
     return (
       <div className="empty-state">
         <div className="empty-icon">◦</div>
         <p className="empty-title">No participants</p>
-        <p className="empty-sub">Everyone was removed. Add someone external to this decision.</p>
-        <button className="btn-primary" onClick={onAddExternal}>
-          Add external
+        <p className="empty-sub">Everyone was removed. Add someone back from this room, or add an external.</p>
+        <button className="btn-primary" onClick={onAddPerson}>
+          Add person
         </button>
       </div>
     );
@@ -25,8 +25,8 @@ export function PeopleTab({ participants, decision, onOpenProfile, onAddExternal
   return (
     <div className="people-tab">
       <div className="people-actions">
-        <button className="btn-secondary btn-sm" onClick={onAddExternal}>
-          + Add external
+        <button className="btn-secondary btn-sm" onClick={onAddPerson}>
+          + Add person
         </button>
       </div>
 
@@ -34,11 +34,12 @@ export function PeopleTab({ participants, decision, onOpenProfile, onAddExternal
         {participants.map((p) => {
           const stance = decision.positions[p.id] || "unknown";
           return (
-            <li key={p.id} className="person-row" onClick={() => onOpenProfile(p.id)}>
-              <Avatar name={p.name} />
+            <li key={p.id} className={`person-row ${p.isSelf ? "person-row-self" : ""}`} onClick={() => onOpenProfile(p.id)}>
+              <Avatar name={p.name} self={p.isSelf} />
               <div className="person-row-main">
                 <div className="person-row-top">
-                  <span className="person-row-name">{p.name}</span>
+                  <span className="person-row-name">{p.isSelf ? "You" : p.name}</span>
+                  {p.isSelf && <span className="self-tag">You</span>}
                   {externals.has(p.id) && <span className="ext-tag">External</span>}
                   <PositionBadge position={stance} size="xs" />
                 </div>

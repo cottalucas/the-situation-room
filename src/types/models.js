@@ -43,8 +43,21 @@
  * @property {string[]} externalIds      People scoped to this decision only.
  * @property {Object.<string,Position>} positions  personId to stance.
  * @property {Object.<string,Placement>} placements personId to grid placement.
+ * @property {Object.<string,Influence>} influence  personId to influence over this decision.
  * @property {DecisionNote[]} decisionNotes
  * @property {string} derivedSummary
+ */
+
+/**
+ * @typedef {Object} Influence
+ * @property {"high"|"medium"|"low"|null} level  How much this person can block,
+ *   accelerate, or shape this decision. Decision-scoped, not a person trait.
+ * @property {boolean} overridden  True if the user set it by hand on the Influence
+ *   Ring; @map must not overwrite a user-set level. isSelf is always center, ignored.
+ * @property {number} [angle]  Optional. The node's angular position on its ring,
+ *   in radians from the ring center. Owned per person: assigned once by even
+ *   distribution, then only changed when the user drags that specific node. Absent
+ *   until first assigned. Not set or read by @map.
  */
 
 /**
@@ -64,6 +77,9 @@
  * @property {Observation[]} observations
  * @property {boolean} [fresh]         True for a just added person with little data.
  * @property {boolean} [external]      True if created as a decision external.
+ * @property {boolean} [isSelf]        True for the one self record that represents
+ *                                     the signed-in operator. Rendered as "You",
+ *                                     never duplicated, excluded from the directory.
  */
 
 /**

@@ -10,6 +10,7 @@
 
 /* Base power and interest used only to seed decision placements. */
 const BASE_PI = {
+  self: { power: 42, interest: 95 },
   dana: { power: 78, interest: 92 },
   raj: { power: 90, interest: 35 },
   lin: { power: 55, interest: 88 },
@@ -29,6 +30,17 @@ function placementsFor(ids) {
 /* ------------------------------------------------------------------ */
 
 export const peopleBase = [
+  {
+    id: "self",
+    name: "You",
+    role: "Product Manager",
+    isSelf: true,
+    goal: "Get the legacy Salesforce integration sunset through the leadership review.",
+    context: "The operator working this decision. Owns the play, but not the final call.",
+    baseRead: { scarf: "", tki: "", cialdini: "", fisherUry: "" },
+    visualTags: { scarfDimensions: [], tkiStyle: "", cialdiniLever: "", fuTeaser: "" },
+    relationships: [],
+  },
   {
     id: "dana",
     name: "Dana Olsson",
@@ -199,21 +211,6 @@ export const seedObservations = {
 /* NETWORK: node layout (percent of canvas) and edge styling          */
 /* ------------------------------------------------------------------ */
 
-export const networkPositions = {
-  priya: { x: 50, y: 14 },
-  raj: { x: 80, y: 40 },
-  dana: { x: 20, y: 40 },
-  marco: { x: 72, y: 82 },
-  lin: { x: 28, y: 82 },
-  chad: { x: 50, y: 58 },
-};
-
-export const EDGE_META = {
-  ally: { label: "Ally", color: "var(--for)" },
-  conflict: { label: "Conflict", color: "var(--against)" },
-  defers: { label: "Defers to", color: "var(--ink-faint)" },
-};
-
 const SALESFORCE_EDGES = [
   { from: "priya", to: "raj", type: "defers" },
   { from: "raj", to: "marco", type: "defers" },
@@ -228,7 +225,7 @@ const SALESFORCE_EDGES = [
 /* ------------------------------------------------------------------ */
 
 export const seedRooms = [
-  { id: "mobile", name: "Mobile app team", rosterIds: ["dana", "raj", "lin", "marco", "priya", "chad"] },
+  { id: "mobile", name: "Mobile app team", rosterIds: ["self", "dana", "raj", "lin", "marco", "priya", "chad"] },
 ];
 
 export const seedDecisions = [
@@ -245,10 +242,17 @@ export const seedDecisions = [
     derivedSummary: "",
     deadline: "2026-06-04",
     status: "active",
-    participantIds: ["dana", "raj", "lin", "marco", "priya"],
+    participantIds: ["self", "dana", "raj", "lin", "marco", "priya"],
     externalIds: [],
-    positions: { dana: "against", raj: "neutral", lin: "against", marco: "for", priya: "unknown" },
-    placements: placementsFor(["dana", "raj", "lin", "marco", "priya"]),
+    positions: { self: "for", dana: "against", raj: "neutral", lin: "against", marco: "for", priya: "unknown" },
+    placements: placementsFor(["self", "dana", "raj", "lin", "marco", "priya"]),
+    influence: {
+      priya: { level: "high", overridden: false },
+      raj: { level: "high", overridden: false },
+      dana: { level: "medium", overridden: false },
+      marco: { level: "medium", overridden: false },
+      lin: { level: "low", overridden: false },
+    },
     edges: SALESFORCE_EDGES,
   },
   {

@@ -2,8 +2,9 @@
 
 The visual language is editorial, calm, and senior. Warm off white, deep ink,
 one serif for headings, one sans for everything else. Restraint signals
-seniority. Generous whitespace. The only saturated color is the four quadrant
-accents and the position dots.
+seniority. Generous whitespace. Saturated color is reserved for the four quadrant
+accents, the position dots, and the three influence-ring levels (a lens-scoped
+3-step ramp). Nothing else.
 
 This file exists so the look never regresses again. If you change a token,
 change it here too.
@@ -40,6 +41,14 @@ position
 --against     #b91c1c
 --neutral     #8d8a82
 --unknown     #c5c1b8   shown as a dashed ring
+
+influence ring (Network lens only). node fill / stroke, by level. larger and
+darker reads as more influence.
+--influence-high     #3D2C8D / #2A1F6B   deep purple, dominant: can block or approve
+--influence-medium   #C4611A / #A0501A   warm amber, must be consulted
+--influence-low      #D4916A / #B07050   desaturated, informed only
+--influence-unknown  #B0A898 / #908070   warm gray, dashed: null influence, ambiguous by design
+--influence-self     #1A1A2E             near-black anchor, You
 ```
 
 Quadrant tints sit at about 6 percent over the raised surface, with a 15 percent
@@ -100,10 +109,26 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   only; selecting a room or decision must not trigger The Read.
 - First-run onboarding uses a chat-like panel, not a modal. Assistant prompts
   sit in raised bubbles, user answers sit in ink bubbles, and the form uses one
-  primary action. The panel asks three fixed questions and keeps skip as the
-  secondary action. When launched from New room it should feel like the chat
-  surface expanding into Guided Setup, with a soft entrance instead of an abrupt
-  hard swap.
+  primary action. The panel asks three fixed questions. Guided chat is the only
+  setup entry; there is no "Skip, I'll set it up myself" link. The panel carries a
+  quiet close affordance (the `onboarding-close` square in the header), and
+  dismissing lands the user in the live empty room with the rail and command
+  surface visible, never in a settings modal. Manual room editing stays reachable
+  through the existing room-settings entry point. The entrance is one calm,
+  uniform animation (a soft fade and slight rise, no lateral jump) on both
+  first-run and "+ New room", and it respects reduced-motion.
+- A generated play (`@play`) is a pinned, immutable card, visually distinct from
+  chat bubbles: a raised card with an ink top rule, labeled `PLAY · <timestamp>`
+  with a pin marker. It is frozen at generation time (the generating inputs are
+  snapshotted in), re-openable through the reasoning toggle, and persists across
+  reload. It is not a chat bubble and never restyles as one.
+- The signed-in operator is rendered as "You", visually distinct from directory
+  people: a tinted self tag and avatar in the roster and People lens, and a
+  self-marked chip (`chip-self`) on the Energy grid and network. "You" is present
+  in every room by default, removable, and never offered in "Add from directory".
+- "Add from directory" rows are roomy, never crammed: a vertical list with 8px
+  gaps, 14 by 16px row padding, and a 60px minimum row height, with a one-line
+  helper above the list.
 - Position shown as a colored dot (chip) and a pill badge.
 - Network and grid chips show a three character first-name label such as Cha,
   Cla, Rou, or Ral. Full name and role stay available through hover labels and
@@ -129,6 +154,54 @@ An 8px rhythm exposed as tokens `--s1` (4) through `--s7` (48). Cards use 18 to
   summary (`NodeSummary`), not the full overlay: name, the decision last touched,
   the last one or two notes, and key scores (Power and Interest, SCARF state).
   Tapping the summary opens the person profile page.
+- The Network lens is the Influence Ring: concentric rings on a square SVG
+  (viewBox 0 0 800 800) where ring position encodes influence over the decision.
+  You sits at the center as the fixed anchor: near-black `--influence-self` fill,
+  no stroke, a soft `drop-shadow(0 0 8px rgba(26,26,46,0.25))` glow, and a thin
+  halo ring at `r + 8` that separates it from the high ring. Its label reads "You"
+  beneath the node in `--ink-soft`, not inside, and it carries no cursor
+  affordance because it cannot be repositioned. High influence sits on ring 1
+  (r 140), medium on ring 2 (r 260, where unset/null also lands), low on ring 3
+  (r 380). Node radii encode hierarchy directly and step down self 36 / high 30 /
+  medium 24 / unknown 22 / low 19. Node labels read white inside the node, sized
+  by level: high 13px/600, medium 12px/500, low and unknown 11px/400; You is
+  13px/700 beneath the node. Each level pairs a fill with a darker stroke
+  (see tokens); null influence renders as its own warm-gray dashed `unknown`
+  style rather than masquerading as medium. Each person OWNS their angular
+  position. A stored `influence.angle` (set by a drag, or a persisted default) is
+  used verbatim; a person without one falls back to a stable default derived from
+  a roster-wide id-sorted slot, deliberately independent of how many people share
+  their ring. That is the rule that matters: changing one person's influence moves
+  only that person and never redistributes anyone else, with or without the
+  default ever being persisted. The renderer still writes each default back once
+  (self-healing, so an async store hydration cannot strip it), satisfying persist
+  across reload. Ring guides are dashed hairlines in
+  `--line-strong` at 0.6 opacity (6 4 dash); subtle tint bands fill each zone
+  behind them (high `rgba(61,44,141,0.04)`, medium `rgba(196,97,26,0.03)`, low
+  `rgba(176,168,152,0.02)`). Ring labels (HIGH INFLUENCE, MEDIUM, LOW) sit
+  centered at the top of each arc, 11px uppercase with 0.06em tracking, in
+  `--ink-faint`. Edges are arrowed lines clipped to node edges: ally `#1D9E75`,
+  conflict `#E24B4A`, defers `--line-strong`. Influence node colors are an
+  intentional, lens-scoped extension of the palette, not the quadrant or position
+  accents. Desktop drag has two gestures by zone: the node core repositions
+  between rings (the drop point sets both the ring and the angle), the rim draws a
+  relationship through the picker. The picker
+  anchors just off the midpoint of the two connected nodes (flipping below when
+  it would clip the top edge), never centered on the canvas, with a 10px "Set
+  relationship" eyebrow and color-coded pills (Ally green, Conflict red, Defers
+  to neutral) that fill with their hue at 10 percent on hover. Hover surfaces both
+  gestures at once: a soft white inner disc (`r * 0.55`) marks the reposition core
+  (grab cursor), and a dashed ring at `r + 5` with four N/E/S/W ticks marks the
+  relationship rim (crosshair cursor), both fading in over 150ms. While drawing a
+  relationship, a valid target pulses an inviting ring and an invalid one (You,
+  which takes no inbound edge) shows a red tint with a not-allowed cursor. You
+  never shows a drag affordance. Hover shows a small
+  tooltip (name 15px, body 13px, badge and provenance 11px): name, role, an
+  influence badge tinted to the level, and a provenance
+  line that reads "Influence set by you" when overridden or "Influence inferred
+  from notes" when the model placed it. The empty state (fewer than two
+  participants) centers a three-arc icon over "No one in the room yet" and "Use
+  @note to add people and map their influence". Touch drag is out of scope.
 - Mobile shell: a slim header with the brand and a right-side burger; a
   horizontal tab row (People, Energy, Network) directly beneath the header as the
   primary lens switcher; the active lens fills the full remaining height, so the

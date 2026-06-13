@@ -24,8 +24,10 @@ Person          people/{personId}
                 ownerId, name, role, goal, context,
                 baseRead{scarf,tki,cialdini,fisherUry},
                 visualTags{scarfDimensions,tkiStyle,cialdiniLever,fuTeaser},
-                relationships[{personId,type}], fresh, external, createdAt
-  a global profile that compounds across decisions and rooms.
+                relationships[{personId,type}], fresh, external, isSelf, createdAt
+  a global profile that compounds across decisions and rooms. Exactly one person
+  per account carries isSelf true: the signed-in operator, rendered as "You",
+  never duplicated, excluded from the directory.
 
 Observation     people/{personId}/observations/{obsId}
                 text, source(note|chat|history), decisionId?, ts
@@ -76,8 +78,8 @@ The seed exists only for explicit local preview.
 - `getSnapshot()` for `useSyncExternalStore`.
 - queries: `getRooms`, `getRoom`, `getDecisions`, `getDecision`, `getPerson`,
   `getAllPeople`, `getParticipants`, `getEdges`, `getChat`, `getPlacement`,
-  `getProfile`.
-- mutations: `savePerson`, `createPerson`, `updatePerson`, `addObservation`,
+  `getProfile`, `getSelf`, `getSelfId`.
+- mutations: `ensureSelf`, `savePerson`, `createPerson`, `updatePerson`, `addObservation`,
   `addNote`, `createRoom`, `updateRoom`, `addToRoster`, `removeFromRoster`,
   `createDecision`, `updateDecision`, `archiveDecision`, `deleteDecision`,
   `deleteRoom`, `deletePerson` as roster removal, `addDecisionNote`, `setPosition`, `setPlacement`,
@@ -160,6 +162,14 @@ external participant add, observation creation, archive/delete, and play
 request result. It does not log note text, decision context, person names, room
 names, or generated play text.
 
+Novus (Pendo) events for the Influence Ring fire through `trackNetwork` in
+`firebase.js`, fire and forget to both Firebase Analytics and `pendo.track` when
+the global is present: `network_viewed { roomId, participantCount, edgeCount }`,
+`edge_created { roomId, type }`, `edge_deleted { roomId }`, `influence_overridden
+{ roomId, newLevel }`, and `influence_inferred { roomId, participantCount,
+inferredCount, nullCount }`. Payloads carry only ids, counts, and enum values,
+never names, notes, or edge endpoints.
+
 ## Encrypted local cache and encrypted Firestore text
 
 The encrypted IndexedDB cache is a cache, not the store of record. Firebase is
@@ -188,6 +198,8 @@ stay plaintext so the app can query and render the map.
 ```
 users/{uid}                                      { name, email, position, createdAt,
                                                   settings }
+users/{uid}/learningExamples/{exampleId}        { phrasingPattern, mappingOutcome, axis,
+                                                  action, confidence, weight, createdAt }
 people/{personId}                               { ownerId, name, role, goal, context,
                                                   baseRead, visualTags, relationships,
                                                   fresh, external, createdAt }
@@ -208,8 +220,9 @@ Chat messages persist per decision under the owning room. Free text (body, text,
 questions) is encrypted before write and decrypted on read; role, type, label,
 personName, command, and ts stay plaintext so the thread renders and sorts
 without decrypting structure. Only meaningful turns are stored (user commands and
-assistant confirmations: user, updated, note, added, fallback). Welcome, loading,
-and parked play cards stay transient UI state. The store keeps optimistic chat in
+assistant confirmations: user, updated, note, added, fallback, coach, read, and
+play). A generated play persists as a pinned card; its frozen snapshot rides in
+the encrypted body. Welcome and loading cards stay transient UI state. The store keeps optimistic chat in
 its mirror and seeds from this history on load, so the conversation survives
 reload and sign-in on another device.
 
@@ -238,12 +251,23 @@ See `docs/llm-pipeline.md` for the end-to-end AI pipeline and MLOps (prompts,
 contracts, evals, traces, cost, deploy). This section covers the backend wiring.
 
 `functions/index.js` is the production Claude backend. It exposes one
-authenticated HTTPS function, `api`, with two same-origin endpoints:
+authenticated HTTPS function, `api`, with these same-origin endpoints:
 
 - `/api/interpret-room-command` for `@note`, `@energy` (alias `@grid`),
-  `@network`, `@map`, and `@create`.
+  `@network`, and `@map`. The internal `create` command also routes here (it
+  backs onboarding's add-people step), but `@create` is no longer a user command.
 - `/api/strategist` for the grounded `@ask` stakeholder coach.
-- `/api/generate-play` for the parked play generator and future play evals.
+- `/api/generate-play` for the `@play` generator, behind the deterministic
+  readiness gate, and play evals.
+- `/api/classify-intent` for the controller, the evolved plain-text intent
+  classifier and the dispatcher of the three-role relay (a cheap call that never
+  writes; it returns intent, mapping command, a cleaned instruction for the next
+  expert, confidence, and one optional clarifying question; silent routing is
+  gated behind `ENABLE_PLAIN_TEXT_ROUTING`, off in production). It is the only
+  call that carries the per-user idiolect priors.
+- `/api/capture-example` records one confirmed or corrected mapping into the
+  user's private learning example store. No model call: it name-redacts the
+  phrasing and writes one Firestore doc, so it runs before the LLM budget gate.
 
 The browser sends the Firebase Auth id token in the `Authorization` header.
 The function verifies the token, checks the per-user daily request and cost
@@ -251,6 +275,93 @@ limits, calls Anthropic with the server-side `ANTHROPIC_API_KEY` secret,
 normalizes the JSON response, records usage and trace metadata, and returns a
 small public meta object to the browser. Raw prompts and raw Claude responses
 are not returned to the browser.
+
+Server-only shared knowledge base. `functions/knowledge.js` carries
+`FRAMEWORK_GROUNDING` (`GROUNDING_VERSION`): timeless stakeholder theory
+(power versus interest as independent axes, Mendelow quadrants, one operational
+signal line each for SCARF, Cialdini, Thomas-Kilmann, and Fisher and Ury, the
+signal-reading lenses, the stance vocabulary, and the suggestion-versus-note
+output contract). It holds no named people, worked cases, or colleague data;
+concrete examples live in a separate example store, not here. It is bundled with
+the Function only, never written to Firestore and never placed in `src/lib`
+(which ships to the browser), so the client cannot read it. The browser sends a
+note; the Function prepends the knowledge and calls Haiku; only the normalized
+result returns to the client. The module feeds two cached system prefixes. The
+mapper prefix rides on every structured command (`@note`, `@grid`/`@energy`,
+`@network`, `@map`, plus the internal `create`/`net`): three static text blocks,
+the grounding, then `GLOBAL_LEARNINGS`, then `COMMAND_SYSTEM_PROMPT`, with
+`cache_control: { type: "ephemeral" }` on the last so the static prefix caches as
+one block. The strategist prefix (`/api/strategist`) is the grounding, then
+`GLOBAL_LEARNINGS`, then `STRATEGIST_SYSTEM_PROMPT`; the strategist shares the
+knowledge but never the extraction contract. Per-call text and room snapshot
+ride in the user turn, always below the cached prefix. The controller gets
+neither block: it is a language and intent expert only.
+
+`GLOBAL_LEARNINGS` (`GLOBAL_LEARNINGS_VERSION`) is the second half of that
+module, under the same privacy rules: curated, name-agnostic phrasing-to-mapping
+heuristics that hold across all users (for example, "rubber-stamped it" maps to
+interest low rather than stance supportive). Each rule is one concrete phrasing
+with a `[person]`/`[other]` placeholder mapped to an axis or stance plus a short
+reason, deliberately shaped so it could later become an eval case (input phrasing
+to expected mapping). It refines the grounding's signal-mapping with concrete
+language. It is curated by hand, never auto-grown from user data, and the
+combined grounding plus learnings prose is held under ~900 words by tightening
+rather than adding. It is bundled with the Function only, never in Firestore or
+`src/lib`.
+
+Per-user self-learning example store. A third, dynamic layer personalizes the
+read without breaking the cache. When a user confirms or corrects a suggested
+mapping, the Function records one example under the signed-in user's own document,
+`users/{uid}/learningExamples/{exampleId}`:
+`{ phrasingPattern, mappingOutcome, axis, action, confidence, weight, createdAt }`.
+The phrasing is name-redacted at write time by `functions/learning-store.js`
+(`redactPattern`): every participant name and first name, plus emails and
+`@handles`, becomes `[person]` before anything is stored. Raw note text and names
+never reach Firestore. `axis` is one of power, interest, stance, influence;
+`action` is accept, adjust, or skip (a corrected mapping is the strongest signal;
+a skip is a low-weight negative). Privacy is enforced two ways: the redaction at
+write time, and `firestore.rules` denying the client both read and write on
+`learningExamples`. Only the Function (Admin SDK, which bypasses rules) reads and
+writes it with verified auth, so the browser never sees the collection. The
+capture call carries no analytics content: the client fires one fire-and-forget
+`example_captured { action_type, was_adjusted }` event (enums only, never
+phrasing, names, or note text).
+
+At controller time (`/api/classify-intent`) the Function reads this user's
+recent examples (`readUserExamples`, ordered by recency through the automatic
+single-field index, over-fetched then capped), builds a soft-prior block
+(`buildUserPriorsBlock`, `selectUserPriors`), and appends it as one extra system
+block below the controller prompt. The controller, and only the controller,
+carries this idiolect layer: the priors teach it how this one user phrases
+things, so the cleaned instruction it hands the mapper already reflects the
+user's shorthand. The mapper and strategist never receive the priors, so their
+cached knowledge prefixes stay byte-identical and cached. Hard rules: the block
+states that the curated grounding and global learnings ALWAYS outweigh the
+priors; skip negatives are never surfaced as priors; and the slice is capped at
+five (`MAX_USER_PRIORS`) so a user's repeated mistakes can never dominate the
+read (the loop must not learn errors as truth). Each controller trace records
+`userPriorsCount`. `functions/learning-store.js` is server-only (bundled with the
+Function, never imported by `src/`), the same boundary as the grounding. The Vite
+dev bridge redacts through the same helper for parity but does not persist
+examples or inject priors (the store is production-only). Offline eval:
+`npm run verify:learning` proves redaction-before-storage, the soft-prior
+precedence rule, and the five-example cap.
+
+The knowledge module (`functions/knowledge.js`) is
+not mirrored in `src/`, so it carries its own `GROUNDING_VERSION` and
+`GLOBAL_LEARNINGS_VERSION` and is kept off the `COMMAND_PROMPT_VERSION` sync
+check (`COMMAND_SYSTEM_PROMPT` stays byte-identical across the two files). On
+Haiku 4.5 the cache only activates above a 4096-token prefix; the current static
+prefixes are ~2k tokens, so
+`cache_read_input_tokens` reads 0 today. The wiring is correct and free (a
+sub-floor prefix is not charged a write) and activates automatically if a
+prefix later grows past 4096. Each command trace records `groundingVersion`
+and an approximate `systemPrefixTokens` so the prefix size is logged as it
+approaches the floor; strategist traces record `groundingVersion` and
+`learningsVersion` too. The local
+Vite bridge imports `COMMAND_SYSTEM_PROMPT` from `src/lib`, so it does not carry
+the grounding or the learnings; this is an accepted dev parity gap in service of
+keeping the theory off the client.
 
 Runtime knobs live in `functions/.env.example`. The production key is never in
 source control; set it with `firebase functions:secrets:set ANTHROPIC_API_KEY`.
@@ -267,14 +378,14 @@ trace collection for deeper review.
 - recent observations only, capped at the newest five per participant.
 - decision edges.
 
-Open play chat is parked in the UI while mapping gets sharper. The chat input
-only enables Send when the draft starts with `@`; normal text does not call
-Claude. Sent prompts are stored as user messages before the command result, so
-the thread reads like a chat instead of an event log. `generatePlay()` and
-`/api/generate-play` remain as development plumbing for future play evals, but
-`Room.jsx` no longer calls them from the input box. This keeps local testing
-focused on deterministic commands and avoids spending tokens on vague coaching
-prompts.
+Open (non-command) plain-text chat is parked in the UI while mapping gets
+sharper. The chat input only enables Send when the draft starts with `@` (or for
+plain text when open chat is on, or when answering a `@play` coaching question).
+Sent prompts are stored as user messages before the command result, so the thread
+reads like a chat instead of an event log. `generatePlay()` and
+`/api/generate-play` are now called by the `@play` command behind the
+deterministic readiness gate (see the `@play` section above), so play generation
+only spends tokens when the room is ready.
 
 The local Vite bridge and production Firebase Function use the same contracts
 and prompt shape. In production, `src/lib/context.js` adds the signed-in user's
@@ -298,9 +409,12 @@ Both route to the same internal `grid` command and the same
 `decision.placements` and `decision.positions` fields, so the rename is a
 command and label change only, with no data migration. `@network` reads reporting lines, control,
 micromanagement, influence, alliances, close ties, and conflict into edges.
+`@network` owns two jobs: edges and influence level (ring placement); it gates
+influence on confidence and never touches power/interest (that is `@energy`).
 `@map` is the broad intake command that may create people, save notes, place
-people on the grid, set stance, and add network edges. `@create` creates people
-from prose. Open questions are capped at two, with one as the normal target.
+people on the grid, set stance, add network edges, and infer influence. The
+internal `create` command (no longer user-facing) creates people from prose for
+onboarding. Open questions are capped at two, with one as the normal target.
 Network and grid updates stay decision-scoped. Person notes and framework reads
 stay on the person profile.
 
@@ -328,21 +442,26 @@ model. Token budget per call stays small: eight short turns plus the room snapsh
 is well under the per-command max tokens.
 
 Open chat (experimental). When `VITE_ENABLE_LIVE_LLM` is on, plain text that is
-not a command routes to the grounded strategist through `/api/strategist`, so the
-chat can hold an open conversation without becoming a generic chatbot. Two layers
-of defense: `src/lib/chat-guard.js#screenOpenMessage` runs first and blocks empty,
-oversized, jailbreak/prompt-injection, and short pure-abuse input with a calm
-redirect and no model call; whatever passes goes to the strategist, which stays on
-the room, declines off-topic and roleplay (`grounded: false`), converts profanity
-to professional behavior, never diagnoses, and ignores embedded instructions. The
-strategist prompt is `strategist-v2`. Venting that carries real room content is
-allowed through and neutralized by the model. Analytics: `open_chat`,
-`open_chat_blocked {reason}`.
+not a command enters the three-role relay: `src/lib/chat-guard.js#screenOpenMessage`
+runs first and blocks empty, oversized, jailbreak/prompt-injection, and short
+pure-abuse input with a calm redirect and no model call; whatever passes goes to
+the controller (`/api/classify-intent`), which reads intent and either asks one
+clarifying question, surfaces a suggestion pill (production default), or, with
+`ENABLE_PLAIN_TEXT_ROUTING` on, dispatches to the mapper
+(`/api/interpret-room-command`, with the controller's cleaned instruction) and/or
+the strategist (`/api/strategist`); a "both" read maps first, then advises on the
+updated room. The strategist stays on the room, declines off-topic and roleplay
+(`grounded: false`), converts profanity to professional behavior, never
+diagnoses, and ignores embedded instructions. Its prompt is `strategist-v5`,
+running on the shared server-only knowledge base. Venting that carries real room
+content is allowed through and neutralized by the model. Analytics: `open_chat`,
+`open_chat_blocked {reason}`, `plain_text_classified { intent, command,
+confidence, routed_to, resolution, acted }` (enums only, never text).
 
-Guided Setup (one engine, three doors). New account creation marks a one-shot
+Guided Setup (one engine, two doors). New account creation marks a one-shot
 local onboarding flag. The conversation engine lives in `src/lib/onboarding.js`
 (questions, reflection, naming, command plan, closing, trigger guards) and renders
-through the single `OnboardingChat` view. Three doors share it:
+through the single `OnboardingChat` view. Two doors share it:
 
 - First-run: on first login with no usable room (`hasUsableRoom === false`,
   pending marker, not yet prompted) Room opens Guided Setup by default and
@@ -350,9 +469,16 @@ through the single `OnboardingChat` view. Three doors share it:
   expands the rail and lands in the populated room.
 - "+ New room": the rail's new-room action opens the same engine with
   returning-user framing (no product intro).
-- Manual: "Skip, I'll set it up myself" drops into the existing Room Settings
-  modal, reusing an empty room or creating one, so guided and manual are
-  connected.
+
+Guided chat is the only setup entry point. There is no "Skip, I'll set it up
+myself" link. The panel carries a quiet close affordance (`onboarding-close`);
+dismissing expands the rail and lands the user in the live empty room (a reused
+or fresh empty room, never a modal), with the rail and command surface visible.
+Manual room editing stays reachable through the existing room-settings entry
+point (rail edit, empty-state actions), unchanged. The entrance uses one calm,
+uniform animation (`guided-chat-expand`, a soft fade and rise) on both doors,
+with no lateral jump and no abrupt swap to a settings modal. Analytics:
+`onboarding_dismissed` replaces the old `onboarding_skipped`.
 
 The three plain-language questions are the decision and a good outcome, the few
 make-or-break people, and the relationships (skippable). Between answers the
@@ -373,20 +499,83 @@ still dedupes role mentions to existing roster members. No new model path or
 calibration logic exists for onboarding. Analytics: `onboarding_started`,
 `onboarding_completed`, `onboarding_skipped`, `onboarding_room_created`.
 
+Self as participant. The signed-in operator is a first-class participant.
+`store.ensureSelf({name, position})` runs once the account has loaded
+(`Room.jsx`, gated on `remoteReady` and a uid). It is idempotent: it guarantees
+exactly one person with `isSelf` true keyed to `${uid}_self`, and on the first
+run (the `selfSeeded` user setting) attaches self to every existing room roster
+and every active decision, migrating older accounts. After that one migration,
+removal sticks, so a user can take themselves off a room without it reappearing.
+`store.createRoom` seeds self into every new room roster by default; new
+decisions pull self in through the roster. Self is removable and never
+duplicated: re-adding resolves to the same record because the id is
+deterministic. `person-ref.js` resolves first-person references (I, me, my,
+myself) to the self record before any create, so the apply path attaches updates
+to the operator instead of creating a duplicate. The command context
+(`compactRoomCommandContext`) flags the self person with `isSelf`, and the
+command system prompt instructs the model to bind first-person to that id and
+never create a new person for the operator (added in `room-command-v4-self`;
+the current command prompt is `room-command-v8-relay-2026-06-10`, mirrored in
+`functions/index.js`; both files' `commandSchema` carry the identical full
+`profilePatch` shape, asserted by the sync check in `npm run eval`). Self
+renders distinctly as "You" in the People lens, roster, Energy grid
+(`chip-self`), and network, and is excluded from the "Add from directory" list
+so neither the user nor the model can create a duplicate. Local preview seeds one
+self person in `data/seed.js`; Firestore mode seeds it through `ensureSelf`.
+Eval: `npm run verify:self`.
+
+@play (gated terminal output). `@play` runs a deterministic, client-side
+readiness check before any model call (`src/lib/play-readiness.js`,
+`checkPlayReadiness`). Readiness requires at least two participants with self
+counting as one, every participant on a real stance (for, against, neutral),
+and every non-self participant placed on the Energy grid. Network edges are not
+required at any count. Reason codes for the `play_blocked` event, in priority
+order: `missing_people`, `missing_stance`, `missing_grid`. The model never judges
+sufficiency; it is computed from existing structural data.
+
+If readiness fails, `@play` generates no play. It pushes a conversational
+coaching turn (`buildPlayCoaching`, deterministic) that names what is missing in
+plain language and asks one or two coach-style questions about the biggest gap
+("How does Chad feel about this one, behind it or pushing back?"), never raw
+framework questions. The free-text reply is parsed back through the same `@map`
+command path and `applyRoomUpdate`, then readiness is re-checked. It emits
+`play_blocked` with the reason code.
+
+If readiness passes, `@play` calls `/api/generate-play` (the existing grounded
+play generator, Haiku, no new model path) and persists the result as a pinned,
+immutable card: a chat message of type `play` labeled `PLAY · <timestamp>`,
+visually distinct from chat bubbles (`chat-play-pinned`), re-openable, and frozen
+at generation time. The generating inputs (participant names, situation) are
+snapshotted into the card so it stays readable after the room changes or a
+reload. The play body is encrypted client-side like other free text (it rides in
+the message `body`, and `store.savePlay` also writes the durable Play doc);
+analytics logs the `play_generated` event only, never play content. The play
+message is persisted and rehydrated (`PERSISTED_MESSAGE_TYPES`), so the card
+survives reload and stays readable after further chat. Eval: `npm run
+verify:play`.
+
 Grounded strategist. `@ask` (alias `@coach`) calls `/api/strategist`, a calm
 stakeholder coach that reasons only over the room snapshot and `recentTurns`. It
-returns `{ answer, moves, cites, grounded }`. `normalizeStrategistAnswer` grounds
+returns `{ answer, moves, cites, grounded }`, where each move is an object
+`{ move, framework? }`. `normalizeStrategistAnswer` grounds
 `cites` to known participant ids and drops anything outside the room, so the
 coach cannot reference invented people. It also enforces house style
-deterministically: it strips em and en dashes, and a decline (`grounded: false`)
-carries an empty `moves` array regardless of what the model returns. The system
-prompt (`strategist-v3`) keeps answers to two to four sentences with at most three
-one-sentence moves, declines off-topic / roleplay with `grounded: false`, and when
-the room is too thin for a confident play it asks one focused question or names
-what to map next instead of forcing a full play. It runs on Haiku with a 900 token
-cap. This is additive: the
+deterministically: it strips em and en dashes, normalizes each move (accepting a
+legacy string or an object), keeps the optional `framework` lever only when
+present and non-empty (an unsupported lever is omitted, never faked), and a
+decline (`grounded: false`) carries an empty `moves` array regardless of what the
+model returns. The system prompt (`strategist-v5`, riding on the shared
+server-only knowledge base in production, never the extraction contract) keeps
+answers to two to four sentences (system prompt and user schema now agree) with
+at most three one-sentence moves, names the relevant framework lever per move
+when the room data supports it, declines off-topic / roleplay with
+`grounded: false`, and treats a sparse room as grounded-but-minimal (zero or one
+move naming what to map next) rather than forcing a full play. It runs on Haiku
+with a 1200 token cap (raised from 900, which truncated a full answer plus three
+moves). This is additive: the
 deterministic commands are unchanged. The eval harness scores strategist cases
-for grounded cites, a banned trait and diagnosis vocabulary list, and off-topic
+for grounded cites, the move object shape, the framework field being optional
+when present, a banned trait and diagnosis vocabulary list, and off-topic
 decline.
 
 The Read. A grounded read of the room lives inside the chat thread, not as a
@@ -417,12 +606,37 @@ target and the rest as the note, so multi-word names and titles work
 used for direct references but not for splitting a sentence, so a note body is
 never swallowed by a role match.
 
-`NetworkTab.jsx` uses the seeded network positions only when every visible
-participant belongs to the seeded preview scenario. Real rooms use a
-deterministic automatic layout derived from role hierarchy and decision edges,
-so new Firebase rooms do not collapse unknown people into the center of the
-canvas. Grid placement does not drive the network layout. A grid update should
-not reshuffle the relationship map unless it also changes relationships.
+The Network lens is the Influence Ring (`NetworkTab.jsx`), a hand-written SVG
+renderer with no graph library. Ring position encodes influence over this
+decision: You at the center (ring 0), then high (r 140), medium (r 260, where
+null also lands), and low (r 380). Nodes are distributed evenly around their ring
+with a per-ring rotation stagger so they never stack across rings, and the layout
+has no overlaps for normal counts. Edges are straight lines clipped to node
+edges, arrowed, colored by type (ally teal, conflict red, defers a line token).
+The pure geometry and interaction logic lives in `src/lib/influence-ring.js`
+(`ringLayout`, `clipLine`, `edgeColor`, `gestureForRadius`, `nearestRing`,
+`centerDropWrite`, `edgeWrite`, `ringLabelPositions`), so it is unit-testable
+without React.
+
+Two desktop pointer gestures, decided by where the press lands on a node:
+dragging the core (within 60% of the radius) repositions the node between rings
+and writes `influence[id] = { level, overridden: true }`; dragging the rim (60%
+to 100%) draws a relationship and opens a picker (Ally, Conflict, Defers to) that
+writes an edge. Escape cancels either with no write. The self node never
+repositions and has no outbound edge affordance. A press with no drag opens the
+node summary. Touch drag is out of scope. Pointer coordinates are mapped through
+the SVG `preserveAspectRatio` letterbox, and the capture calls are guarded so a
+capture hiccup never aborts a gesture.
+
+`influence` is decision-scoped, like positions and placements: a person can be
+high-influence on one decision and low on another. `store.setInfluence`,
+`getInfluence`, and `DEFAULT_INFLUENCE` manage it; it round-trips plaintext
+through `firestore-repo` (no encryption: it is an enum, not free text) and needs
+no Firestore rule change because it writes through the decision document.
+`@network`, `@map`, and `@create` infer it (never for the self user, never over a
+user-set `overridden` level); the `commandCapabilities`/`influenceDecision`
+helpers in `room-command-contract.js` are the shared, testable boundary. Grid
+placement does not drive the network layout.
 
 ## LLM trace capture
 
@@ -440,7 +654,9 @@ Production calls write trace metadata to
 `users/{uid}/llmUsage/{YYYY-MM-DD}`. Firestore rules allow the signed-in user
 to read their own usage and trace records; writes come from the Admin SDK in
 the Function. Raw production prompts and raw model text are stored only when
-`LLM_STORE_RAW_TRACES=true`.
+`LLM_STORE_RAW_TRACES=true`. The user's `learningExamples` subcollection is the
+stricter case: client read and write are both denied, so only the Function
+touches it.
 
 This is the V1 trace analysis layer in the AI eval flywheel. Local raw traces
 are best for prompt debugging. Production metadata is best for monitoring
@@ -461,8 +677,34 @@ so credit-spending runs are deliberate. Eval traces write to
 
 Onboarding has its own mocked fixture at `evals/fixtures/onboarding.json` and a
 deterministic verifier, `npm run verify:onboarding`. It checks the fixed
-question flow, one-shot trigger guard, command plan, skip path, and normalized
-mock outputs without calling a live model.
+question flow, one-shot trigger guard, command plan, and normalized mock outputs
+without calling a live model.
+
+The Influence Ring has two offline suites: `npm run verify:influence` (5 @map
+inference golden cases plus contract guards: clear high, clear low, ambiguous to
+null, seniority is not influence, junior gatekeeper is high) and `npm run
+verify:influence-ring` (Suite A layout: self centered, high on ring 1, null on
+ring 2, no overlap, label positions; Suite B edges: ally and conflict colors,
+arrow stops at the node edge; Suite C drag: center drop writes the right level,
+sets overridden, edge write creates the right type, escape cancels with no write).
+
+`@play` has a deterministic verifier, `npm run verify:play`: readiness reason
+codes (under-threshold rooms never produce a play), the you+1 floor with no
+network requirement, the three-or-more case, the coaching turn copy, the coaching
+reply parse (a fixed "Chad's against it" reply extracts the against stance through
+the `@map` contract), and the generated play shape (all four sections). Self as
+participant has `npm run verify:self`: first-person references resolve to the self
+record so the apply path attaches instead of creating a duplicate, and the room
+context flags exactly one self. Both run offline with no credits.
+
+The per-user learning example store has `npm run verify:learning`: it imports the
+pure helpers in `functions/learning-store.js` and proves the three guarantees
+that matter for privacy and for not learning errors as truth: (a) name redaction
+happens before storage (names, emails, and handles become `[person]`, with
+substring safety), (b) user examples are soft priors that never override a clear
+grounding rule (the block marks them lowest priority, states the grounding always
+outweighs, and never surfaces skip negatives), and (c) the five-example cap holds.
+Offline, no credits, no Firebase.
 
 ## Folder structure
 
@@ -484,6 +726,8 @@ src/
     llm-prompts.js        play and command system prompts, prompt versions
     llm-trace.js          local raw trace writer and cost estimator
     onboarding.js         first-run questions, trigger helpers, command plan
+    influence-ring.js     pure ring layout, edge clipping, drag-gesture logic
+    play-readiness.js     deterministic @play gate, coaching, play snapshot helpers
     play-contract.js      compact LLM context and validate returned plays
     room-command-contract.js compact and validate LLM command updates
     reasoning.js          canned play engine, Claude API later
@@ -495,6 +739,7 @@ src/
   scripts/
     eval-v1.mjs           offline/live eval harness
     trace-summary.mjs     aggregate local trace latency, tokens, cost
+    verify-learning.mjs   offline checks for the per-user example store
   hooks/
     useAuth.js            Firebase auth state
     useStore.js           subscribe a component to the store
@@ -517,13 +762,15 @@ src/
     Chat.jsx              the conversation
     tabs/                 PeopleTab, GridTab, NetworkTab
     modals/               Modal shell, RoomSettings, DecisionSettings,
-                          AddExternal, NewDecision, CommandsModal,
+                          AddParticipant, NewDecision, CommandsModal,
                           ConfirmModal, AuthModal
   views/
     Landing.jsx           public landing, register and sign in entry
     Room.jsx              the app, wires store and UI state together
 functions/
   index.js                authenticated Claude API and trace writer
+  knowledge.js            server-only shared knowledge base: grounding, learnings
+  learning-store.js       server-only per-user example store: redaction, priors
   package.json            Firebase Functions runtime dependencies
   .env.example            function runtime knobs, no API key
 firebase.json             hosting, Firestore rules, and function source

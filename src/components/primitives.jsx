@@ -1,8 +1,8 @@
 import React from "react";
 import { initialsOf, POSITION_META } from "../lib/frameworks.js";
 
-export function Avatar({ name, size = "md" }) {
-  return <span className={`avatar avatar-${size}`}>{initialsOf(name)}</span>;
+export function Avatar({ name, size = "md", self = false }) {
+  return <span className={`avatar avatar-${size} ${self ? "avatar-self" : ""}`}>{self ? "You" : initialsOf(name)}</span>;
 }
 
 export function PositionBadge({ position, size = "sm" }) {

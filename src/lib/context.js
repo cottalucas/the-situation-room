@@ -11,7 +11,7 @@
 import { getResponse } from "./reasoning.js";
 import { auth } from "./firebase.js";
 import { compactContext, normalizePlay } from "./play-contract.js";
-import { compactRoomCommandContext, normalizeRoomUpdate, normalizeStrategistAnswer } from "./room-command-contract.js";
+import { compactRoomCommandContext, normalizeRoomUpdate, normalizeStrategistAnswer, normalizeClassification } from "./room-command-contract.js";
 
 const RECENT_OBSERVATIONS = 5;
 
@@ -119,7 +119,71 @@ export async function askStrategist({ question, room, decision, participants, ed
   }
 }
 
-export async function interpretRoomCommand({ command, text, room, decision, participants, edges, focusPerson, messages }) {
+/**
+ * Run plain text through the controller (the evolved intent classifier). Cheap
+ * single call, never mutates anything. Only the text is sent, never the room
+ * context, and the caller never logs the raw text. Returns a normalized
+ * { intent, command, cleanedIntent, confidence, clarifyingQuestion }.
+ */
+const UNCLEAR_CLASSIFICATION = { intent: "unclear", command: null, cleanedIntent: "", confidence: "low", clarifyingQuestion: "" };
+
+export async function classifyIntent(text) {
+  const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
+  if (!liveEnabled) return { kind: "fallback", classification: { ...UNCLEAR_CLASSIFICATION } };
+  try {
+    const res = await fetch("/api/classify-intent", {
+      method: "POST",
+      headers: await apiHeaders(),
+      body: JSON.stringify({ text: String(text || "").slice(0, 700) }),
+    });
+    if (!res.ok) throw new Error("classify failed");
+    const data = await res.json();
+    return { kind: "ok", classification: normalizeClassification(data?.classification) };
+  } catch {
+    // A failed controller read degrades to "unclear", never to a silent mutation.
+    return { kind: "fallback", classification: { ...UNCLEAR_CLASSIFICATION } };
+  }
+}
+
+/**
+ * Capture one confirmed or corrected mapping into the user's private example
+ * store. Fire-and-forget: the Function name-redacts the phrasing at write time, so
+ * raw note text and names never persist. The browser sends the note plus the names
+ * to redact (room participants); the Function stores only the redacted pattern.
+ * Never throws and never blocks the UI.
+ *
+ * @param {Object} args
+ * @param {string} args.phrasing        raw note text (redacted server-side, not stored)
+ * @param {string[]} args.redactNames   participant names/first names to redact
+ * @param {string} args.mappingOutcome  the band/stance/level that was committed
+ * @param {string} args.axis            power | interest | stance | influence
+ * @param {string} args.action          accept | adjust | skip
+ * @param {string} args.confidence      high | medium | low
+ * @param {boolean} args.wasAdjusted    true when the user corrected the suggestion
+ */
+export async function captureExample({ phrasing, redactNames, mappingOutcome, axis, action, confidence, wasAdjusted }) {
+  const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
+  if (!liveEnabled || !phrasing || !axis || !mappingOutcome) return;
+  try {
+    await fetch("/api/capture-example", {
+      method: "POST",
+      headers: await apiHeaders(),
+      body: JSON.stringify({
+        phrasing,
+        redactNames: Array.isArray(redactNames) ? redactNames : [],
+        mappingOutcome,
+        axis,
+        action: action || "accept",
+        confidence: confidence || "low",
+        wasAdjusted: Boolean(wasAdjusted),
+      }),
+    });
+  } catch {
+    // Best-effort personalization. Never surface a capture failure to the user.
+  }
+}
+
+export async function interpretRoomCommand({ command, text, room, decision, participants, edges, focusPerson, messages, instruction }) {
   const liveEnabled = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
   if (!liveEnabled) {
     return {
@@ -135,6 +199,10 @@ export async function interpretRoomCommand({ command, text, room, decision, part
       body: JSON.stringify({
         command,
         text,
+        // The controller's cleaned_intent, when this call came through the
+        // plain-text relay. The mapper trusts it for intent; the verbatim text
+        // stays the source for saved notes.
+        instruction: instruction || null,
         focusPerson: focusPerson
           ? { id: focusPerson.id, name: focusPerson.name, role: focusPerson.role }
           : null,

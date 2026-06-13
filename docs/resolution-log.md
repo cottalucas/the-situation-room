@@ -5,6 +5,732 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-13 - Landing page fills the four classical gaps
+
+The landing covered How and Why but missed what, who, and a path back to
+sign-up. A targeted patch closed the gaps without touching structure, section
+order, or component hierarchy. Edits confined to `src/views/Landing.jsx` and
+the `.landing*` rules in `src/styles.css`.
+
+- Brand mark. Added `.landing-brand` ("The Situation Room") to `landing-nav`
+  and changed the `flex-end` nav override back to `space-between` so the brand
+  stays visible at every width. Verified at desktop and 375px.
+- To whom. Eyebrow sharpened to "For PMs and operators who move decisions
+  through people", matching the brief's user definition in active voice.
+- What. Hero prop now names the three lenses in one phrase: "Map who holds
+  power, who cares, and who moves whom." No new metaphors.
+- Path back. New `.landing-cta-section` between Why and the foot with a serif
+  kicker and the existing `.landing-cta` button. Three CTAs total across the
+  single scroll, one per section.
+- Privacy. Added `.landing-privacy-note` in the foot: notes are encrypted and
+  stay yours, no sharing, no training. A trust signal for a tool about
+  sensitive colleague notes.
+
+Only existing color and font tokens used. No em dashes in any new copy. All new
+classes follow the `.landing-*` convention and collide with nothing existing.
+
+## 2026-06-10 - LLM prompt static-review fixes (schema drift, strategist forcing function)
+
+A static review of the pipeline prompts surfaced five issues. All fixed in one
+pass, `src/lib/llm-prompts.js` and `functions/index.js` kept byte-identical per
+the sync rule.
+
+1. **Schema drift (critical).** `functions/index.js#commandSchema` carried
+   `profilePatch: {}` (empty) for the `note` and `map`/`create` cases while
+   `src/` carried the full shape (goal, context, baseRead with
+   scarf/tki/cialdini/fisherUry, visualTags). Production was showing Haiku an
+   empty framework-read target, so SCARF/TKI/Cialdini/Fisher-Ury reads were
+   materially weaker in production than dev. Fixed functions to match `src/`
+   exactly. Closed the class of bug: `npm run eval` now extracts both files'
+   `commandSchema` as text and asserts identical rendered JSON for every command
+   (`sync-commandSchema-src-vs-functions`), failing on any future drift even when
+   version strings match. Verified the assertion detects the exact `{}` drift,
+   not vacuously passing.
+2. **Controller `energy` vs `ALLOWED_COMMANDS`.** Verified first: the dispatch
+   layer already translated `energy -> grid` (an inline ternary in
+   `Room.jsx#dispatchControllerPlan`), so `energy` never hit the server. No
+   second translation added. Extracted the single translation into a pure,
+   exported `serverCommandForControllerCommand` in the contract, wired Room.jsx to
+   it, and added dispatch tests in `verify:classify` (energy -> grid, output is in
+   the server's allowed set, note/network/map pass through, null/unknown -> map).
+3. **Strategist forcing function.** Each move is now an object
+   `{ move, framework? }`. The prompt names the relevant framework lever WHEN the
+   room data supports it and OMITS the field otherwise; never invents one
+   (optional-when-unsupported, same unknown-is-valid discipline as the mapper).
+   `normalizeStrategistAnswer` (both files) accepts a legacy string or an object
+   and keeps `framework` only when non-empty. Fixed the sentence-count
+   contradiction (system said 2 to 4, schema said 2 to 5; both now 2 to 4).
+   Hardened cites as a prompt rule ("when grounded is true, include at least one
+   cite") while leaving the normalizer's id-filtering as the hard floor. Made
+   sparse rooms explicit: not a decline, stays grounded with minimal moves (zero
+   or one). Bumped strategist `maxTokens` 900 -> 1200 in `functions/index.js` and
+   the Vite dev bridge.
+4. **Mapper wording.** Controller-instruction block changed from "trust it for
+   intent" to "Trust it for ROUTING. The verbatim user text below governs all
+   saved notes and all inferred values." Saved-note wording softened from
+   "one polished note" to "one note in the user's words, cleaned of profanity
+   only" to stop over-paraphrasing.
+5. **Controller unclear path.** Prompt now states: when intent is unclear, set
+   command and cleaned_intent to null and ask exactly one clarifying_question.
+   Confirmed `planClassificationAction` reads `intent` first and returns clarify
+   without ever forwarding `cleanedIntent`; added two `verify:classify` cases
+   asserting an unclear/low read carries no `cleanedIntent`.
+
+Versions bumped in both files: command `room-command-v7-relay-2026-06-09` ->
+`room-command-v8-relay-2026-06-10`, strategist `strategist-v4-grounded-2026-06-09`
+-> `strategist-v5-grounded-2026-06-10`, controller `controller-v1-2026-06-09` ->
+`controller-v2-2026-06-10` (the controller prompt changed for issue 5, so it was
+bumped too, beyond the two the review named).
+
+Skipped as instructed (cosmetic): confidence threshold definitions and the
+redundant grid-calibration in the `@map` rules.
+
+Eval results, all green. Offline eval 19/19 -> 20/20 (added the commandSchema sync
+assertion). verify:classify 23/23 -> 31/31 (added energy->grid and unclear-path
+cases, plus the strategist move-shape checks live in the offline eval). All other
+suites unchanged and green: learning 18, play 29, network 9, influence 7,
+influence-ring 26, self 13, guard 12, onboarding 52, resolution 19, persistence
+24, autoread 10, confidence 9. Build clean, functions syntax check clean, prompt
+versions in sync, all four prior system prompts plus the new schema byte-identical
+across both files. Strategist framework field confirmed optional-when-unsupported:
+the fixture proves a move with a lever keeps it and a move without one omits the
+field entirely (never null or empty).
+
+UI: `Chat.jsx#CoachMessage` renders the optional framework as a small chip
+(`.move-fw`) after each move, handling both legacy string moves and the new
+objects so persisted coach messages still render.
+
+---
+
+## 2026-06-10 - Persist the active decision across refresh
+
+Refreshing while inside a decision restored the room but dropped the decision,
+landing the user in the room with no decision open. Root cause: the URL hash
+`#/decision/:id` was only written by explicit `selectRoom`/`selectDecision`
+clicks. A decision reached by auto-restore or auto-selection never wrote the
+hash, so the URL stayed empty; the next refresh had no durable decision id and
+fell back to the racier browser/synced restore path (which fires when
+`remoteReady` flips but does not guarantee the specific decision is applied),
+nulling the decision out and latching `restoredSelection`.
+
+Fix (client only, `src/views/Room.jsx`): an effect now keeps the URL hash synced
+to the active decision whenever the lenses own the hash, not just on explicit
+selection. The hash is the most durable restore source (it lives in the URL and
+is read synchronously at init by `parseHash`, driving the reliable route path in
+the restore effect). The effect reads the live `window.location.hash` rather than
+route state and bails on any non-`#/decision/` hash, so person and frameworks
+sub-pages keep ownership and navigation is never clobbered. `clearDecisionHash`
+drops a stale decision hash when no decision is active. Verified via build and
+the offline + persistence eval suites; the firestore-mode load race is not
+reproducible under local preview (which sets `remoteReady` synchronously), so
+this was validated by build, evals, and the hash-guard reasoning. Deployed to
+hosting only (no functions or rules touched).
+
+---
+
+## 2026-06-09 - Three-role relay: controller -> (mapper | strategist)
+
+Open English now enters one chat through a controller that understands intent
+and dispatches; the "three model surfaces" framing in llm-pipeline.md is
+replaced by the relay. Everything evolved in place: the intent classifier became
+the controller (same `/api/classify-intent` endpoint, same
+`ENABLE_PLAIN_TEXT_ROUTING` flag, same `verify:classify` script), and the mapper
+and strategist kept their behavior; only their caller changed. Explicit
+@commands bypass the controller, unchanged.
+
+What moved and why:
+
+- Controller (`controller-v1-2026-06-09`, mirrored in `src/lib/llm-prompts.js`
+  and `functions/index.js`). Output is now `{ intent: map|advise|both|unclear,
+  command: note|energy|network|map|null, cleaned_intent, confidence,
+  clarifying_question }`. `cleaned_intent` hands the mapper a pre-digested
+  instruction instead of raw English; the verbatim user text still rides along
+  and stays the source for saved notes, so the user's record is never
+  paraphrased. Decision: confidence stays categorical (high/medium/low), not
+  0-1; the dispatch table is banded and the eval suite is built on the bands.
+- Idiolect moved to the controller. `buildUserPriorsBlock` (the per-user
+  name-redacted soft priors) now attaches to the controller call only; the
+  mapper no longer receives it. The 5-cap, redaction-before-storage, and
+  curated-knowledge-always-outweighs rules are unchanged (`verify:learning`
+  still 18/18). Accepted tradeoff: mapping personalization is now indirect,
+  through the controller's digest. Note: explicit @commands skip the controller
+  and therefore carry no priors; that is by design (idiolect belongs at the
+  language stage).
+- Shared knowledge base. `FRAMEWORK_GROUNDING` + `GLOBAL_LEARNINGS` extracted
+  from inline `functions/index.js` constants into server-only
+  `functions/knowledge.js`, now the cached prefix for BOTH the mapper (with the
+  extraction contract) and the strategist (without it, ever). Strategist bumped
+  to `strategist-v4-grounded-2026-06-09` in both files; its traces now record
+  grounding/learnings versions.
+- Sequenced dispatch, never an LLM-to-LLM loop. `planClassificationAction`
+  (pure, eval-covered) + `Room.jsx#dispatchControllerPlan`. unclear/low asks
+  the controller's ONE clarifying question and never guesses. Flag off
+  (production default, unchanged): one tappable pill, including a single
+  "both" pill that runs map-then-advise on tap; nothing mutates without the
+  tap. Flag on: high routes with the "treated as" label, medium with a confirm.
+  "both" maps first, then fires the strategist on the updated room.
+- Mapper self-check, one pass (`room-command-v7-relay-2026-06-09` in both
+  files): when genuinely unsure WHICH mapping, resolve to the safe minimum (a
+  note) or return exactly one openQuestion up to the controller, which asks the
+  user; the relay caps relayed mapper questions at one. A controller-dispatched
+  note without a resolvable focus person falls back to the broad @map intake
+  rather than guessing a target.
+- Analytics stay content-free: `plain_text_classified` gains `command`,
+  `routed_to`, and `resolution` enums; raw text and the cleaned digest are never
+  logged, and controller traces store only enums unless
+  `LLM_STORE_RAW_TRACES=true`.
+
+Evals: all suites green before AND after (classify 12/12 -> rewritten 23/23 for
+the new shape incl. the four relay goldens; offline eval 19/19, learning 18/18,
+play 29/29, network 9/9, influence 7/7, self 13/13, guard 12/12). Build clean.
+Prompt-version sync verified across `src/` and `functions/`, and all four system
+prompts byte-identical. Controller call cost: ~700 input + ~250 output tokens,
+about $0.002 per plain-text message on Haiku.
+
+Decisions a future agent should not relitigate: categorical confidence;
+controller-only idiolect; pass-both (cleaned_intent for intent, verbatim text
+for notes); one pill for "both"; production routing default stays the pill.
+
+## 2026-06-09 - Per-user self-learning example store
+
+Built the third personalization layer: a per-user store of confirmed/corrected
+mappings, injected at call time as soft priors below the cached prefix.
+
+Capture. `applyRoomUpdate` now returns `learned` (the grid/stance/influence
+mappings that actually committed, grid numbers reduced to bands via `gridBand`).
+The command handlers (`@map`/`@energy`/`@grid`/`@network`, `@note`, and the
+`@play` coaching reply) call `captureLearnedMappings`, which posts to the new
+`/api/capture-example` endpoint. The Function name-redacts the phrasing at write
+time (`functions/learning-store.js#buildExample` -> `redactPattern`: every
+participant name and first name, plus emails and `@handles`, becomes `[person]`;
+emails/handles are redacted first so name redaction cannot break an address into
+an unmatchable form), then writes one doc to
+`users/{uid}/learningExamples/{exampleId}`:
+`{ phrasingPattern, mappingOutcome, axis, action, confidence, weight, createdAt }`.
+Raw note text and names never reach Firestore. `action` is accept | adjust |
+skip; adjust (a correction) is the strongest signal, skip a low-weight negative.
+
+Privacy. Two enforcement points: redaction before storage, and
+`firestore.rules` denying the client both read and write on `learningExamples`
+(only the Admin SDK in the Function touches it, with verified auth). Verified the
+store logic and contents are absent from the built `dist/`. Analytics are
+content-free: one fire-and-forget `example_captured { action_type, was_adjusted }`
+via `trackNetwork`, never phrasing, names, or note text.
+
+Use at call time. The static cached prefix (grounding + global learnings) is
+unchanged and stays cached. The Function reads the user's recent examples
+(`readUserExamples`, ordered by recency through the automatic single-field index,
+over-fetched then capped, best-effort so a read failure never breaks a command),
+builds a soft-prior block, and appends it as one extra system block AFTER the
+`cache_control` breakpoint. Hard rule, stated in the block and enforced by
+selection: curated grounding + global learnings ALWAYS outweigh user priors; skip
+negatives are never surfaced; the slice is capped at five (`MAX_USER_PRIORS`) so
+repeated user mistakes cannot dominate. Traces record `userPriorsCount`.
+
+Dependency interpretation flagged (orchestration loop step 2). The task said it
+"depends on the suggestion confirm/adjust/skip flow existing." That flow exists
+conversationally, not as discrete Accept/Adjust/Skip buttons: the model proposes
+and applies, low-confidence reads append a soft-confirm, and extreme changes are
+held for a clarification. Mapping chosen and documented: ACCEPT = a mapping that
+committed from a user note; ADJUST = a submission that answers a prior soft-confirm
+or clarification (the last assistant turn carried questions, `lastTurnHadQuestions`);
+SKIP = supported end-to-end in the Function, store, and evals but not actively
+UI-triggered in v1 (no clean dismiss action; the spec marks skip optional). If a
+discrete button flow lands later, only the capture trigger changes.
+
+Eval. `npm run verify:learning` (18/18), imports the pure helpers and proves
+(a) name redaction before storage (names, full names, possessives, emails,
+handles, plus substring safety), (b) user examples are soft priors that never
+override a clear grounding rule (block marks them lowest priority, states the
+grounding always outweighs, never surfaces skip negatives), (c) the five-example
+cap holds and keeps the most recent. No live eval changes this pass; each stored
+example is shaped as input phrasing -> expected mapping so it can seed one later.
+
+Server-only module. `functions/learning-store.js` is bundled with the Function
+and never imported by `src/`. The Vite dev bridge redacts through the same helper
+for parity but does not persist examples or inject priors (production-only
+feature, the same accepted dev gap as grounding/global learnings). Offline evals
+19/19, build clean. Deployed Functions + hosting + rules; pushed.
+
+---
+
+## 2026-06-09 - GLOBAL_LEARNINGS: curated phrasing heuristics in the cached prefix
+
+Added a second server-only static module, `GLOBAL_LEARNINGS`
+(`GLOBAL_LEARNINGS_VERSION = global-learnings-v1-2026-06-09`), to
+`functions/index.js`, appended to the cached command prefix immediately after
+`FRAMEWORK_GROUNDING` and before `COMMAND_SYSTEM_PROMPT`. The system is now three
+static blocks (grounding, learnings, parser prompt) with
+`cache_control: { type: "ephemeral" }` still on the last, so the static prefix
+caches as one block; per-call note text and room snapshot stay below it in the
+user turn.
+
+Content: 12 curated, name-agnostic phrasing-to-mapping heuristics that hold across
+all users, each a concrete phrasing with a `[person]`/`[other]` placeholder mapped
+to an axis or stance plus a short reason (for example, "rubber-stamped it" ->
+interest low not stance supportive; "others run things past [person]" -> power
+high; "went quiet after raising concerns" -> stance unknown; "keeps re-raising the
+same objection" -> interest high, stance resistant). It refines the grounding's
+signal-mapping with concrete language. Each rule is phrased as input phrasing ->
+expected mapping so it can later be turned into an eval case (no eval changes in
+this pass, as instructed).
+
+Curation and budget: the set is curated by hand, NOT auto-grown from user data
+(this is the boundary that keeps it a static, reviewable, name-agnostic asset and
+not a per-user data sink). Grounding plus learnings is 701 words, under the ~900
+budget; the rule is to tighten rather than add when it grows.
+
+Same privacy as the grounding: server-only, bundled with the Function, not in
+Firestore and not in `src/lib` (browser-bundled), so the client cannot read it. No
+Firestore path touched, so `firestore.rules` is unchanged. Verified absent from
+the built `dist/` bundle.
+
+Caching unchanged in spirit: cached prefix is now ~1753 tokens, still below the
+Haiku 4.5 4096-token floor, so `cache_read_input_tokens` stays 0 by design; the
+wiring is correct and free and auto-activates when the curated learnings push the
+prefix past 4096. This is the expected growth path the earlier decision named.
+Traces now also record `learningsVersion`. Version sync still holds: the learnings
+are functions-only with their own version, excluded from the
+`COMMAND_PROMPT_VERSION` check, and `COMMAND_SYSTEM_PROMPT` is byte-identical
+across `src/` and `functions/`. The Vite dev bridge does not carry the learnings
+(same accepted dev parity gap as the grounding). Offline evals 19/19. Deployed
+Functions + hosting; pushed.
+
+---
+
+## 2026-06-09 - Server-only framework grounding as cached command prefix
+
+Added a private `FRAMEWORK_GROUNDING` constant (`GROUNDING_VERSION =
+framework-grounding-v1-2026-06-09`) to `functions/index.js` and wired it as the
+cached system prefix on every structured command (`@note`, `@grid`/`@energy`,
+`@network`, `@map`, plus internal `create`/`net`). Content is timeless theory
+only: power versus interest as independent axes (with the explicit rule that
+disengagement, lateness, and "does not care" are interest signals that never
+lower a power read), Mendelow quadrants, one operational signal line each for
+SCARF / Cialdini / Thomas-Kilmann / Fisher and Ury, the signal-reading lenses
+(silence is not assent, loss aversion in reorg and budget fights, stated reason
+is not the real reason, deference reveals power, one data point is low
+confidence), the stance vocabulary (supportive/resistant/neutral/unknown, unknown
+terminal), and the output contract (note applies verbatim; stance/grid/influence
+are suggestions with a <=12-word reason each, omit rather than fabricate). No
+named people, worked cases, or colleague data: examples are explicitly deferred
+to a separate example store. ~452 words, ~699 tokens.
+
+Privacy. It is bundled with the Function only. It is NOT in Firestore and NOT in
+`src/lib/llm-prompts.js` (which is browser-bundled), so the browser client cannot
+read it. No Firestore path was touched, so `firestore.rules` needed no change
+(the requirement to set client read = false only applies if a path is added). The
+browser still sends only a note; the Function prepends grounding, calls Haiku, and
+returns the normalized result.
+
+Caching. System is two static text blocks, grounding then `COMMAND_SYSTEM_PROMPT`,
+with `cache_control: { type: "ephemeral" }` on the last so the static prefix
+caches as one block; per-call note text and room snapshot stay below it in the
+user turn (`roomCommandPrompt`). Cache token fields already flow through
+`usage` -> `estimateCostUsd`/`publicMeta`/`recordUsage`.
+
+Conflict flagged and resolved (orchestration loop step 2). Haiku 4.5 only caches
+prefixes >= 4096 tokens, but the dense module plus `COMMAND_SYSTEM_PROMPT` is
+~1356 tokens, so "cached prefix" and "verify cache hits" cannot both hold on
+Haiku-only without padding. The user chose density over forcing a hit: wire
+`cache_control` as specced, do not pad, accept `cache_read_input_tokens = 0` at
+current size (the wiring is correct and free, since a sub-floor prefix is not
+charged a write, and auto-activates if the shared prefix later crosses 4096 as
+global learnings and per-user examples grow). The verification step was replaced:
+instead of asserting non-zero cache hits, confirm (a) the static prefix and
+dynamic note text are correctly separated (static in `system`, per-call content
+in the user turn) and (b) the prefix token count is logged so the approach to
+4096 is visible. Each command trace now records `groundingVersion` and an
+approximate `systemPrefixTokens` (heuristic ~4 chars/token), and the Function logs
+the prefix size on cold start.
+
+Version sync. The grounding is functions-only, so it carries its own
+`GROUNDING_VERSION` and is excluded from the `COMMAND_PROMPT_VERSION` sync check;
+`COMMAND_SYSTEM_PROMPT` stays byte-identical across `src/` and `functions/`, and
+the prompt-version diff still passes. The Vite dev bridge imports
+`COMMAND_SYSTEM_PROMPT` from `src/lib`, so it does not carry the grounding: an
+accepted dev parity gap in service of keeping the theory off the client. Offline
+evals 19/19. Deployed Functions + hosting; pushed.
+
+---
+
+## 2026-06-08 - Fix: Commands modal hidden behind the mobile companion
+
+Follow-up from a user report that the "/" button "did not open the command list"
+on mobile. It did open it; the modal backdrop (z-index 120) sat below the
+full-screen command companion (`.command-scrim`, z-index 130), so the modal
+rendered behind it and looked dead. Bumped `.modal-backdrop` to 140 (above the
+companion and the mobile profile scrim, still below the full-screen page at 150
+and the nav drawer at 180, neither of which is open while the commands modal is).
+Pre-existing layering bug, not from the command-pipeline pass. Hosting only.
+
+---
+
+## 2026-06-08 - @network owns influence, command cleanup, gated plain-text routing
+
+Three command-pipeline fixes plus a Network tooltip micro-fix. This pass touches
+the LLM prompts and Firebase Functions, which earlier passes were told to avoid,
+so it was flagged first: two items materially conflicted with the docs and the
+user resolved each before any code (see below). Deployed Functions + hosting.
+
+Conflicts flagged and resolved (orchestration loop step 2):
+- FIX 3 plain-text routing contradicted the roadmap ("re-open plain chat only
+  after eval scores are good enough") and turned plain text into a state-mutating
+  path. Resolution: build it but gate all mutation behind
+  `ENABLE_PLAIN_TEXT_ROUTING` (off in prod). Flag off, a confident classification
+  shows a tappable suggestion pill that runs the real command only on tap; low or
+  unclear shows the command menu. Nothing mutates without a tap.
+- FIX 2's "@map classifies then calls sub-handlers" contradicted the Haiku-only,
+  single-deterministic-call principle. Resolution: keep the one validated @map
+  call (it already routes to people/notes/energy/network); reword the description
+  only.
+
+FIX 1, @network owns influence. The bug: @network only wrote edges, so "Tymon has
+lower influence" never moved Tymon's ring. The influence schema already existed on
+`people[].influenceLevel`, so the fix reused it rather than inventing the spec's
+parallel `influenceUpdates` array (same spirit as keeping the `defers` token, not
+`defers_to`). `commandCapabilities` and `influenceDecision` moved into
+room-command-contract.js as pure, shared helpers: @network gained the influence
+capability (and keeps edges), still never gets the grid capability, so it can
+never touch power/interest. influenceDecision returns write / ask / skip:
+self-skip, a hand-set `overridden` level is never overwritten, and an uncertain
+(@network low-confidence) read asks a ring-specific clarifying question instead of
+writing. The @network prompt was rewritten to a JOB 1 (edges) / JOB 2 (influence)
+structure with the high/medium/low definitions and a CRITICAL DISTINCTION block
+(influenceLevel is the ring, power/interest is the Energy lens, never conflate,
+never ask about power when the user said influence), mirrored in both `src/` and
+`functions/`, version bumped to room-command-v6-network-influence-2026-06-08.
+Five acceptance evals written first (`verify:network`, 9/9): explicit writes,
+implied writes, ambiguous asks, overridden blocks, @network never touches grid.
+
+FIX 2, command cleanup. Removed `@create` from the commands panel and the
+user-facing router (regex + fallback copy); kept the internal `create` path
+because onboarding still drives it. Updated @add ("Add a person to this decision
+by name and role", no "outside person"), @network ("Map relationships and
+influence..."), and @map ("Describe the situation in plain language. Routes to the
+right commands automatically.").
+
+FIX 3, plain-text classifier. New cheap Haiku call `/api/classify-intent` (prompt
+`intent-classify-v1`, mirrored in functions and the dev middleware), client
+`classifyIntent`, contract `normalizeClassification` + `planClassificationAction`
+(the routing table, `verify:classify` 12/12). A malformed or unclear intent drops
+to low confidence so it never routes. onSubmit was made to accept a string as well
+as a form event, so the suggestion pill re-runs the text as a prefixed command
+(`@network ...`) through the exact same command path, reusing person resolution
+and apply. Analytics fire `plain_text_classified { intent, confidence, acted }`,
+never the raw text; the dev trace stores only the intent and confidence.
+
+Micro-fix: the You node tooltip dropped the "The decision-maker" subtitle for
+"This map shows the room from your perspective." (13px, --ink-soft). Shipped and
+deployed on its own first.
+
+Verified: all offline evals green (network 9, classify 12, influence 7, ring 26,
+guard 12, play 29, self 13), build clean, functions lint clean. Browser smoke in
+local preview: commands modal shows the new set with no @create; the suggestion
+pill and command menu render, and tapping the pill re-runs the text as @network.
+Live @network influence and the live classifier ride on VITE_ENABLE_LIVE_LLM and
+were covered by the offline evals, not by spending credits in this pass.
+
+---
+
+## 2026-06-08 - Influence Ring: stable angles, drag affordances, larger type
+
+Three renderer-only fixes to the Network lens. No prompt or other lens touched.
+
+FIX 1, angular position is owned per person. The bug: every render recomputed
+even-distribution angles per ring, so moving one person to another ring shifted
+everyone who shared the destination ring. The fix stores an `angle` (radians) on
+each `influence[personId]` record. This extends the existing schemaless influence
+map, so it is not a Firestore schema change (rules gate the decision doc on
+ownership and validStatus only, no per-field shape), and `store.firestore-repo`
+already round-trips the whole influence map. Added `store.setInfluence(..., angle)`
+(merges, preserving the prior angle so an @map level change never moves a node)
+and `store.setInfluenceAngle` (angle only). A core drag now writes the drop
+point's ring and angle in one write. `models.js` documents the optional field.
+
+The interesting part: the spec said to persist a per-ring even-distribution
+default on first render and rely on that write. In practice that is fragile. Live
+debugging showed the persist effect fired and wrote, but the async local-mode
+`store.hydrate()` (and, in Firestore mode, the first snapshot) commits a fresh
+state right after, stripping the just-written angles, and a write-once ref guard
+then blocked any retry. So early writes never stuck. Two changes fixed it for
+good:
+  1. The default angle is now derived from a roster-wide, id-sorted slot
+     (`defaultAngleFor`), independent of ring membership. This makes correctness
+     not depend on persistence at all: with or without a stored angle, moving one
+     person moves only that person, because nobody's default depends on who else
+     is on their ring. Verified in-browser after a cache clear: dragging Lin
+     low to high left Priya, Raj, Dana, Marco, and You byte-for-byte identical.
+  2. Persistence is now self-healing (no permanent guard): it rewrites any node
+     still missing a stored angle until the write lands, surviving the hydration
+     clobber. Verified: after the drag and a reload, every node carried its angle
+     and Lin stayed exactly where it was dropped.
+This is a deliberate deviation from the spec's literal "even distribution for
+that ring" default, chosen because per-ring distribution requires a reliable
+freeze and the global-slot default is overlap-free for realistic rooms and
+correct unconditionally. Flagged here rather than shipped silently.
+
+FIX 2, both drag gestures are now legible on hover. The core shows a soft white
+inner disc (`r * 0.55`), the rim a dashed ring at `r + 5` with four N/E/S/W ticks
+fading in over 150ms; cursors are grab (core) and crosshair (rim). During a rim
+drag a valid target pulses (`ring-target-pulse`, fill-box scaled so it stays
+centered wherever the node sits) and an invalid target (You) shows a red tint and
+a not-allowed cursor. You shows a tooltip on hover but never an affordance;
+self-hover was enabled (it was previously suppressed entirely) so You still gets
+its tooltip.
+
+FIX 3, type sizes raised across the lens: node labels 13/12/11 by level, You
+13/700, ring labels 11px at 0.06em, tooltip name 15px and body 13px, picker
+eyebrow 10px. This also retires the sub-11px labels the previous pass had flagged.
+
+Eval `verify-influence-ring` grew Suites D6/D7 (unstored nodes do not redistribute
+when one changes ring) and now runs 26/26. Build clean. Verified live in local
+preview via simulated pointer drags and computed-style reads. Client-only;
+deployed to hosting.
+
+---
+
+## 2026-06-08 - Influence Ring: visual hierarchy polish pass
+
+Craft-only pass on the Influence Ring. No data model, Firestore, prompt, or drag
+logic touched. Five visual changes so the ring reads as a hierarchy at a glance.
+
+1. Nodes now encode influence by size and color. New fill/stroke pairs per level
+   (high `#3D2C8D`/`#2A1F6B`, medium `#C4611A`/`#A0501A`, low `#D4916A`/`#B07050`),
+   radii self 36 / high 30 / medium 24 / unknown 22 / low 19. Larger and darker
+   reads as more influence.
+2. Null influence stopped masquerading as medium. ringLayout now sets a distinct
+   `unknown` render level (warm gray `#B0A898`, dashed outline, r 22) while still
+   landing on ring 2, so ambiguity is visible. The ring placement and drag snap
+   logic are untouched; only the render level and styling changed.
+3. You reads as the anchor, not a participant: near-black fill, no stroke, a soft
+   glow, a thin halo ring at r+8, label "You" beneath the node, and no cursor
+   affordance (it already could not be dragged).
+4. Ring guides are visible (`--line-strong`, 0.6 opacity, 6 4 dash) with subtle
+   tint bands behind them, and the labels moved to the top center of each arc,
+   uppercase. The relationship picker anchors near the midpoint of the two nodes
+   (flipping below at the top edge) instead of floating at canvas center, with a
+   "Set relationship" eyebrow and color-coded pills.
+5. The hover tooltip swapped the meaningless "Position unknown" for an influence
+   badge tinted to the level plus a provenance line ("Influence set by you" vs
+   "Influence inferred from notes"). The empty state (fewer than two participants)
+   is now a three-arc icon over a two-line prompt.
+
+Conflicts flagged before building (per the orchestration loop) and resolved by
+treating the spec as the new intent, then updating design-system.md to match:
+the old doc described You as white fill with ink stroke, node radii 40/30/24/20,
+and ring labels top-right at 11px. All superseded here. One minor deviation from
+the stated type floor: the ring labels render at 10px and the picker eyebrow at
+9px (the doc's label floor is 11px). Kept per the explicit spec because both are
+tracked uppercase micro-labels, not reading text; noted here so it is a decision,
+not a regression.
+
+One eval assertion updated to match: verify-influence-ring A5 asserted labels
+were top-right (`x > center`); it now asserts top-centered above each arc
+(`x === center`, `y < center - radius`). Geometry helpers `annulusPath` (zone
+bands) and `pickerAnchor` (picker placement) added to influence-ring.js as pure,
+testable functions.
+
+Verified: `npm run verify:influence-ring` 19/19, `npm run build` clean. Live
+check in local preview mode (the-room-preview) confirmed computed styles match
+the spec exactly (high `rgb(61,44,141)`, self `rgb(26,26,46)` with the glow, halo
+`rgba(26,26,46,0.15)`, guides at 0.6 opacity, labels 10px uppercase) and the
+tooltip badge plus provenance line render. No console errors. Client-only;
+deployed to hosting.
+
+---
+
+## 2026-06-07 - Influence Ring: the Network lens redesign
+
+Replaced the Network lens with the Influence Ring, a concentric-ring SVG layout
+where ring position encodes influence over the decision. Six phases in one pass.
+
+Conflicts flagged before building, resolved with the user, then carried into the
+docs: (1) the brief's premise of a force-directed graph and a graph library is
+false, the old lens was already hand-written SVG with a role/edge auto-layout, so
+there was nothing to remove, only to replace; (2) influence is stored per decision
+(decision.influence[personId] = {level, overridden}), parallel to positions and
+placements, not on the person document, because influence is "over this specific
+decision" and varies by decision, this needs no Firestore rule change since it
+writes through the decision; (3) the edge token stays "defers" (no migration, no
+rules or prompt-token churn, no production data break) and the UI shows "Defers
+to". User chose all six phases in one pass.
+
+P1 data model. Added decision.influence with DEFAULT_INFLUENCE {level:null,
+overridden:false}, seeded on decision/participant/external creation, removed on
+participant removal. store.setInfluence/getInfluence; round-trips plaintext
+through firestore-repo (enum, not free text). Seeded levels on the salesforce
+decision. Edges unchanged (already {from,to,type}).
+
+P2 @map prompt. Added influence inference rules and influenceLevel to the
+map/create schema in both src/lib/llm-prompts.js and functions/index.js;
+normalizeRoomUpdate validates influenceLevel (valid level or null) in both
+mirrors. applyRoomUpdate writes influence for map/create, skipping the self user
+and any overridden level, and fires influence_inferred. Prompt bumped to
+room-command-v5-influence-2026-06-07 in both files. Five inference evals plus
+contract guards: npm run verify:influence (7/7).
+
+P3 render. Rewrote NetworkTab.jsx as the Influence Ring (no library). Pure
+geometry in src/lib/influence-ring.js (ringLayout, clipLine, edgeColor,
+ringLabelPositions). Self center r40, high ring1 r140, medium ring2 r260 (null
+lands here), low ring3 r380; even angular spacing with a per-ring stagger, no
+overlaps. Dashed ring guides, top-right labels, arrowed edges clipped to node
+edges (ally #1D9E75, conflict #E24B4A, defers --line-strong), empty state under
+two participants, hover tooltip. New lens-scoped influence color ramp tokens.
+Removed the dead seed exports (networkPositions, EDGE_META).
+
+P4 interaction (desktop only). Two pointer gestures by zone: core (<60% r) moves
+a node between rings and writes influence {overridden:true} plus
+influence_overridden; rim (60-100%) draws a relationship via a three-pill picker
+(Ally/Conflict/Defers to) that writes an edge, supports type change and remove,
+and prevents duplicates. Escape cancels with no write; the self node never
+repositions and has no outbound edge affordance; a press without a drag opens the
+node summary. Pointer mapping accounts for the preserveAspectRatio letterbox, and
+setPointerCapture/releasePointerCapture are guarded so a capture hiccup never
+aborts a gesture (found and fixed during browser QA of the edge gesture).
+
+P5 analytics. trackNetwork in firebase.js fires the five Novus (Pendo) events to
+both Firebase Analytics and pendo.track, fire and forget, ids and counts only:
+network_viewed, edge_created, edge_deleted, influence_overridden,
+influence_inferred. No names, notes, or edge endpoints in any payload.
+
+P6 evals. npm run verify:influence-ring (19, including the 12 spec cases: Suite A
+layout 5, Suite B edges 3, Suite C drag 4).
+
+Verification: build clean; prompt mirror in sync; node --check functions OK.
+Offline 19/19, influence 7/7, influence-ring 19/19, play 29/29, self 13/13,
+onboarding 52/52, resolution 19/19, persistence 24/24, guard 12/12, autoread
+10/10, confidence 9/9. Browser QA on local preview (firebase env swapped out then
+restored): the ring renders with self centered and nodes on the correct rings by
+seeded influence, edges arrowed and colored; a simulated core drag moved Dana
+medium to high and it persisted across reload; a simulated rim drag opened the
+picker and creating an Ally edge took the count 5 to 6; zero runtime errors on a
+clean load (the HMR errors seen mid-session were intermediate edit states, gone
+after a fresh build/load). Not touched: People lens, Energy lens, @play, auth,
+routing, Firebase init. Shipped on branch feat/influence-ring (stacked on the
+prior feat/play-self-onboarding work). Deploy notes appended below.
+
+## 2026-06-06 - Re-add a roster member to a decision (follow up)
+
+Live use surfaced a gap: removing a participant from a decision left no way to add
+them back. The People lens only offered "+ Add external", which creates a new
+person, so a removed roster member could not return and an external duplicate was
+the only path. This corrects the 2026-06-03 "add from roster action is gone"
+decision, which assumed the whole roster always stays in every decision.
+
+What changed: replaced the single-purpose AddExternal modal with `AddParticipant`
+("Add to decision"). It has two paths: "From this room" lists roster members not
+currently in the decision (each re-adds via `store.addParticipant`, which resolves
+to the existing record so there is never a duplicate), and "Add someone new" keeps
+the external form (`store.addExternal`). The People lens action is now "+ Add
+person". Self is re-addable the same way and renders as "You" in the list. Deleted
+the now-unused `AddExternal.jsx`. Analytics: `decision_participant_add`
+{source: roster}.
+
+Verification: build clean; offline 19/19, play 29/29, self 13/13. Browser QA on
+local preview: removed Priya, the Add modal listed her under "From this room"
+alongside Chad (a roster member never in this decision), re-added her with no
+duplicate and the modal list shrank; removed and re-added "You" with the same
+result; external form still present; zero console errors. Shipped on
+`feat/play-self-onboarding`; redeployed with the batch below.
+
+Three features in one pass, built in dependency order: self as participant
+unblocks the @play "you + 1" floor, and the self model drives the roster polish.
+
+Conflicts resolved (flagged per orchestration step 2, then carried into the
+docs). The work order overrides three documented invariants, so the docs were
+updated to match rather than blocking: (1) play was documented as "parked", now
+@play is a first-class gated command; (2) "new accounts start empty" now also
+seeds one self person; (3) Guided Setup's "Skip, I'll set it up myself" door is
+removed in favor of a dismiss into the live empty room. The Firestore data model
+shape did not change except an additive `isSelf` person flag and the additive
+`selfSeeded` user setting; no migration of stored decision shape.
+
+#2 Self as participant. Added `isSelf` to the Person model and the Firestore
+round-trip. `store.ensureSelf({name, position})` is idempotent: it guarantees one
+self person keyed to `${uid}_self` and, once per account (the `selfSeeded` user
+setting), attaches self to every room roster and active decision, migrating
+existing accounts. After that one migration, removal sticks. `createRoom` seeds
+self into new rooms; new decisions inherit it through the roster. `person-ref.js`
+resolves first-person (I, me, my, myself) to the self record before any create,
+so the apply path attaches instead of duplicating. The command context flags the
+self person and the command system prompt binds first-person to it; prompt bumped
+to `room-command-v4-self-2026-06-06` in both `src/` and `functions/`. Self renders
+as "You" in People, roster, Energy grid (`chip-self`), and is excluded from "Add
+from directory". Local preview seeds one self person; Firestore seeds via
+`ensureSelf`.
+
+#1 @play. New `src/lib/play-readiness.js` holds the deterministic gate
+(`checkPlayReadiness`): >= 2 participants with self counting, every participant on
+a real stance, every non-self participant placed on the grid, network not
+required. Reason codes `missing_people` / `missing_stance` / `missing_grid` in
+that priority. Blocked path: a deterministic coaching turn names the gap and asks
+1 to 2 person-specific questions; the free-text reply routes through the existing
+`@map` contract and `applyRoomUpdate`, then readiness is re-checked. Ready path:
+calls `/api/generate-play` (no new model path), persists the play as a pinned,
+immutable `play` chat message labeled `PLAY · <timestamp>` with the generating
+inputs snapshotted (frozen, readable after the room changes), encrypted at rest
+in the message body, plus the durable Play doc via `store.savePlay`. Added `play`
+to `PERSISTED_MESSAGE_TYPES` so it survives reload. Analytics logs `play_blocked`
+{reason} and `play_generated` (counts only, never content). Decision: the coaching
+question is deterministic, not a second model surface, consistent with the
+`reflectOnAnswer` precedent; the reply parse (the eval target) uses the real `@map`
+path.
+
+#3 Onboarding and roster polish. Removed the "Skip, I'll set it up myself" link
+entirely. Added a quiet close affordance (`onboarding-close`); dismissing expands
+the rail and lands the user in the live empty room (reused or fresh empty room),
+never a settings modal. Replaced the lateral `guided-chat-expand` keyframe with a
+calm fade-and-rise that reads the same on both doors and respects reduced-motion.
+Redesigned "Add from directory" into a roomy list (8px gaps, 14x16 padding, 60px
+min row height, a helper line) and excluded self. Event `onboarding_dismissed`
+replaces `onboarding_skipped`.
+
+Verification: build clean (existing bundle-size warning only); prompt mirror in
+sync; `node --check functions/index.js` OK. Offline eval 19/19, new @play 23/23,
+new self 13/13, onboarding 52/52, resolution 19/19, persistence 24/24, guard
+12/12, autoread 10/10, confidence 9/9. Browser QA on clean local preview
+`http://localhost:5173/#/` (firebase env temporarily swapped out, then restored):
+"You" renders first in People with a self tag and as a `chip-self` on the Energy
+grid; @play with Priya at unknown stance blocked with a coaching turn naming Priya
+and asking how she feels (no play generated); with all stances set @play produced
+a pinned PLAY card with all four sections (situation summary, four sequenced
+per-person levers, key risk) that persisted across reload; guided setup shows the
+close affordance and no skip link, dismiss lands in the live room with no modal;
+Room Settings "Add from directory" lists the six directory people roomily and
+excludes "You"; zero console errors.
+
+Live eval (gated, real Haiku, ~1 to 2 cents): `@play` generate-play produced a
+coherent four-section play grounded in the people, with self in the sequence. The
+coaching reply parse extracted "Chad's against it" as `against` (and placed him),
+and a messy "could go either way" as `unknown` (defensible). The latter exposed a
+loop risk: an honest non-answer leaves stance `unknown`, which the readiness gate
+rejects, so the same question could repeat. Fix (option C): added a pure
+`nextCoachingStep` that terminates the loop. After two answers that do not close a
+stance gap it reads the still-unknown people as neutral with a transparent message
+and proceeds; a repeated grid gap points to the Energy lens; a people gap points
+to `@add`. Six `verify:play` cases cover it (suite now 29). The three failing
+bounded live regression cases were not caused by this change: two are the
+unchanged play prompt diverging from strict goldens on `not_generic`, and one is
+the command model echoing input words (`aggressive`, `micromanages`) into a note,
+not the self line. Offline goldens still 19/19.
+
+Naming: the in-repo user-facing command list (CommandsModal and the chat prompt
+chips) now includes `@play`. The external Novus/Pendo in-app guide is not in the
+repo; if it lists the command set it needs `@play` added there manually.
+
+Deploy: Firebase Hosting plus Functions plus Firestore rules released to
+`the-situation-room-708c6` (functions carry the mirrored
+`room-command-v4-self-2026-06-06` prompt). `Deploy complete!`: functions `api`
+updated (Node 20 2nd gen), hosting released, rules already current. The only
+warning is the known benign build-image cleanup. Live smoke (unauthenticated):
+app root HTTP 200, the served asset `/assets/index-kHLVoEym.js` matches the local
+build, and `/api/strategist`, `/api/interpret-room-command`, and
+`/api/generate-play` all return 401 "Sign in required" (live and auth-gated). The
+authenticated `@play` plus `ensureSelf` cold-account smoke needs a sign-in and was
+left to the maintainer. Shipped on branch `feat/play-self-onboarding`; main not
+yet fast-forwarded, so prod is ahead of main until merge.
+
 ## 2026-06-05 - Selected decision survives refresh
 
 Follow up to the browser refresh persistence pass after live QA showed that the
