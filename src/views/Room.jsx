@@ -389,7 +389,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     const currentDecision = store.getDecision(decision.id);
     const readiness = checkPlayReadiness({ participants: currentParticipants, decision: currentDecision });
     if (!readiness.ready) {
-      trackEvent("play_blocked", { reason: readiness.reason });
+      trackNetwork("play_blocked", { reason: readiness.reason });
       const coaching = buildPlayCoaching(readiness, currentParticipants);
       store.pushMessage(decision.id, { type: "coach", body: coaching.body, questions: coaching.questions, grounded: true });
       setPlayCoaching({ decisionId: decision.id, reason: readiness.reason, missing: readiness.missing, attempts: 0 });
@@ -417,7 +417,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         store.pushMessage(decision.id, { type: "play", label: `PLAY · ${playStamp()}`, response: snapshot, body: JSON.stringify(snapshot) });
         store.savePlay(decision.id, { situation: snapshot.situation, output: snapshot });
         // Analytics logs the event only, never play content.
-        trackEvent("play_generated", { participants: currentParticipants.length, edges: edges.length });
+        trackNetwork("play_generated", { participants: currentParticipants.length, edges: edges.length });
       } else {
         store.pushMessage(decision.id, { type: "fallback", body: resp.body });
       }
@@ -550,7 +550,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const dismissOnboarding = useCallback(() => {
     store.setPref("onboardingPrompted", true);
     store.setPref("railCollapsed", false);
-    trackEvent("onboarding_dismissed", { mode: onboarding.mode });
+    trackNetwork("onboarding_dismissed", { mode: onboarding.mode });
     setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
     const emptyRoom = store.getRooms().find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
     const roomId = emptyRoom?.id || store.createRoom();
@@ -1840,7 +1840,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             .filter((p) => ![...decision.participantIds, ...decision.externalIds].includes(p.id))}
           onAddExisting={(id) => {
             store.addParticipant(decision.id, id);
-            trackEvent("decision_participant_add", { source: "roster" });
+            trackNetwork("decision_participant_add", { source: "roster" });
           }}
           onAddExternal={(name, role) => {
             const id = store.addExternal(decision.id, { name, role });
