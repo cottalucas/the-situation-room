@@ -53,24 +53,41 @@ export const appCheck =
       })
     : null;
 
+// Keys that must never reach Pendo/Novus: raw identifiers for a colleague,
+// room, or decision, and any field that could carry note or prompt content.
+// Firebase Analytics keeps the full params; only the Pendo copy is scrubbed.
+const PENDO_DENY_KEYS = ["personId", "roomId", "decisionId", "name", "noteText", "text", "prompt", "body", "email"];
+
+function pendoSafeParams(params) {
+  const safe = {};
+  for (const key of Object.keys(params)) {
+    if (!PENDO_DENY_KEYS.includes(key)) safe[key] = params[key];
+  }
+  return safe;
+}
+
 export async function trackEvent(name, params = {}) {
   const analytics = await analyticsPromise;
-  if (!analytics) return;
-  logEvent(analytics, name, params);
+  if (analytics) logEvent(analytics, name, params);
+  try {
+    if (typeof pendo !== "undefined" && typeof pendo.track === "function") {
+      pendo.track(name, pendoSafeParams(params));
+    }
+  } catch {
+    // Pendo is best-effort; never block the UI.
+  }
 }
 
 /**
  * Fire a product event to both Firebase Analytics and Novus (Pendo), fire and
  * forget. Use only privacy-safe payloads: ids, counts, and enum values, never
- * raw names, notes, or edge details.
+ * raw names, notes, or edge details. Delivery to Pendo and the payload scrub
+ * (room/decision/person ids stripped before Pendo, kept for Firebase) both live
+ * in trackEvent, so this delegates rather than calling pendo.track again, which
+ * would double-count network events and bypass the scrub.
  */
 export function trackNetwork(name, params = {}) {
   trackEvent(name, params);
-  try {
-    if (typeof pendo !== "undefined" && typeof pendo.track === "function") pendo.track(name, params);
-  } catch {
-    // Novus is best-effort; never block the UI on analytics.
-  }
 }
 
 export async function trackScreen(screenName) {

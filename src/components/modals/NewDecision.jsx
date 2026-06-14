@@ -36,7 +36,7 @@ export function NewDecision({ rosterCount, onCreate, onClose }) {
       </div>
       <div className="field-actions">
         <button
-          className="btn-primary"
+          className="btn-primary btn-create-decision"
           disabled={!title.trim()}
           onClick={() => onCreate({ title: title.trim(), context: { deciding, goal, constraint } })}
         >
