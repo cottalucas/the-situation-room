@@ -54,7 +54,7 @@ export function AddParticipant({ rosterAvailable, onAddExisting, onAddExternal, 
           <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
           <input className="field-input" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role or context" />
         </div>
-        <button className="btn-primary btn-sm" type="submit" disabled={!name.trim()}>
+        <button className="btn-primary btn-sm btn-add-external" type="submit" disabled={!name.trim()}>
           Add external
         </button>
       </form>

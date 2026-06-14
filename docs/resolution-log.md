@@ -5,6 +5,48 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-14 - Novus (Pendo) analytics pipeline activated
+
+Novus was returning zero page, feature, and track events. Four root causes,
+fixed in one pass. No product behavior, copy, or Firebase Analytics calls
+changed.
+
+- Init with empty id. `main.jsx` called `pendo.initialize({ visitor: { id: '' } })`
+  on boot, which kept the analytics pipeline inert (replays worked, events did
+  not). Removed it. Pendo now initialises in `useAuth.js` once a signed-in user
+  resolves: `initialize` on the first auth of a session (module-scoped
+  `pendoInitialized` guard), `identify` on later auth changes, both carrying
+  `account: { id: u.uid }`. No anonymous id for a private B2B product.
+- Hash routing invisible to Pendo. `Room.jsx` drives navigation through
+  `window.location.hash` but never called `pendo.pageLoad()`, so three of four
+  page URL rules could never match. The hashchange handler now calls
+  `pendo.pageLoad()` after `setRoute()`, wrapped in try/catch. The person,
+  notes, and frameworks routes all flow through this one handler.
+- Most events skipped Pendo. `trackEvent()` (33 of 40 events: sign_up, login,
+  room_create, decision_create, play_generated, and the rest) sent only to
+  Firebase. It now also calls `pendo.track()`, fire and forget. A `PENDO_DENY_KEYS`
+  scrub strips raw identifiers and content (personId, roomId, decisionId, name,
+  noteText, text, prompt, body, email) from the Pendo copy only; Firebase keeps
+  the full params. Audited every call site: only `read_chip_clicked` carried a
+  raw id (`personId`), now stripped.
+- Broken `:contains()` selectors. Pendo evaluates CSS selectors server-side and
+  does not support `:contains()`. Added unique stable classes to 9 elements so
+  Novus can regenerate valid selectors: `tab-${id}` on the lens tabs (yields
+  tab-people, tab-grid, tab-network; "grid" is the internal id for the Energy
+  lens), `auth-tab-register`, `auth-tab-signin`, `btn-create-decision`,
+  `btn-save-profile`, `btn-archive-decision`, `btn-add-external`.
+
+Follow-on correction inside the same pass: `trackNetwork()` delegates to
+`trackEvent()` internally, so once `trackEvent` learned to call `pendo.track`,
+network events would have fired to Pendo twice and the second (raw) call would
+have leaked `roomId`, which FIX 1 had just switched on. Removed the redundant
+raw `pendo.track` from `trackNetwork` so it delegates cleanly; the scrub in
+`trackEvent` now covers it. Firebase Analytics for network events is unchanged.
+
+Verified in local preview: no pre-auth init, `pageLoad` fires on hashchange,
+`trackEvent` reaches `pendo.track` (external_add observed), and the new classes
+render. Novus re-sync is a manual product step after deploy and was not run.
+
 ## 2026-06-13 - Landing page fills the four classical gaps
 
 The landing covered How and Why but missed what, who, and a path back to

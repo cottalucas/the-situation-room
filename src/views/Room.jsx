@@ -471,7 +471,18 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   // page, so they are linkable and the browser back button works.
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const apply = () => setRoute(parseHash(window.location.hash));
+    const apply = () => {
+      setRoute(parseHash(window.location.hash));
+      try {
+        // Hash routing means Pendo never sees these page changes otherwise;
+        // pageLoad() re-evaluates its URL rules against the new hash.
+        if (typeof pendo !== "undefined" && typeof pendo.pageLoad === "function") {
+          pendo.pageLoad();
+        }
+      } catch {
+        // fire-and-forget
+      }
+    };
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
   }, []);
@@ -1665,7 +1676,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                         {TABS.map((t) => (
                           <button
                             key={t.id}
-                            className={`tab ${activeTab === t.id ? "tab-active" : ""}`}
+                            className={`tab tab-${t.id} ${activeTab === t.id ? "tab-active" : ""}`}
                             onClick={() => selectTab(t.id)}
                           >
                             <span className="tab-label">{t.label}</span>

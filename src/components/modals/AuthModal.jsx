@@ -81,7 +81,7 @@ export function AuthModal({ initialTab = "register", configured, localPreview = 
       <div className="auth-tabs" role="tablist" aria-label="Authentication options">
         <button
           type="button"
-          className={`auth-tab ${isRegister ? "auth-tab-active" : ""}`}
+          className={`auth-tab auth-tab-register ${isRegister ? "auth-tab-active" : ""}`}
           onClick={() => setTab("register")}
           role="tab"
           aria-selected={isRegister}
@@ -90,7 +90,7 @@ export function AuthModal({ initialTab = "register", configured, localPreview = 
         </button>
         <button
           type="button"
-          className={`auth-tab ${!isRegister ? "auth-tab-active" : ""}`}
+          className={`auth-tab auth-tab-signin ${!isRegister ? "auth-tab-active" : ""}`}
           onClick={() => setTab("signin")}
           role="tab"
           aria-selected={!isRegister}

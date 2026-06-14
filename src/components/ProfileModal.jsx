@@ -71,7 +71,7 @@ export function ProfileModal({ name: initialName, email, position: initialPositi
         {saved && !error && <p className="profile-saved" role="status">Saved.</p>}
 
         <div className="field-actions">
-          <button type="submit" className="btn-primary" disabled={saving}>
+          <button type="submit" className="btn-primary btn-save-profile" disabled={saving}>
             {saving ? "Saving" : "Save profile"}
           </button>
         </div>

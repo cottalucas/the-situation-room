@@ -51,7 +51,7 @@ export function DecisionSettings({ decision, onClose, onSave, onArchive }) {
           Save
         </button>
         {decision.status === "active" && (
-          <button className="btn-danger" onClick={onArchive}>
+          <button className="btn-danger btn-archive-decision" onClick={onArchive}>
             Close and archive decision
           </button>
         )}
