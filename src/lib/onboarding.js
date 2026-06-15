@@ -224,30 +224,39 @@ export function buildOnboardingCommandPlan(answers) {
   const decision = cleanAnswer(answers.decision, 1600);
   const people = cleanAnswer(answers.people, 1600);
   const relationships = cleanAnswer(answers.relationships, 1600);
-  const plan = [
+  // Every step reads all three answers. Stance, power, interest, and influence
+  // signal often lands in the decision or people answer, not only the
+  // relationships one, so the extraction is not question-locked.
+  const answersBlock =
+    `Decision and desired outcome: ${decision} ` +
+    `People: ${people} ` +
+    `Relationships and influence: ${relationships || "none stated"}`;
+  return [
     {
       command: "create",
       text:
-        `Create one person for each distinct individual named or described below. ` +
+        `Create one person for each distinct individual named or described across all three answers below. ` +
         `Use the person's name when it is given. When only a role is given, for example "the head of engineering", use that role as the name and set it as the role. ` +
         `Do not list the same person twice, and do not create a separate role-person for someone who is already named with that role. ` +
-        `Decision and desired outcome: ${decision}. People: ${people}.`,
+        `Then, for every person, also extract every read the text actually supports: their stance toward the decision (for, against, neutral, or unknown), their power and interest using the calibrated bands, their influence over this decision, and any relationship between people that the text states or strongly implies. ` +
+        `Pull this signal from all three answers, not only the people answer. Leave a field out when the text gives no signal for it. Never invent a person, a placement, a stance, an influence level, or a relationship the text does not support. ` +
+        answersBlock,
     },
     {
       command: "grid",
       text:
-        `Estimate initial power, interest, and stance for each person already in this decision, using the calibrated bands. ` +
-        `Map plain language to bands and leave a value out only when the text gives no signal at all. ` +
-        `Decision and desired outcome: ${decision}. People notes: ${people}.`,
+        `Estimate power, interest, and stance for each person already in this decision, using the calibrated bands. ` +
+        `Map plain language to bands and read all three answers below, not only the people answer. Leave a value out only when the text gives no signal at all. ` +
+        answersBlock,
+    },
+    {
+      command: "network",
+      text:
+        `Map every relationship and influence read the text supports, across all three answers below. ` +
+        `Add an edge only for a relationship the text states or strongly implies, and set an influence level only when the text supports it. Leave influence unset where there is no signal, and never fabricate an edge or a level. ` +
+        answersBlock,
     },
   ];
-  if (!relationshipAnswerIsEmpty(relationships)) {
-    plan.push({
-      command: "network",
-      text: `Map only the stated relationships. Decision: ${decision}. Relationships: ${relationships}.`,
-    });
-  }
-  return plan;
 }
 
 export function hasUsableRoom(rooms, getDecisions) {

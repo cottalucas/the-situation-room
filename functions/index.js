@@ -26,7 +26,7 @@ const SCARF = new Set(["Status", "Certainty", "Autonomy", "Relatedness", "Fairne
 const CONFIDENCE = new Set(["high", "medium", "low"]);
 const INFLUENCE = new Set(["high", "medium", "low"]);
 const ALLOWED_COMMANDS = new Set(["note", "grid", "network", "net", "map", "create"]);
-const COMMAND_PROMPT_VERSION = "room-command-v8-relay-2026-06-10";
+const COMMAND_PROMPT_VERSION = "room-command-v9-relay-2026-06-15";
 const PLAY_PROMPT_VERSION = "play-v1-local-2026-06-03";
 const STRATEGIST_PROMPT_VERSION = "strategist-v5-grounded-2026-06-10";
 
@@ -312,9 +312,17 @@ function commandRules(command) {
   if (command === "note") {
     return [
       "Command rules for @note:",
-      "- Update the focus person only.",
-      "- Return one note in the user's words, cleaned of profanity only. Add profilePatch only if the note gives a clear stable signal.",
-      "- Do not create unrelated people, grid placements, or network edges.",
+      "- Center on the focus person. Always save exactly one note in the user's words, cleaned of profanity only.",
+      "- Beyond the note, also extract every read the text actually supports for the focus person, using the same discipline as @map. There is no looser path here.",
+      "  - position (stance): for, against, neutral, or unknown, when the text states or strongly implies it.",
+      "  - power and interest on the Energy lens, using the grid calibration bands, with a confidence of high, medium, or low. Power is ability to affect the active decision; interest is attention or stake in it. Do not output below 10 or above 95 unless the user states an absolute.",
+      "  - influenceLevel on the Network lens (high, medium, or low) when the text states or strongly implies how much this person can block, accelerate, or shape THIS decision. It is not general seniority. Never set influenceLevel for the isSelf user.",
+      "  - relationship edges, only for a relationship the note explicitly states or strongly implies. A single reporting or defers line is one defers edge and nothing more. ally is alignment or support; conflict is friction; defers is the from person being moved by the to person. Include a confidence on every edge.",
+      "- influenceLevel is ring placement on the Network lens; power and interest are axis placement on the Energy lens. They are different fields on different lenses. Never conflate them.",
+      "- Add profilePatch only when the note gives a clear, stable framework signal.",
+      "- Never fabricate a stance, placement, influence level, or edge the note does not support. Omit any field with no signal; the saved note alone is always enough.",
+      "- You may reference or create another named person only to anchor a relationship the note states. Do not invent unrelated people.",
+      "- Ask at most one open question, only when a missing identity blocks an edge or a read is genuinely unclear.",
     ].join("\n");
   }
   if (command === "grid") {
@@ -375,35 +383,8 @@ function commandRules(command) {
 }
 
 function commandSchema(command) {
-  if (command === "note") {
-    return {
-      summary: "Short confirmation of what changed.",
-      people: [
-        {
-          id: "focus person id",
-          note: "One note in the user's words, cleaned of profanity only, to save on the person.",
-          profilePatch: {
-            goal: "Optional stable driver.",
-            context: "Optional stable context.",
-            baseRead: {
-              scarf: "Optional SCARF read.",
-              tki: "Optional Thomas-Kilmann read.",
-              cialdini: "Optional Cialdini read.",
-              fisherUry: "Optional Fisher and Ury read.",
-            },
-            visualTags: {
-              scarfDimensions: ["Status"],
-              tkiStyle: "Competing",
-              cialdiniLever: "Consistency",
-              fuTeaser: "Optional one-line position versus interest.",
-            },
-          },
-        },
-      ],
-      edges: [],
-      openQuestions: [],
-    };
-  }
+  // @note shares the full intake schema (the default below): a note plus any
+  // stance, grid, influence, or edge the note text supports for the focus person.
   if (command === "grid") {
     return {
       summary: "Short confirmation of what changed.",

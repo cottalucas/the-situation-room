@@ -5,6 +5,87 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-15 - Mapper owns placement at onboarding, bare text, and @note
+
+The Mapper now populates placements, stance, and influence (magnitude and
+direction) wherever the text supports it, instead of leaning on question-locked
+steps or leaving bare text and `@note` thin. The Strategist stays advice-only;
+dispatch stays a sequenced state machine with no LLM-to-LLM loop.
+
+- Onboarding (`buildOnboardingCommandPlan`, client-only): the `create` step is
+  broadened to also extract stance and any relational/influence signal, every
+  step reads all three setup answers (not question-locked), and the `network`
+  step always runs so edges and influence populate from relational signal in any
+  answer. The `create` command already shared the full `@map` rules and schema,
+  so this is prompt text only, no system-prompt change.
+- `@note` is no longer observations-only (`room-command-v9-relay-2026-06-15`,
+  bumped in both `src/lib/llm-prompts.js` and `functions/index.js`). New
+  `commandRules("note")` centers on the focus person and the verbatim note but
+  also sets stance, grid (calibration bands + confidence), influence magnitude,
+  and relationship edges when the note supports them. The `note` `commandSchema`
+  special case was removed so it shares the full intake schema (the
+  `npm run eval` schema-sync assertion stays green). `commandCapabilities("note")`
+  opens grid/edges/influence. Other `@command` fast paths are unchanged.
+- Bare text: `ENABLE_PLAIN_TEXT_ROUTING` defaults on. Bare text runs one
+  comprehensive `@map` pass and the reply names the specific changes across
+  lenses, built deterministically from the applied update (no second model call,
+  no Strategist). Nothing actionable gets a brief ack and one nudge toward
+  `@grid`/`@network`/`@play`. The old controller-pill path stays behind
+  `VITE_ENABLE_PLAIN_TEXT_ROUTING=false` as a rollback.
+
+Copy note: the spec example used an em dash and a hyphen connector
+("Added Priya — VP Eng ... Priya–CFO"); the project copy rules forbid both, so
+the deterministic summary uses commas and natural connectors ("Added Priya, VP
+Eng, skeptical, high power; flagged the CFO defers to Priya").
+
+Privacy and self unchanged: writes go through the existing store/repo paths,
+learning-example redaction stays server-side, and the `isSelf` de-dup in
+`applyRoomUpdate` is untouched. Offline fixture `command-note-full-extraction`
+locks the broadened `@note` contract; eval 21/21, all `verify:*` green, build
+clean.
+
+## 2026-06-14 - Selection lives in the URL, not localStorage
+
+The selected room and decision now encode in the URL hash as the single source
+of truth, so a refresh restores the exact view and room/decision links are
+shareable. This supersedes the localStorage-backed selection from 2026-06-05 and
+2026-06-10: room and decision no longer write to `situation-room-ui-state-v1`
+(that key is now cleaned up on load), and the hash carries the room, not only
+the decision.
+
+Scheme: `#/room/:roomId` and `#/room/:roomId/decision/:decisionId` (decision
+segment optional). Legacy `#/decision/:id` links still parse and resolve their
+room from the decision.
+
+- On load, the restore effect reads the route and validates the room and
+  decision against the store, waiting for Firestore before judging an id stale.
+  A valid route wins; a bare URL with no selection restores the last room from
+  synced settings (`lastRoomId`/`lastDecisionId`, server state, not cached
+  client state). A stale or inaccessible id falls back to a real room without
+  error and replaces the URL.
+- A single sync effect mirrors the active selection into the hash on the lenses
+  view, covering restore, onboarding, and stale-decision swaps. The hashchange
+  handler reconciles selection from the URL on Back/Forward.
+- Switching rooms pushes a history entry (Back returns to the previous room);
+  switching decisions inside a room replaces (Back does not ping-pong). Verified
+  in local preview: refresh holds, room switch + Back/Forward, decision switch
+  grows history by zero, cold load on a ghost id heals to a valid room.
+- Guided setup "Build room" now writes the new room's URL with its seeded
+  decision as a real route change, so a post-onboarding refresh holds.
+- Added `room_selection_restored` (fire-and-forget, `{ hadDecision }`, no raw
+  ids) which fires only when the restore resolves from the URL, not the
+  synced-settings or first-room fallback. Confirmed it fires on a real restore
+  and stays silent on the ghost-id fallback.
+
+Decision on a flagged conflict: the task said do not use localStorage, but the
+docs called the localStorage layer intentional. Resolution: the URL becomes the
+source of truth and the docs (`architecture.md`, `design-system.md`) were
+updated to match. The cold-start case (bare URL, no deep link) keeps restoring
+the last room from synced settings, per the product owner's call. The lens
+(People/Energy/Network) stays in localStorage under `situation-room-lens-v1`
+because it is a view preference, not a selection. No state library added; the
+existing custom hash router carries it.
+
 ## 2026-06-14 - Novus (Pendo) analytics pipeline activated
 
 Novus was returning zero page, feature, and track events. Four root causes,

@@ -181,12 +181,15 @@ export function normalizeStrategistAnswer(raw, participants = []) {
  * assert the boundary without standing up React.
  */
 export function commandCapabilities(sourceCommand) {
+  // @note now carries the full focus-person extraction (stance, grid, influence,
+  // edges) to match the onboarding/@map contract, so it writes to every lens the
+  // note text supports, not observations only.
   return {
     notes: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
     profile: sourceCommand === "note" || sourceCommand === "map" || sourceCommand === "create",
-    grid: sourceCommand === "grid" || sourceCommand === "map" || sourceCommand === "create",
-    edges: sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
-    influence: sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
+    grid: sourceCommand === "note" || sourceCommand === "grid" || sourceCommand === "map" || sourceCommand === "create",
+    edges: sourceCommand === "note" || sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
+    influence: sourceCommand === "note" || sourceCommand === "network" || sourceCommand === "map" || sourceCommand === "create",
   };
 }
 

@@ -324,6 +324,44 @@
       }
     },
     {
+      "id": "command-note-full-extraction",
+      "kind": "command",
+      "tags": ["note", "full_extraction"],
+      "input": {
+        "command": "note",
+        "text": "Priya is the new VP Eng and she is skeptical about this, she carries a lot of weight here, and the CFO defers to her on tech spend",
+        "focusPerson": { "id": "priya", "name": "Priya", "role": "VP Eng" },
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "priya", "name": "Priya", "role": "VP Eng", "currentPosition": "unknown", "currentPlacement": { "power": 50, "interest": 50 }, "goal": "", "context": "", "recentNotes": [] },
+            { "id": "dana", "name": "Dana", "role": "CFO", "currentPosition": "unknown", "currentPlacement": { "power": 80, "interest": 40 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Noted Priya, set her stance, grid, and influence, and the CFO defers to her.",
+        "people": [
+          { "id": "priya", "note": "New VP Eng, skeptical on this and carries significant weight here.", "position": "against", "power": 78, "interest": 60, "confidence": "medium", "influenceLevel": "high" }
+        ],
+        "edges": [
+          { "from": "dana", "to": "priya", "type": "defers", "confidence": "medium" }
+        ],
+        "openQuestions": []
+      },
+      "expect": {
+        "requiredPeople": ["priya"],
+        "requireNote": true,
+        "requireGrid": true,
+        "requireConfidence": true,
+        "minEdges": 1,
+        "requiredEdges": [{ "from": "dana", "to": "priya", "type": "defers" }],
+        "gridBands": { "priya": { "power": [70, 80] } }
+      }
+    },
+    {
       "id": "command-grid-extreme-clarification",
       "kind": "command",
       "tags": ["grid", "clarification", "extreme_values"],

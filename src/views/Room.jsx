@@ -33,12 +33,12 @@ const LIVE_LLM = import.meta.env.VITE_ENABLE_LIVE_LLM === "true";
 // Open (non-command) chat is experimental and routes to the grounded strategist
 // behind the input guard. It rides on the live LLM flag.
 const OPEN_CHAT = LIVE_LLM;
-// Plain-text routing. OFF in production: plain text runs through the controller
-// and surfaces as a tappable suggestion pill, never routed silently and never
-// mutating state. Flip to true (VITE_ENABLE_PLAIN_TEXT_ROUTING=true) only once
-// the offline evals and live trace review say the controller is good enough to
-// act on its own.
-const ENABLE_PLAIN_TEXT_ROUTING = import.meta.env.VITE_ENABLE_PLAIN_TEXT_ROUTING === "true";
+// Plain-text routing. ON by default: bare text in a room runs through the Mapper
+// (the comprehensive @map extraction in one pass) and the reply names the specific
+// changes across lenses. Set VITE_ENABLE_PLAIN_TEXT_ROUTING=false to fall back to
+// the older write-nothing suggestion pill (kept as a rollback). The Strategist is
+// never invoked by bare text.
+const ENABLE_PLAIN_TEXT_ROUTING = import.meta.env.VITE_ENABLE_PLAIN_TEXT_ROUTING !== "false";
 
 // One-line description of a controller plan, for pills and "treated as" labels.
 function describeControllerPlan(plan) {
@@ -83,72 +83,100 @@ const TABS = [
   { id: "network", label: "Network", hint: "Who moves whom" },
 ];
 const TAB_IDS = new Set(TABS.map((tab) => tab.id));
-const BROWSER_UI_STATE_KEY = "situation-room-ui-state-v1";
-const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+// The selected room and decision live in the URL hash, never in localStorage, so
+// refresh and shared links are the single source of truth. Only the lens
+// (People/Energy/Network) is a view preference we keep across a refresh.
+const STORED_LENS_KEY = "situation-room-lens-v1";
 
-function readBrowserUiState() {
-  if (typeof window === "undefined") return {};
+// One-time cleanup: older builds persisted room/decision selection in localStorage.
+// The URL owns that now, so drop the stale key rather than leave a dead selection.
+if (typeof window !== "undefined") {
   try {
-    const storage = window.localStorage;
-    if (!storage) return {};
-    const raw = storage.getItem(BROWSER_UI_STATE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    const state = {};
-    if (typeof parsed.activeRoomId === "string" || parsed.activeRoomId === null) state.activeRoomId = parsed.activeRoomId;
-    if (typeof parsed.activeDecisionId === "string" || parsed.activeDecisionId === null) {
-      state.activeDecisionId = parsed.activeDecisionId;
-    }
-    if (TAB_IDS.has(parsed.activeTab)) state.activeTab = parsed.activeTab;
-    return state;
+    window.localStorage?.removeItem("situation-room-ui-state-v1");
   } catch {
-    return {};
+    // Nothing to clean up if storage is unavailable.
   }
 }
 
-function writeBrowserUiState(patch) {
-  if (typeof window === "undefined") return;
+function readStoredLens() {
+  if (typeof window === "undefined") return null;
   try {
-    const storage = window.localStorage;
-    if (!storage) return;
-    const next = { ...readBrowserUiState(), ...patch };
-    storage.setItem(BROWSER_UI_STATE_KEY, JSON.stringify(next));
+    const lens = window.localStorage?.getItem(STORED_LENS_KEY);
+    return TAB_IDS.has(lens) ? lens : null;
   } catch {
-    // Browser persistence is a convenience. The account settings restore still
-    // works when localStorage is unavailable.
+    return null;
   }
 }
 
-/* Hash routes for the linkable person, person notes, and frameworks pages. */
+function writeStoredLens(lens) {
+  if (typeof window === "undefined" || !TAB_IDS.has(lens)) return;
+  try {
+    window.localStorage?.setItem(STORED_LENS_KEY, lens);
+  } catch {
+    // Lens persistence is a convenience; the URL still restores room and decision.
+  }
+}
+
+/* Hash routes. The lenses view encodes the selection (#/room/:roomId and
+   #/room/:roomId/decision/:decisionId) so a refresh or a shared link restores
+   the exact room and decision. Person, notes, and frameworks are linkable
+   sub-pages that hold the hash while open. */
 function parseHash(hash) {
-  if (hash === "#/frameworks") return { view: "frameworks", personId: null };
-  if (hash.startsWith("#/decision/")) {
-    const decisionId = decodeURIComponent(hash.slice("#/decision/".length));
-    return { view: "lenses", personId: null, decisionId };
-  }
+  if (hash === "#/frameworks") return { view: "frameworks", roomId: null, decisionId: null, personId: null };
   if (hash.startsWith("#/person/")) {
     const rest = hash.slice("#/person/".length);
     if (rest.endsWith("/notes")) {
-      return { view: "personNotes", personId: rest.slice(0, -"/notes".length), decisionId: null };
+      return { view: "personNotes", roomId: null, decisionId: null, personId: rest.slice(0, -"/notes".length) };
     }
-    return { view: "person", personId: rest, decisionId: null };
+    return { view: "person", roomId: null, decisionId: null, personId: rest };
   }
-  return { view: "lenses", personId: null, decisionId: null };
+  if (hash.startsWith("#/room/")) {
+    const rest = hash.slice("#/room/".length);
+    const sep = rest.indexOf("/decision/");
+    if (sep === -1) {
+      return { view: "lenses", roomId: decodeURIComponent(rest) || null, decisionId: null, personId: null };
+    }
+    return {
+      view: "lenses",
+      roomId: decodeURIComponent(rest.slice(0, sep)) || null,
+      decisionId: decodeURIComponent(rest.slice(sep + "/decision/".length)) || null,
+      personId: null,
+    };
+  }
+  // Legacy decision-only links keep working; the room resolves from the decision.
+  if (hash.startsWith("#/decision/")) {
+    return { view: "lenses", roomId: null, decisionId: decodeURIComponent(hash.slice("#/decision/".length)) || null, personId: null };
+  }
+  return { view: "lenses", roomId: null, decisionId: null, personId: null };
 }
 
-function replaceDecisionHash(decisionId) {
-  if (typeof window === "undefined" || !decisionId) return;
-  const nextHash = `#/decision/${encodeURIComponent(decisionId)}`;
-  if (window.location.hash === nextHash) return;
-  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+function selectionHash(roomId, decisionId) {
+  if (!roomId) return null;
+  const base = `#/room/${encodeURIComponent(roomId)}`;
+  return decisionId ? `${base}/decision/${encodeURIComponent(decisionId)}` : base;
 }
 
-// Drop a stale #/decision/ hash when no decision is active, so a refresh does not
-// try to restore a decision that is gone. Leaves person/frameworks hashes alone.
-function clearDecisionHash() {
+// Write the selection into the URL. replace (default) swaps the current entry so
+// switching decisions inside a room does not stack history; push adds an entry so
+// the Back button returns to the previous room.
+function writeSelectionHash(roomId, decisionId, { push = false } = {}) {
   if (typeof window === "undefined") return;
-  if (!window.location.hash.startsWith("#/decision/")) return;
+  const target = selectionHash(roomId, decisionId);
+  if (!target) {
+    clearSelectionHash();
+    return;
+  }
+  if (window.location.hash === target) return;
+  const url = `${window.location.pathname}${window.location.search}${target}`;
+  if (push) window.history.pushState(null, "", url);
+  else window.history.replaceState(null, "", url);
+}
+
+// Drop a stale selection hash so a refresh does not try to restore a room or
+// decision that is gone. Leaves person/frameworks sub-page hashes alone.
+function clearSelectionHash() {
+  if (typeof window === "undefined" || !window.location.hash) return;
+  if (!window.location.hash.startsWith("#/room/") && !window.location.hash.startsWith("#/decision/")) return;
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
 }
 
@@ -267,22 +295,16 @@ function mergePersonPatch(person, profilePatch) {
 export default function Room({ onExit, userId, userName, userEmail }) {
   const store = useStore();
   const isMobile = useIsMobile();
-  const [initialBrowserUi] = useState(readBrowserUiState);
   const [initialRoute] = useState(() =>
-    typeof window === "undefined" ? { view: "lenses", personId: null, decisionId: null } : parseHash(window.location.hash)
+    typeof window === "undefined" ? { view: "lenses", roomId: null, decisionId: null, personId: null } : parseHash(window.location.hash)
   );
-  const browserStartedWithRoom = hasOwn(initialBrowserUi, "activeRoomId");
-  const browserStartedWithDecision = hasOwn(initialBrowserUi, "activeDecisionId");
-  const routeStartedWithDecision = Boolean(initialRoute.decisionId);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const [activeRoomId, setActiveRoomId] = useState(() =>
-    browserStartedWithRoom ? initialBrowserUi.activeRoomId : "mobile"
-  );
-  const [activeDecisionId, setActiveDecisionId] = useState(() =>
-    routeStartedWithDecision ? initialRoute.decisionId : browserStartedWithDecision ? initialBrowserUi.activeDecisionId : "salesforce"
-  );
-  const [activeTab, setActiveTab] = useState(() => initialBrowserUi.activeTab || "people");
+  // The URL is the source of truth for the selection. A bare app URL (no room)
+  // restores the last room from synced settings in the restore effect below.
+  const [activeRoomId, setActiveRoomId] = useState(initialRoute.roomId);
+  const [activeDecisionId, setActiveDecisionId] = useState(initialRoute.decisionId);
+  const [activeTab, setActiveTab] = useState(() => readStoredLens() || "people");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [companionOpen, setCompanionOpen] = useState(false);
   const [nodeSummaryId, setNodeSummaryId] = useState(null);
@@ -467,12 +489,29 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     store.ensureSelf({ name: profile.name || userName || "", position: profile.position || "" });
   }, [userId, userName, remoteReady, store]);
 
-  // Hash is the single source for the Tier 2 person page and Tier 3 frameworks
-  // page, so they are linkable and the browser back button works.
+  // Current selection, read inside the hashchange handler without re-binding it.
+  const selectionRef = useRef({ roomId: activeRoomId, decisionId: activeDecisionId });
+  selectionRef.current = { roomId: activeRoomId, decisionId: activeDecisionId };
+
+  // Hash is the single source for the room/decision selection and for the Tier 2
+  // person page and Tier 3 frameworks page, so they are linkable and the browser
+  // back button works.
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const apply = () => {
-      setRoute(parseHash(window.location.hash));
+      const parsed = parseHash(window.location.hash);
+      setRoute(parsed);
+      // Back, Forward, or a manual hash edit on the lenses view moves the
+      // selection to match the URL. Sub-pages own the hash and leave it be.
+      if (parsed.view === "lenses") {
+        const cur = selectionRef.current;
+        if (parsed.roomId && parsed.roomId !== cur.roomId) setActiveRoomId(parsed.roomId);
+        const nextDecision = parsed.decisionId ?? null;
+        if (nextDecision !== cur.decisionId) {
+          setActiveDecisionId(nextDecision);
+          if (nextDecision) store.ensureChat(nextDecision);
+        }
+      }
       try {
         // Hash routing means Pendo never sees these page changes otherwise;
         // pageLoad() re-evaluates its URL rules against the new hash.
@@ -485,36 +524,24 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     };
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
-  }, []);
+  }, [store]);
 
-  // Same-browser restore happens before Firestore/user settings finish loading,
-  // so a hard refresh returns to the room, decision, and lens that were visible.
+  // The lens is the only selection sub-state kept in localStorage; room and
+  // decision live in the URL.
   useEffect(() => {
-    const ready = userSettingsReady && remoteReady;
-    if (!ready && !browserStartedWithRoom) return;
-    if (activeRoomId && !store.getRoom(activeRoomId)) return;
-    if (activeDecisionId) {
-      const currentDecision = store.getDecision(activeDecisionId);
-      if (!currentDecision || currentDecision.status !== "active") return;
-    }
-    writeBrowserUiState({ activeRoomId, activeDecisionId, activeTab });
-  }, [activeRoomId, activeDecisionId, activeTab, browserStartedWithRoom, remoteReady, store, userSettingsReady]);
+    writeStoredLens(activeTab);
+  }, [activeTab]);
 
-  // Keep the URL hash carrying the active decision while the lenses own the hash.
-  // Selecting a decision already writes it, but an auto-restored or auto-selected
-  // decision never went through selectDecision, so without this a refresh lands on
-  // the room with no decision. The hash is the most durable restore source (it
-  // survives in the URL itself and is read synchronously at init), so a refresh
-  // then reliably restores the exact decision through the route path. We read the
-  // live hash instead of route state so we never clobber a person/frameworks
-  // sub-page that owns the hash.
+  // Mirror the active selection into the URL on the lenses view so every path
+  // that changes it (restore, onboarding, a stale-decision swap) keeps refresh
+  // and shared links correct. Direct user actions set push/replace themselves;
+  // this safety net always replaces. Sub-pages own the hash, so leave them be.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const hash = window.location.hash;
-    if (hash && !hash.startsWith("#/decision/")) return;
-    if (decision && decision.status === "active") replaceDecisionHash(decision.id);
-    else if (!activeDecisionId) clearDecisionHash();
-  }, [decision, activeDecisionId]);
+    if (route.view !== "lenses") return;
+    if (activeRoomId) writeSelectionHash(activeRoomId, activeDecisionId);
+    else clearSelectionHash();
+  }, [activeRoomId, activeDecisionId, route.view]);
 
   // Guided setup owns the screen, so close the mobile drawer whenever it
   // activates (e.g. "+ New room" started from inside the drawer).
@@ -539,8 +566,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const pageBack = useCallback(() => {
     if (typeof window === "undefined") return;
     if (window.history.length > 1) window.history.back();
-    else window.location.hash = "#/";
-  }, []);
+    else writeSelectionHash(activeRoomId, activeDecisionId);
+  }, [activeRoomId, activeDecisionId]);
 
   useEffect(() => {
     if (
@@ -587,14 +614,14 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         store.ensureChat(first.id);
         setActiveDecisionId(first.id);
         store.setUserSetting("lastDecisionId", first.id);
-        replaceDecisionHash(first.id);
       } else {
         setActiveDecisionId(null);
         store.setUserSetting("lastDecisionId", null);
       }
       setShowPath(false);
       setActiveTab("people");
-      writeBrowserUiState({ activeRoomId: id, activeDecisionId: first?.id || null, activeTab: "people" });
+      // Switching rooms pushes a history entry so Back returns to the prior room.
+      writeSelectionHash(id, first?.id || null, { push: true });
     },
     [store]
   );
@@ -602,16 +629,18 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     (id) => {
       const selected = store.getDecision(id);
       const selectedRoomId = selected?.roomId || activeRoomId;
+      const crossesRoom = Boolean(selected?.roomId && selected.roomId !== activeRoomId);
       store.ensureChat(id);
       setPlayCoaching(null);
-      if (selected?.roomId && selected.roomId !== activeRoomId) setActiveRoomId(selected.roomId);
+      if (crossesRoom) setActiveRoomId(selected.roomId);
       setActiveDecisionId(id);
       store.setUserSetting("lastRoomId", selectedRoomId);
       store.setUserSetting("lastDecisionId", id);
       setShowPath(false);
       setActiveTab("people");
-      replaceDecisionHash(id);
-      writeBrowserUiState({ activeRoomId: selectedRoomId, activeDecisionId: id, activeTab: "people" });
+      // Switching decisions inside a room replaces, so Back does not ping-pong;
+      // a decision in another room is a room switch and pushes.
+      writeSelectionHash(selectedRoomId, id, { push: crossesRoom });
     },
     [store, activeRoomId]
   );
@@ -621,64 +650,81 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     setNodeSummaryId(null);
   }, []);
 
-  // Restore the last browser-visible room and decision once data is available.
-  // Same-browser state wins; synced settings are the fallback for cold devices.
+  // Restore the selection once data is available. The URL is the source of
+  // truth; a room or decision is validated against the store (not cached client
+  // state), waiting for Firestore before judging an id stale. A bare URL with no
+  // selection restores the last room from synced settings. Anything unresolved
+  // settles on the first room through the guard effect below, never an error.
   const restoredSelection = useRef(false);
   const storedRoomId = store.getPref("lastRoomId");
   const storedDecisionId = store.getPref("lastDecisionId");
   useEffect(() => {
     if (restoredSelection.current || !rooms.length) return;
-    const routeDecision = routeStartedWithDecision ? store.getDecision(initialRoute.decisionId) : null;
-    if (routeStartedWithDecision && !routeDecision && !remoteReady) return;
-    const browserRoomId = browserStartedWithRoom ? initialBrowserUi.activeRoomId : null;
-    const browserRoom = browserRoomId ? store.getRoom(browserRoomId) : null;
-    if (browserStartedWithRoom && !browserRoom && !remoteReady) return;
+
+    const routeRoomId = initialRoute.roomId;
+    const routeDecisionId = initialRoute.decisionId;
+    const routeDecision = routeDecisionId ? store.getDecision(routeDecisionId) : null;
+    if (routeDecisionId && !routeDecision && !remoteReady) return;
+    const routeRoom = routeRoomId ? store.getRoom(routeRoomId) : null;
+    if (routeRoomId && !routeRoom && !remoteReady) return;
+
+    let restoredRoomId = null;
+    let restoredDecisionId; // undefined leaves the guard effect to pick the first active
+    let fromUrl = false;
+    if (routeDecision && routeDecision.status === "active") {
+      restoredRoomId = routeDecision.roomId;
+      restoredDecisionId = routeDecision.id;
+      fromUrl = true;
+    } else if (routeRoom) {
+      restoredRoomId = routeRoomId;
+      fromUrl = true;
+    }
+
     const canUseSyncedSettings = userSettingsReady && remoteReady;
-    const syncedRoom = canUseSyncedSettings && storedRoomId ? store.getRoom(storedRoomId) : null;
-    const restoredRoomId =
-      routeDecision && routeDecision.status === "active"
-        ? routeDecision.roomId
-        : browserRoom
-          ? browserRoomId
-          : syncedRoom
-            ? storedRoomId
-            : null;
-    const browserDecisionId = browserRoom && browserStartedWithDecision ? initialBrowserUi.activeDecisionId : undefined;
-    if (browserDecisionId && !store.getDecision(browserDecisionId) && !remoteReady) return;
+    if (!restoredRoomId) {
+      // No usable selection in the URL (bare URL, or a stale/inaccessible id).
+      // Restore the last room from synced settings, which are server state.
+      const syncedRoom = canUseSyncedSettings && storedRoomId ? store.getRoom(storedRoomId) : null;
+      if (syncedRoom) {
+        restoredRoomId = storedRoomId;
+        restoredDecisionId = storedDecisionId;
+      }
+    }
+
     if (!restoredRoomId) {
       if (!canUseSyncedSettings) return;
-      restoredSelection.current = true;
+      restoredSelection.current = true; // the guard effect lands on the first room
       return;
     }
+
     restoredSelection.current = true;
     setActiveRoomId(restoredRoomId);
     store.setUserSetting("lastRoomId", restoredRoomId);
 
-    const restoredDecisionId = routeDecision && routeDecision.status === "active" ? routeDecision.id : browserDecisionId !== undefined ? browserDecisionId : storedDecisionId;
     if (restoredDecisionId === null) {
       setActiveDecisionId(null);
       store.setUserSetting("lastDecisionId", null);
-      return;
-    }
-    const stored = restoredDecisionId ? store.getDecision(restoredDecisionId) : null;
-    if (stored && stored.roomId === restoredRoomId && stored.status === "active") {
-      store.ensureChat(stored.id);
-      setActiveDecisionId(stored.id);
-      store.setUserSetting("lastDecisionId", stored.id);
     } else {
-      const first = store.getDecisions(restoredRoomId).find((d) => d.status === "active") || null;
-      setActiveDecisionId(first?.id || null);
-      if (first) store.ensureChat(first.id);
-      store.setUserSetting("lastDecisionId", first?.id || null);
+      const stored = restoredDecisionId ? store.getDecision(restoredDecisionId) : null;
+      if (stored && stored.roomId === restoredRoomId && stored.status === "active") {
+        store.ensureChat(stored.id);
+        setActiveDecisionId(stored.id);
+        store.setUserSetting("lastDecisionId", stored.id);
+      } else {
+        const first = store.getDecisions(restoredRoomId).find((d) => d.status === "active") || null;
+        setActiveDecisionId(first?.id || null);
+        if (first) store.ensureChat(first.id);
+        store.setUserSetting("lastDecisionId", first?.id || null);
+      }
     }
+
+    // Fire and forget: confirm in production that refreshes land on a real
+    // selection from the URL, not the synced-settings or first-room fallback.
+    if (fromUrl) trackEvent("room_selection_restored", { hadDecision: Boolean(routeDecisionId) });
   }, [
-    browserStartedWithDecision,
-    browserStartedWithRoom,
-    initialBrowserUi.activeDecisionId,
-    initialBrowserUi.activeRoomId,
     initialRoute.decisionId,
+    initialRoute.roomId,
     remoteReady,
-    routeStartedWithDecision,
     rooms,
     storedDecisionId,
     storedRoomId,
@@ -970,6 +1016,41 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     [decision, ensurePersonForUpdate, findPersonRef, room, store]
   );
 
+  // Voice the specific changes a bare-text map applied, across lenses, so the
+  // reply is concrete ("Added Priya, VP Eng, skeptical, high power; flagged Priya
+  // defers to the CFO") rather than a generic ack. Deterministic, read from the
+  // applied update, no extra model call. Copy rules: no em dash, no hyphen as a
+  // connector.
+  const describeAppliedUpdate = useCallback(
+    (update) => {
+      const nameOf = (ref) => (ref ? store.getPerson(ref)?.name || ref : "someone");
+      const STANCE = { for: "supportive", against: "skeptical", neutral: "neutral" };
+      const band = (v) => (v == null ? null : v >= 70 ? "high" : v <= 35 ? "low" : "moderate");
+      const peopleBits = (update.people || []).map((item) => {
+        const name = item.id ? nameOf(item.id) : item.name || "someone";
+        const facets = [];
+        if (item.role) facets.push(item.role);
+        if (item.position && STANCE[item.position]) facets.push(STANCE[item.position]);
+        const pb = band(item.power);
+        if (pb) facets.push(`${pb} power`);
+        if (item.influenceLevel && item.influenceLevel !== "null") facets.push(`${item.influenceLevel} influence`);
+        if (!facets.length && item.note) facets.push("noted");
+        const verb = item.create ? "Added" : "Updated";
+        return facets.length ? `${verb} ${name}, ${facets.join(", ")}` : `${verb} ${name}`;
+      });
+      const edgeBits = (update.edges || []).map((e) => {
+        const a = nameOf(e.from);
+        const b = nameOf(e.to);
+        if (e.type === "ally") return `flagged ${a} and ${b} aligned`;
+        if (e.type === "conflict") return `flagged friction between ${a} and ${b}`;
+        return `flagged ${a} defers to ${b}`;
+      });
+      const all = [...peopleBits, ...edgeBits];
+      return { count: all.length, body: all.length ? `${all.join("; ")}.` : "" };
+    },
+    [store]
+  );
+
   // Sequenced dispatch for a controller plan: mapper first, then (for "both")
   // the strategist on the UPDATED room. A state machine, never an LLM-to-LLM
   // loop: each expert runs at most once, and the only relay back is the mapper's
@@ -1070,6 +1151,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       setActiveDecisionId(decisionId);
       setActiveTab("people");
       setShowPath(false);
+      // Redirect to the new room's URL with its seeded decision, as a real route
+      // change so a refresh holds the position.
+      writeSelectionHash(roomId, decisionId, { push: true });
 
       const plan = buildOnboardingCommandPlan(answers);
       for (const item of plan) {
@@ -1419,10 +1503,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       }
 
       // Plain text (no command prefix). When live reasoning is off, only commands
-      // run. Otherwise the controller reads the intent and, in production
-      // (routing flag off), surfaces a tappable suggestion pill. Nothing mutates
-      // here: state changes only when the user taps the pill, which dispatches
-      // the controller plan.
+      // run. With routing on (the default), bare text populates the room through
+      // the comprehensive Mapper in one pass; with it off, the controller surfaces
+      // a tappable suggestion pill instead (rollback).
       if (!OPEN_CHAT) {
         store.pushMessage(decision.id, {
           type: "fallback",
@@ -1436,6 +1519,51 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         store.pushMessage(decision.id, { type: "fallback", body: screen.reply });
         return;
       }
+
+      if (ENABLE_PLAIN_TEXT_ROUTING) {
+        // One @map pass: people, notes, stance, grid, edges, and influence. No
+        // controller pill, no Strategist. The reply names the specific changes.
+        setIsGenerating(true);
+        try {
+          const resp = await interpretRoomCommand({
+            command: "map",
+            text: q,
+            room,
+            decision,
+            participants,
+            edges: store.getEdges(decision.id),
+            messages: priorMessages,
+          });
+          if (resp.kind !== "update") {
+            store.pushMessage(decision.id, { type: "fallback", body: resp.body });
+            return;
+          }
+          const message = applyRoomUpdate(resp.update, "map") || { label: "Room updated", body: "" };
+          const specifics = describeAppliedUpdate(resp.update);
+          if (specifics.count) {
+            trackEvent("room_map_update", { command: "map" });
+            captureLearnedMappings({ message, noteText: q, participants: store.getParticipants(decision.id), priorMessages });
+            store.pushMessage(decision.id, {
+              type: "updated",
+              ...message,
+              body: specifics.body,
+              questions: (message.questions || []).slice(0, 1),
+            });
+          } else {
+            // Nothing actionable extracted: a brief ack and one nudge, never silence.
+            store.pushMessage(decision.id, {
+              type: "fallback",
+              body: "Got that. Nothing to map there yet. Try @grid for power and interest, @network for who moves whom, or @play when you are ready.",
+            });
+          }
+        } finally {
+          setIsGenerating(false);
+        }
+        return;
+      }
+
+      // Rollback path (VITE_ENABLE_PLAIN_TEXT_ROUTING=false): the controller reads
+      // intent and surfaces a tappable suggestion pill; nothing mutates until tap.
       setIsGenerating(true);
       let plan = null;
       try {
@@ -1480,7 +1608,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         await dispatchControllerPlan(plan, q, priorMessages);
       }
     },
-    [applyRoomUpdate, decision, dispatchControllerPlan, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, playCoaching, room, runPlay, store]
+    [applyRoomUpdate, decision, describeAppliedUpdate, dispatchControllerPlan, draft, findPersonRef, generateRead, isGenerating, openPersonPage, participants, playCoaching, room, runPlay, store]
   );
   // A suggestion pill tap dispatches the stored controller plan: same mapper and
   // strategist path as silent routing, but only on an explicit user tap.

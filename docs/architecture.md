@@ -92,18 +92,25 @@ user in Firestore under `users/{uid}.settings` and mirror into the local prefs
 for synchronous reads. `store.setUserSetting(key, value)` writes both;
 `connect(uid)` fetches `repo.getUserSettings(uid)` once and merges it into prefs
 so a reload restores the last room and decision, even on a cold cache or a fresh
-device. Same-browser view state also writes synchronously to localStorage under
-`situation-room-ui-state-v1`: active room, active decision, and active lens
-(People, Energy, Network). Selecting a decision also writes a stable app route,
-`#/decision/:decisionId`, so a hard refresh has a synchronous selected-decision
-source before localStorage, IndexedDB, or Firestore finish loading. Route state
-wins first, then same-browser state, then synced settings for a fresh
-browser/device. Automatic fallback waits until the encrypted cache has hydrated
-in local preview, or until Firestore user settings and the first room snapshot
-are both ready in production. Invalid, deleted, or archived ids fall back to the
-first active decision or a quiet no-decision state. Only non-sensitive ids and
-flags live there, so settings stay plaintext. `railCollapsed` stays a local-only
-pref (cache, not synced).
+device. The selection itself lives in the URL hash, not localStorage:
+`#/room/:roomId` or `#/room/:roomId/decision/:decisionId` (the decision segment
+is optional). The hash is read synchronously at init and is the source of truth,
+so a hard refresh and a shared link both restore the exact view before
+IndexedDB or Firestore finish loading. Restore precedence is the route first,
+then the synced settings (`lastRoomId`/`lastDecisionId`) when the URL carries no
+selection. Ids are validated against the store, never cached state alone, and
+the effect waits until the encrypted cache has hydrated in local preview, or
+until Firestore user settings and the first room snapshot are both ready in
+production, before judging an id stale. Invalid, deleted, or archived ids fall
+back to the first active decision or a quiet no-decision state and the URL is
+replaced. Switching rooms pushes a history entry (Back returns to the previous
+room); switching decisions inside a room replaces. A successful restore from the
+URL fires a fire-and-forget `room_selection_restored` Novus event (no raw ids)
+to confirm in production that refreshes land on a real selection, not the
+fallback. The lens (People, Energy, Network) is the only view sub-state still in
+localStorage, under `situation-room-lens-v1`. Only non-sensitive ids and flags
+live in synced settings, so they stay plaintext. `railCollapsed` stays a
+local-only pref (cache, not synced).
 
 The account profile also lives on `users/{uid}`. `name` and `position` are
 editable but optional through the shared Profile modal. `position` may be empty

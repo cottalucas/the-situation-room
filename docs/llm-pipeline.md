@@ -56,7 +56,16 @@ Haiku calls exist, but they are now roles in one relay with a defined caller.
    up to the controller, which asks the user. No loop. The mapper never
    addresses the user directly. `@create` is retired as a user command; the
    internal `create` path still backs onboarding, so `ALLOWED_COMMANDS` and the
-   apply capabilities keep it.
+   apply capabilities keep it. As of `room-command-v9`, `@note` is no longer
+   observations-only: it carries the full focus-person extraction (stance, grid,
+   influence magnitude, and relationship edges) when the note text supports them,
+   matching the `@map`/onboarding contract, while still always saving the verbatim
+   note. `commandCapabilities("note")` opens grid/edges/influence to match, and the
+   `note` `commandSchema` now shares the full intake schema. Onboarding's `create`
+   step is broadened the same way and reads all three setup answers (not
+   question-locked), and its `network` step always runs so influence and edges
+   populate from relational signal in any answer. Never fabricated; unset where the
+   text gives no signal.
 3. **Strategist (grounded reasoning).** `/strategist` behind `@ask`, "The Read",
    and the relay's advise path. Prose question in, a grounded
    `{ answer, moves, cites, grounded }` out (`strategist-v5`). Each move is an
@@ -83,15 +92,17 @@ controller entirely (the unchanged fast path). For plain text:
 
 - `unclear` or low confidence -> the controller asks its ONE clarifying
   question and never guesses. The reply re-enters as fresh plain text.
-- Flag `ENABLE_PLAIN_TEXT_ROUTING` (env `VITE_ENABLE_PLAIN_TEXT_ROUTING`)
-  **off in production**: a confident read surfaces one tappable suggestion pill
-  (`both` gets a single pill that runs the full sequence on tap). Nothing
-  mutates until the tap.
-- Flag on: high confidence routes silently with a `↳ treated as` label, medium
-  routes with a confirmation note.
-- `both` is strictly sequenced: the mapper writes first, then the controller
-  fires the strategist on the UPDATED room (fresh decision, participants, and
-  edges from the store).
+- Flag `ENABLE_PLAIN_TEXT_ROUTING` (env `VITE_ENABLE_PLAIN_TEXT_ROUTING`) **on by
+  default** (`room-command-v9`): bare text routes straight through the mapper as
+  one comprehensive `@map` pass (people, notes, stance, grid, edges, influence)
+  and the reply names the specific changes across lenses, built deterministically
+  from the applied update, no second model call. When nothing actionable extracts
+  the reply is a brief ack and one nudge toward `@grid`/`@network`/`@play`. The
+  Strategist is never invoked by bare text.
+- Flag off (`VITE_ENABLE_PLAIN_TEXT_ROUTING=false`, rollback): the older controller
+  path returns. A confident read surfaces one tappable suggestion pill that mutates
+  nothing until the tap; on tap the sequence is mapper first, then for `both` the
+  strategist on the UPDATED room (fresh decision, participants, and edges).
 - One user-facing voice: every question and result reaches the user through the
   controller's dispatch. Mapper and strategist return results or one
   clarification to it; the relay caps relayed mapper questions at one. The
@@ -119,11 +130,13 @@ power/interest (`powerScore`); that is the Energy lens (`@energy`) only. The
 contract validates levels in `normalizeRoomUpdate`, the boundary lives in
 `commandCapabilities`/`influenceDecision`, and the apply path writes
 `decision.influence`. The command prompt is
-`room-command-v8-relay-2026-06-10` in both `src/` and `functions/` (v7 added the
+`room-command-v9-relay-2026-06-15` in both `src/` and `functions/` (v7 added the
 controller-instruction block and the one-pass self-check rule; v8 sharpens that
 block to say "trust it for ROUTING; the verbatim user text governs all saved
 notes and all inferred values", and softens saved-note wording to "one note in
-the user's words, cleaned of profanity only" to stop over-paraphrasing). The full
+the user's words, cleaned of profanity only" to stop over-paraphrasing; v9
+broadens `@note` to the full focus-person extraction and folds the `note`
+`commandSchema` into the shared intake schema). The full
 `profilePatch` shape (goal, context, baseRead, visualTags) is identical in both
 files' `commandSchema`; a sync assertion in `npm run eval` compares the rendered
 JSON for every command and fails on any drift, so production can never show Haiku
