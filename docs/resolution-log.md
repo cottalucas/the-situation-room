@@ -5,6 +5,42 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-15 - Novus trackAgent instrumentation (content omitted for privacy)
+
+Landed agent analytics for Novus on `src/views/Room.jsx`: a `trackAgentEvent`
+helper plus one `prompt` event (after the user message push, before the @play
+block) and five `agent_response` events on the live note / map / ask / read /
+bare-text paths. All calls are guarded (`window.pendo.trackAgent` is a function)
+and fire-and-forget, verified to not throw when the agent is absent.
+
+Privacy decision (hard requirement): `content` is OMITTED from every trackAgent
+call. There is no client-side name redactor (product redaction is server-side in
+`buildExample`), and participant-scoped redaction cannot cover colleague names
+not yet in the roster, e.g. a bare-text message naming a new person before
+mapping creates them, or onboarding before participants exist. Rather than ship a
+redactor that provably leaks on those paths, content is dropped entirely;
+`agentId`, `conversationId` (decision id), `messageId`, and `suggestedPrompt`
+remain. Novus gets the interaction structure, not raw text. If prompt/response
+pairs are needed later, add them through a server-side redaction pass, never raw
+from the client.
+
+Branch handling: `novus/instrument-pendo-track-agent` (PR #2) was NOT git-merged.
+It forked ~5,800 lines back (pre Workstream 1/2, influence ring, play-readiness),
+so a merge would revert main; its +51-line instrumentation was ported by hand
+instead, and the PR closed with that note. PR #3 (30 pendo.track events) closed as
+superseded: main's `trackEvent` already forwards every event to `pendo.track`, so
+re-adding them would double-instrument. Ported from #3: `open_chat` (only event
+genuinely absent on main, added on the bare-text path) and the rename
+`onboarding_dismissed` -> `onboarding_skipped` (Novus taxonomy per #3). PR #5
+(`novus/pendo-track-events-play-onboarding`) is also superseded (its four
+trackEvent->trackNetwork swaps already reach Pendo via the same forwarding, and it
+reintroduces the `onboarding_dismissed` name) and was LEFT OPEN, flagged for the
+owner to close.
+
+eval 21/21, all `verify:*` green, build clean. Deployed hosting + functions
+together; functions skipped as unchanged (still `room-command-v9`), so client and
+mapper mirror stay in lockstep.
+
 ## 2026-06-15 - Mapper owns placement at onboarding, bare text, and @note
 
 The Mapper now populates placements, stance, and influence (magnitude and
