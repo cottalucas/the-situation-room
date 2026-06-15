@@ -10,12 +10,8 @@ import {
   buildOnboardingCommandPlan,
   deriveDecisionSeed,
   deriveDecisionTitle,
-  decisionSeedNeedsConfirm,
   forceCreatePeople,
   hasUsableRoom,
-  namingPrompt,
-  reflectOnAnswer,
-  relationshipAnswerIsEmpty,
   shouldAutoStartOnboarding,
 } from "../src/lib/onboarding.js";
 import { normalizeRoomUpdate } from "../src/lib/room-command-contract.js";
@@ -44,9 +40,9 @@ function between(value, min, max) {
 }
 
 console.log("\n[1] deterministic conversation shape");
-check("uses exactly three questions", ONBOARDING_QUESTIONS.length === 3);
-check("questions collect decision, people, and relationships", ONBOARDING_QUESTIONS.map((q) => q.id).join(",") === "decision,people,relationships");
-check("relationship skip is accepted", relationshipAnswerIsEmpty("skip") && relationshipAnswerIsEmpty("none"));
+check("uses exactly four questions", ONBOARDING_QUESTIONS.length === 4);
+check("questions collect self, decision, people, context in order", ONBOARDING_QUESTIONS.map((q) => q.id).join(",") === "self,decision,people,context");
+check("only the last question is skippable", !ONBOARDING_QUESTIONS.slice(0, 3).some((q) => q.skippable) && ONBOARDING_QUESTIONS[3].skippable === true);
 
 console.log("\n[2] trigger guard");
 const emptyRooms = [{ id: "empty", rosterIds: [] }];
@@ -63,7 +59,8 @@ console.log("\n[3] command plan");
 const plan = buildOnboardingCommandPlan(fixture.answers);
 check("plan reuses create, grid, network commands", plan.map((p) => p.command).join(",") === "create,grid,network");
 check("plan carries the decision answer", plan.every((p) => p.text.includes("Q3 AI feature")));
-check("network command is omitted when relationships are skipped", buildOnboardingCommandPlan({ ...fixture.answers, relationships: "skip" }).map((p) => p.command).join(",") === "create,grid");
+check("plan carries the self answer for operator mapping", plan.every((p) => p.text.includes("product manager driving this")));
+check("network still runs when the last question is skipped", buildOnboardingCommandPlan({ ...fixture.answers, context: "" }).map((p) => p.command).join(",") === "create,grid,network");
 
 const seed = deriveDecisionSeed(fixture.answers.decision);
 check("decision title is derived", seed.title.includes("Q3 AI feature"));
@@ -88,11 +85,6 @@ check("title is not the raw paragraph", messyTitle !== fixture.messy.decision &&
 check("title strips lead-in filler", !/^i need to/i.test(messyTitle) && !/^we need to/i.test(messyTitle));
 check("room name does not carry a 'room' suffix word", !/ room$/i.test(deriveDecisionSeed(fixture.messy.decision).roomName));
 check("derived title matches the golden", messyTitle === fixture.messy.expectedTitle);
-// Naming confirm: a vague one-word decision asks for a name; a clear one does not.
-check("vague decision flags a naming confirm", decisionSeedNeedsConfirm("launch") === true);
-check("clear decision does not force a confirm", decisionSeedNeedsConfirm(fixture.answers.decision) === false);
-// A user-typed name override wins over the derived title.
-check("name override wins", deriveDecisionSeed(fixture.messy.decision, "Kill the dashboard?").title === "Kill the dashboard?");
 
 // Participants: every extracted person from @create is created (force-create),
 // so building never lands on "No participants" when a create flag is missing.
@@ -106,24 +98,14 @@ check("role mention resolves to existing person", resolvePersonRef("the head of 
 check("bare role label resolves to existing person", resolvePersonRef("Head of Engineering", [roster])?.id === "p_robert");
 check("unrelated name does not resolve to a duplicate", resolvePersonRef("Susan", [roster]) === null);
 
-console.log("\n[6] Phase B: plain-language questions, reflection, naming, closing");
+console.log("\n[6] Phase B: four-question flow and closing");
 const noDash = (s) => !/[—–]/.test(s);
-const oneSentence = (s) => (s.match(/[.!?]/g) || []).length <= 1;
-// Questions read like a sharp colleague and the relationships step is skippable.
-check("decision question is plain language", /good outcome/i.test(ONBOARDING_QUESTIONS[0].prompt));
-check("people question asks make-or-break", /make or break/i.test(ONBOARDING_QUESTIONS[1].prompt));
-check("relationships step is skippable", ONBOARDING_QUESTIONS[2].skippable === true);
-check("questions carry no em dashes", ONBOARDING_QUESTIONS.every((q) => noDash(q.prompt)));
-// Reflection echoes the user's own words, grounded and one sentence.
-const peopleReflection = reflectOnAnswer("people", "Robert adds pressure instead of shielding the team. The head of UX is on board.");
-check("people reflection echoes the user", /Robert adds pressure instead of shielding the team/.test(peopleReflection));
-check("people reflection is one short sentence", oneSentence(peopleReflection) && noDash(peopleReflection));
-const decisionReflection = reflectOnAnswer("decision", fixture.messy.decision);
-check("decision reflection names the derived decision", decisionReflection.includes(deriveDecisionTitle(fixture.messy.decision)));
-check("skipped relationships reflect gracefully", /No relationships yet/i.test(reflectOnAnswer("relationships", "skip")));
-// Naming confirm pre-fills a clear title and asks when vague.
-check("naming confirm offers the derived name", namingPrompt(fixture.answers.decision).includes(deriveDecisionTitle(fixture.answers.decision)));
-check("naming confirm asks for a name when vague", /what should I call this room/i.test(namingPrompt("launch")));
+// Four questions in the fixed order; only the last is skippable. The prompts are
+// the product owner's verbatim copy and intentionally use em dashes.
+check("Q1 asks who the operator is", /who are you/i.test(ONBOARDING_QUESTIONS[0].prompt));
+check("Q2 asks the decision and the good outcome", /good outcome/i.test(ONBOARDING_QUESTIONS[1].prompt));
+check("Q3 asks who can make or break it", /make or break/i.test(ONBOARDING_QUESTIONS[2].prompt));
+check("Q4 (everything else) is skippable", /anything else/i.test(ONBOARDING_QUESTIONS[3].prompt) && ONBOARDING_QUESTIONS[3].skippable === true);
 // Closing summary names what it built, specifically and without em dashes.
 const closing = buildClosingSummary({ names: ["Robert", "Head of Engineering", "Head of UX", "Susan"], placedCount: 4, edgeCount: 2 });
 check("closing names the people", closing.startsWith("Mapped Robert, Head of Engineering, Head of UX, and Susan"));
@@ -148,7 +130,7 @@ console.log("\n[8] Phase D: one engine, two framings");
 check("first-run intro frames the product", /situation room/i.test(ONBOARDING_INTRO));
 check("returning intro drops the product pitch", !/situation room/i.test(ONBOARDING_INTRO_RETURNING));
 check("returning intro is shorter and to the point", ONBOARDING_INTRO_RETURNING.length < ONBOARDING_INTRO.length);
-check("both framings promise the same three questions", /three quick questions/i.test(ONBOARDING_INTRO) && /three quick questions/i.test(ONBOARDING_INTRO_RETURNING));
+check("both framings promise the same four questions", /four quick questions/i.test(ONBOARDING_INTRO) && /four quick questions/i.test(ONBOARDING_INTRO_RETURNING));
 
 console.log(`\nOnboarding verification: ${passed} passed, ${failed} failed`);
 if (failed) {

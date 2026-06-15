@@ -5,6 +5,60 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-15 - Guided setup is a 4-question flow, no echo, one build pass
+
+Replaced the 3-question guided setup (which echoed a useless one-line
+restatement, "So this is the decision: A.") with four questions in a fixed
+order, each free text that may be a long paragraph.
+
+- Questions (`ONBOARDING_QUESTIONS`, verbatim product copy, em dashes intended):
+  self ("who are you in this"), decision + good outcome, the people/relationships/
+  power ("who can make or break this"), and everything else. Q1 to Q3 are
+  required; only Q4 is skippable. Intros now say "Four quick questions."
+- No echo: `submitOnboarding` advances straight to the next question and, after
+  Q4, builds. Removed the reflection step and the separate naming-confirm phase;
+  the room name is derived from the decision answer with no extra prompt. The
+  now-unused `reflectOnAnswer`/`namingPrompt`/`decisionSeedNeedsConfirm` helpers
+  remain exported but are no longer wired into the flow.
+- Answers stored intact: new `sanitizeAnswer` strips control chars and collapses
+  whitespace but never truncates; `buildOnboardingCommandPlan` and
+  `deriveDecisionSeed` use it, so long paragraphs reach the Mapper and the stored
+  decision context whole.
+- One build pass from all four answers: the `create` step now also resolves the
+  operator (first-person) to the isSelf record, sets their role, and captures who
+  they report to as an edge; create/grid/network each read all four answers
+  (`network` always runs). Output: self record, participants with stances, grid
+  power/interest where signalled, and influence edges.
+- Tests: `verify:onboarding` rewritten to the 4-question contract (44/44); the
+  `onboarding.json` fixture gained `self`/`context` answers. Offline eval stays
+  21/21; full `verify:*` suite green; build clean.
+
+## 2026-06-15 - First-run empty state in the People lens
+
+A new signed-in user landed in an empty room with no guidance and bounced before
+discovering the @-command loop. Added a first-run empty state in `PeopleTab` that
+teaches the loop in one screen and seeds the first action. Command-first: no open
+chat, no fourth lens, no tour, no modal.
+
+- Renders only when the active decision has no participant other than the self
+  record (`participants.length > 0 && !participants.some(p => !p.isSelf)`), in the
+  People lens. The moment a real participant exists, the list renders and the
+  empty state never returns for that decision. The pre-existing "everyone removed"
+  state (length 0) is unchanged.
+- Content: headline "Map the people behind this decision.", subline "Map the room,
+  read the room, move the room.", and four tappable chips reusing the existing
+  `.prompt-chips`/`.prompt-chip` pattern (note + stance, grid placement, network
+  edge, one plain-text prose example). Tapping pre-fills the chat input via the
+  existing `setDraft` path (never auto-sends; user can edit). On mobile it also
+  opens the command companion so the pre-filled input is visible. No change to
+  command parsing or the LLM relay.
+- Instrumentation through the existing privacy-scrubbed `trackEvent` (forwards to
+  `pendo.track` with `pendoSafeParams`): `onboarding_empty_state_shown` (no params)
+  fires once per decision when shown; `onboarding_chip_tapped { chip_id }` (e.g.
+  `note_example`) carries no names or note text. Verified in local preview: state
+  appears at only-You, chip pre-fills without sending, state disappears after an
+  `@add` and the shown event does not refire. eval 21/21, build clean.
+
 ## 2026-06-15 - Novus trackAgent instrumentation (content omitted for privacy)
 
 Landed agent analytics for Novus on `src/views/Room.jsx`: a `trackAgentEvent`

@@ -1,15 +1,20 @@
 export const ONBOARDING_QUESTIONS = [
   {
+    id: "self",
+    prompt: "First — who are you in this? Your role, who you report to, and where you sit in this decision.",
+  },
+  {
     id: "decision",
-    prompt: "What's the decision you're trying to get through, and what would a good outcome look like?",
+    prompt: "What's the decision you're trying to get through, and what would a good outcome actually look like?",
   },
   {
     id: "people",
-    prompt: "Who are the few people who can make or break this? Names, and roughly what they do.",
+    prompt:
+      "Who can make or break this? Names, what they do, how they relate — who's aligned, who leans on whom, who influences whom, and who actually holds the power here.",
   },
   {
-    id: "relationships",
-    prompt: "Anything about how they relate? Who leans on whom, who's aligned, where there's tension. Skip if you're not sure.",
+    id: "context",
+    prompt: "Anything else that's relevant — history, timing, constraints, politics, whatever shapes this room.",
     skippable: true,
   },
 ];
@@ -17,10 +22,10 @@ export const ONBOARDING_QUESTIONS = [
 // First-run framing carries a one-line product intro. The returning-user door
 // ("+ New room") reuses the same engine without it.
 export const ONBOARDING_INTRO =
-  "The Situation Room maps the people behind a decision and helps you plan how to move the room. Three quick questions and I'll build your first map.";
+  "The Situation Room maps the people behind a decision and helps you plan how to move the room. Four quick questions and I'll build your first map.";
 
 export const ONBOARDING_INTRO_RETURNING =
-  "Let's map a new decision. Three quick questions and I'll build the room.";
+  "Let's map a new decision. Four quick questions and I'll build the room.";
 
 function cleanAnswer(value, max = 1200) {
   return String(value || "")
@@ -131,14 +136,16 @@ export function decisionSeedNeedsConfirm(decisionAnswer) {
 }
 
 export function deriveDecisionSeed(decisionAnswer, nameOverride) {
-  const clean = cleanAnswer(decisionAnswer, 1600);
+  // Store the decision answer intact, never truncated; the title is the only
+  // shortened derivation.
+  const full = sanitizeAnswer(decisionAnswer);
   const title = cleanAnswer(nameOverride, TITLE_MAX) || deriveDecisionTitle(decisionAnswer);
   return {
     roomName: title,
     title,
     context: {
-      deciding: clean,
-      goal: clean,
+      deciding: full,
+      goal: full,
       constraint: "",
     },
   };
@@ -220,39 +227,48 @@ export function buildClosingSummary({ names = [], placedCount = 0, edgeCount = 0
   return `${parts.join("; ")}.`;
 }
 
+// Like cleanAnswer but never truncates: a guided-setup answer may be a long
+// paragraph and must reach the Mapper intact. Only control chars are stripped and
+// whitespace collapsed.
+function sanitizeAnswer(value) {
+  return cleanAnswer(value, Number.MAX_SAFE_INTEGER);
+}
+
 export function buildOnboardingCommandPlan(answers) {
-  const decision = cleanAnswer(answers.decision, 1600);
-  const people = cleanAnswer(answers.people, 1600);
-  const relationships = cleanAnswer(answers.relationships, 1600);
-  // Every step reads all three answers. Stance, power, interest, and influence
-  // signal often lands in the decision or people answer, not only the
-  // relationships one, so the extraction is not question-locked.
+  // Never truncate the operator's words. Long paragraphs go to the Mapper intact.
+  const self = sanitizeAnswer(answers.self);
+  const decision = sanitizeAnswer(answers.decision);
+  const people = sanitizeAnswer(answers.people);
+  const context = sanitizeAnswer(answers.context);
+  // Every step reads all four answers. Stance, power, interest, and influence
+  // signal is spread across them, so extraction is never question-locked.
   const answersBlock =
-    `Decision and desired outcome: ${decision} ` +
-    `People: ${people} ` +
-    `Relationships and influence: ${relationships || "none stated"}`;
+    `Who the operator is (resolve first-person references such as I, me, my to the isSelf user, set their role, and capture who they report to as an edge): ${self || "not stated"} ` +
+    `The decision and the desired outcome: ${decision} ` +
+    `The people, how they relate, and who holds the power: ${people} ` +
+    `Anything else relevant (history, timing, constraints, politics): ${context || "none stated"}`;
   return [
     {
       command: "create",
       text:
-        `Create one person for each distinct individual named or described across all three answers below. ` +
-        `Use the person's name when it is given. When only a role is given, for example "the head of engineering", use that role as the name and set it as the role. ` +
-        `Do not list the same person twice, and do not create a separate role-person for someone who is already named with that role. ` +
-        `Then, for every person, also extract every read the text actually supports: their stance toward the decision (for, against, neutral, or unknown), their power and interest using the calibrated bands, their influence over this decision, and any relationship between people that the text states or strongly implies. ` +
-        `Pull this signal from all three answers, not only the people answer. Leave a field out when the text gives no signal for it. Never invent a person, a placement, a stance, an influence level, or a relationship the text does not support. ` +
+        `Build this room from the operator's guided-setup answers below, in one comprehensive pass. ` +
+        `Create one person for each distinct individual named or described across ALL FOUR answers. Use the person's name when given. When only a role is given, for example "the head of engineering", use that role as the name and set it as the role. Do not list the same person twice, and do not create a separate role-person for someone already named with that role. ` +
+        `Resolve the operator (I, me, my, the person answering who they are) to the existing isSelf user: set the operator's role and add an edge for who they report to. Never create a second person for the operator. ` +
+        `For every person, extract every read the text actually supports: stance toward the decision (for, against, neutral, or unknown), power and interest using the calibrated bands, influence over this decision, a short note in the user's own words, and any relationship the text states or strongly implies (who reports to whom, who is aligned, who leans on whom, who holds the power). ` +
+        `Pull this signal from all four answers, not one. Leave a field out when the text gives no signal for it. Never invent a person, a placement, a stance, an influence level, or a relationship the text does not support. ` +
         answersBlock,
     },
     {
       command: "grid",
       text:
         `Estimate power, interest, and stance for each person already in this decision, using the calibrated bands. ` +
-        `Map plain language to bands and read all three answers below, not only the people answer. Leave a value out only when the text gives no signal at all. ` +
+        `Read all four answers below, not one. Leave a value out only when the text gives no signal at all. ` +
         answersBlock,
     },
     {
       command: "network",
       text:
-        `Map every relationship and influence read the text supports, across all three answers below. ` +
+        `Map every relationship and influence read the text supports across all four answers below, including who the operator reports to. ` +
         `Add an edge only for a relationship the text states or strongly implies, and set an influence level only when the text supports it. Leave influence unset where there is no signal, and never fabricate an edge or a level. ` +
         answersBlock,
     },

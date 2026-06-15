@@ -15,13 +15,9 @@ import {
   ONBOARDING_QUESTIONS,
   buildClosingSummary,
   buildOnboardingCommandPlan,
-  decisionSeedNeedsConfirm,
   deriveDecisionSeed,
-  deriveDecisionTitle,
   forceCreatePeople,
   hasUsableRoom,
-  namingPrompt,
-  reflectOnAnswer,
   shouldAutoStartOnboarding,
 } from "../lib/onboarding.js";
 
@@ -1231,19 +1227,29 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       e.preventDefault();
       if (onboarding.thinking || onboarding.busy) return;
 
-      // Naming confirm: build the room with the chosen name, then close.
-      if (onboarding.phase === "naming") {
-        const name = onboarding.nameDraft.trim();
-        if (!name) return;
-        const answers = onboarding.answers;
+      // Question phase. Q1 to Q3 are required; only the last question is
+      // skippable. Answers are stored intact and never echoed back as a
+      // restatement.
+      const question = ONBOARDING_QUESTIONS[onboarding.step];
+      const raw = onboarding.draft.trim();
+      const skipped = !raw && question.skippable;
+      if (!raw && !skipped) return;
+      const answer = skipped ? "" : raw;
+      const answers = { ...onboarding.answers, [question.id]: answer };
+      const isLast = onboarding.step >= ONBOARDING_QUESTIONS.length - 1;
+
+      // Last answer in: build the room from all four answers in one pass.
+      if (isLast) {
         setOnboarding((current) => ({
           ...current,
-          messages: [...current.messages, { role: "user", body: name }],
+          answers,
+          draft: "",
           busy: true,
           error: "",
+          messages: [...current.messages, { role: "user", body: skipped ? "Skip" : answer }],
         }));
         try {
-          const summary = await completeOnboarding(answers, name);
+          const summary = await completeOnboarding(answers);
           setOnboarding((current) => ({
             ...current,
             busy: false,
@@ -1260,52 +1266,17 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         return;
       }
 
-      // Question phase. The relationships step is skippable with an empty answer.
-      const question = ONBOARDING_QUESTIONS[onboarding.step];
-      const raw = onboarding.draft.trim();
-      const skipped = !raw && question.skippable;
-      if (!raw && !skipped) return;
-      const answer = skipped ? "skip" : raw;
-      const answers = { ...onboarding.answers, [question.id]: answer };
-      const isLast = onboarding.step >= ONBOARDING_QUESTIONS.length - 1;
-
-      // Show the user turn, then a brief thinking beat before the reflection.
+      // Advance to the next question. No reflection, no echo.
+      const nextStep = onboarding.step + 1;
       setOnboarding((current) => ({
         ...current,
         answers,
         draft: "",
-        thinking: true,
-        error: "",
-        messages: [...current.messages, { role: "user", body: skipped ? "Skip" : answer }],
-      }));
-
-      await sleep(REFLECT_DELAY_MS);
-
-      const reflection = reflectOnAnswer(question.id, answer);
-      if (isLast) {
-        const prefill = decisionSeedNeedsConfirm(answers.decision) ? "" : deriveDecisionTitle(answers.decision);
-        setOnboarding((current) => ({
-          ...current,
-          thinking: false,
-          phase: "naming",
-          nameDraft: prefill,
-          messages: [
-            ...current.messages,
-            ...(reflection ? [{ role: "assistant", body: reflection }] : []),
-            { role: "assistant", body: namingPrompt(answers.decision) },
-          ],
-        }));
-        return;
-      }
-
-      const nextStep = onboarding.step + 1;
-      setOnboarding((current) => ({
-        ...current,
         step: nextStep,
-        thinking: false,
+        error: "",
         messages: [
           ...current.messages,
-          ...(reflection ? [{ role: "assistant", body: reflection }] : []),
+          { role: "user", body: answer },
           { role: "assistant", body: ONBOARDING_QUESTIONS[nextStep].prompt },
         ],
       }));
@@ -1854,6 +1825,10 @@ export default function Room({ onExit, userId, userName, userEmail }) {
                             onRemoveParticipant={(id) => {
                               store.removeParticipant(decision.id, id);
                               trackEvent("decision_participant_remove");
+                            }}
+                            onPrefill={(cmd) => {
+                              setDraft(cmd);
+                              if (isMobile) setCompanionOpen(true);
                             }}
                           />
                         )}
