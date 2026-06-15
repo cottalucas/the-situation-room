@@ -8,6 +8,7 @@ import { resolvePersonRef, splitLeadingPersonRef } from "../lib/person-ref.js";
 import { autoReadEligible, AUTO_READ_QUESTION } from "../lib/auto-read.js";
 import { screenOpenMessage } from "../lib/chat-guard.js";
 import { commandCapabilities, influenceDecision, planClassificationAction, serverCommandForControllerCommand } from "../lib/room-command-contract.js";
+import { EXAMPLE_PROMPTS } from "../lib/reasoning.js";
 import {
   ONBOARDING_INTRO,
   ONBOARDING_INTRO_RETURNING,
@@ -39,6 +40,28 @@ const OPEN_CHAT = LIVE_LLM;
 // the older write-nothing suggestion pill (kept as a rollback). The Strategist is
 // never invoked by bare text.
 const ENABLE_PLAIN_TEXT_ROUTING = import.meta.env.VITE_ENABLE_PLAIN_TEXT_ROUTING !== "false";
+
+// Novus (Pendo) agent analytics. Guarded and fire-and-forget, so a missing Pendo
+// agent never throws and never blocks a command. Content is intentionally
+// omitted: client-side redaction over the current participants cannot cover
+// colleague names that are not yet in the roster (for example a bare-text message
+// that names a new person before mapping creates them), and sending unredacted
+// colleague text to a third party is a hard no. Novus still receives the
+// interaction structure (agent, conversation, message, suggestedPrompt).
+const NOVUS_AGENT_ID = "WkiKqyltqL9FcGinfGf0CpxLkls";
+function trackAgentEvent(kind, extra) {
+  try {
+    if (typeof window !== "undefined" && window.pendo && typeof window.pendo.trackAgent === "function") {
+      window.pendo.trackAgent(kind, {
+        agentId: NOVUS_AGENT_ID,
+        messageId: crypto.randomUUID(),
+        ...extra,
+      });
+    }
+  } catch {
+    // Novus is best-effort; never block the UI on analytics.
+  }
+}
 
 // One-line description of a controller plan, for pills and "treated as" labels.
 function describeControllerPlan(plan) {
@@ -386,6 +409,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         });
         if (resp.kind === "coach") {
           trackEvent("read_shown");
+          trackAgentEvent("agent_response", { conversationId: id });
           store.pushMessage(id, {
             type: "read",
             body: resp.answer.answer,
@@ -588,7 +612,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const dismissOnboarding = useCallback(() => {
     store.setPref("onboardingPrompted", true);
     store.setPref("railCollapsed", false);
-    trackEvent("onboarding_dismissed", { mode: onboarding.mode });
+    trackEvent("onboarding_skipped", { mode: onboarding.mode });
     setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
     const emptyRoom = store.getRooms().find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
     const roomId = emptyRoom?.id || store.createRoom();
@@ -1306,6 +1330,9 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       // Capture prior turns before the new user message lands, for anaphora.
       const priorMessages = store.getChat(decision.id);
       store.pushMessage(decision.id, { type: "user", body: q });
+      // Novus: every user submission is a prompt to the agent. Fires before the
+      // @play gap-closing block below; both run.
+      trackAgentEvent("prompt", { conversationId: decision.id, suggestedPrompt: EXAMPLE_PROMPTS.includes(q) });
 
       // @play gap-closing: a free-text reply to a coaching question is parsed back
       // through the same @map command path, then readiness is re-checked.
@@ -1397,6 +1424,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             if (resp.kind === "update") {
               const message = applyRoomUpdate(resp.update, "note") || { label: "Note saved", body: `Updated ${target.name}.` };
               trackEvent("observation_create", { source: "chat_note" });
+              trackAgentEvent("agent_response", { conversationId: decision.id });
               captureLearnedMappings({ message, noteText: body, participants: store.getParticipants(decision.id), priorMessages });
               store.pushMessage(decision.id, { type: "updated", ...message });
             } else {
@@ -1454,6 +1482,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           if (resp.kind === "update") {
             const message = applyRoomUpdate(resp.update, command) || { label: "Map updated", body: "Updated the room." };
             trackEvent("room_map_update", { command });
+            trackAgentEvent("agent_response", { conversationId: decision.id });
             captureLearnedMappings({ message, noteText: text, participants: store.getParticipants(decision.id), priorMessages });
             store.pushMessage(decision.id, { type: "updated", ...message });
           } else {
@@ -1480,6 +1509,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           });
           if (resp.kind === "coach") {
             trackEvent("strategist_ask");
+            trackAgentEvent("agent_response", { conversationId: decision.id });
             store.pushMessage(decision.id, {
               type: "coach",
               body: resp.answer.answer,
@@ -1523,6 +1553,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       if (ENABLE_PLAIN_TEXT_ROUTING) {
         // One @map pass: people, notes, stance, grid, edges, and influence. No
         // controller pill, no Strategist. The reply names the specific changes.
+        trackEvent("open_chat");
         setIsGenerating(true);
         try {
           const resp = await interpretRoomCommand({
@@ -1540,6 +1571,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
           }
           const message = applyRoomUpdate(resp.update, "map") || { label: "Room updated", body: "" };
           const specifics = describeAppliedUpdate(resp.update);
+          trackAgentEvent("agent_response", { conversationId: decision.id });
           if (specifics.count) {
             trackEvent("room_map_update", { command: "map" });
             captureLearnedMappings({ message, noteText: q, participants: store.getParticipants(decision.id), priorMessages });
