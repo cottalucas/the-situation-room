@@ -187,6 +187,19 @@ user prose
 - **Grid calibration rubric** (in the command system prompt): very low 10-20,
   low 25-35, moderate 45-55, high 70-80, very high 85-95. Sub-10 / over-95 only on
   a stated absolute. Every value and edge carries a `confidence` of high/medium/low.
+- **Grid-reading rubric** (mapper-only, in `COMMAND_SYSTEM_PROMPT`, ~345 tokens,
+  `room-command-v10-gridrubric-2026-06-16`): read the DIRECTION a signal moves a
+  value before banding it. Interest UP on engagement/escalation/blocking, DOWN on
+  disengagement (skips own meeting, goes quiet, delegates away). Power UP on
+  promotion/sign-off/sponsor, DOWN on removal/sidelining. **Opposition discipline:
+  opposition is an interest and stance signal, never power. "key blocker",
+  "against", "pushing back" raise interest or set position against and NEVER lower
+  power** (the QA-flagged power-under-read). Stance stays for/against/neutral/unknown;
+  unknown is terminal, never fabricated. **Act vs ask:** a resolvable referent whose
+  signal maps through the rubric is applied and named (no question); an unresolvable
+  referent gets exactly one `openQuestion` and no mutation, never a guess. This is a
+  mapper-prompt change only: `FRAMEWORK_GROUNDING` and the strategist's
+  `STRATEGIST_LEVERS` are untouched, so the strategist prefix stays byte-identical.
 - **Edge discipline:** edges require explicit signal; one reporting line is one
   `defers` edge and nothing more.
 - **Anaphora:** the system prompt resolves pronouns ("she", "he", "they", "this",

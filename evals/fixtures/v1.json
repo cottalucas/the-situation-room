@@ -933,6 +933,156 @@
         "requiredPeople": ["dana", "marco"],
         "forbiddenTerms": ["budget controller personality"]
       }
+    },
+    {
+      "id": "command-rubric-skipped-meeting-interest-down",
+      "kind": "command",
+      "tags": ["map", "grid_rubric", "interest_direction"],
+      "input": {
+        "command": "map",
+        "text": "Marco skipped his own roadmap meeting again and has gone quiet on the thread.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "marco", "name": "Marco", "role": "Eng Lead", "currentPosition": "for", "currentPlacement": { "power": 70, "interest": 65 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Lowered Marco's interest after he disengaged.",
+        "people": [
+          { "id": "marco", "note": "Skipped his own roadmap meeting and has gone quiet on the thread.", "power": 70, "interest": 25, "confidence": "medium" }
+        ],
+        "edges": [],
+        "openQuestions": []
+      },
+      "expect": {
+        "requiredPeople": ["marco"],
+        "requireGrid": true,
+        "gridBands": { "marco": { "interest": [10, 40], "power": [60, 80] } }
+      }
+    },
+    {
+      "id": "command-rubric-pushing-back-interest-up-power-held",
+      "kind": "command",
+      "tags": ["map", "grid_rubric", "interest_direction"],
+      "input": {
+        "command": "map",
+        "text": "Priya is suddenly pushing back hard and escalating on the launch.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "priya", "name": "Priya", "role": "PM", "currentPosition": "neutral", "currentPlacement": { "power": 60, "interest": 30 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Raised Priya's interest after she engaged and pushed back.",
+        "people": [
+          { "id": "priya", "note": "Suddenly pushing back hard and escalating on the launch.", "position": "against", "power": 60, "interest": 75, "confidence": "medium" }
+        ],
+        "edges": [],
+        "openQuestions": []
+      },
+      "expect": {
+        "requiredPeople": ["priya"],
+        "requireGrid": true,
+        "gridBands": { "priya": { "interest": [65, 85], "power": [50, 70] } }
+      }
+    },
+    {
+      "id": "command-rubric-blocker-stance-against-power-held",
+      "kind": "command",
+      "tags": ["map", "grid_rubric", "opposition_discipline", "power_underread"],
+      "input": {
+        "command": "map",
+        "text": "Sam is the key blocker on this and is completely against the carve-out.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "carveout", "title": "Platform carve-out", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "sam", "name": "Sam", "role": "CFO", "currentPosition": "neutral", "currentPlacement": { "power": 80, "interest": 45 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Set Sam against; held his power, raised interest as an active blocker.",
+        "people": [
+          { "id": "sam", "note": "Key blocker, completely against the carve-out.", "position": "against", "power": 80, "interest": 70, "confidence": "high" }
+        ],
+        "edges": [],
+        "openQuestions": []
+      },
+      "expect": {
+        "requiredPeople": ["sam"],
+        "expectPositions": { "sam": "against" },
+        "gridBands": { "sam": { "power": [70, 90] } }
+      }
+    },
+    {
+      "id": "command-rubric-promoted-power-up",
+      "kind": "command",
+      "tags": ["map", "grid_rubric", "power_direction"],
+      "input": {
+        "command": "map",
+        "text": "Dana just got promoted to VP and now owns headcount sign-off for this decision.",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "dana", "name": "Dana", "role": "Director", "currentPosition": "for", "currentPlacement": { "power": 45, "interest": 60 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Raised Dana's power after a promotion gave her sign-off.",
+        "people": [
+          { "id": "dana", "role": "VP", "note": "Promoted to VP, now owns headcount sign-off for this decision.", "power": 82, "interest": 60, "confidence": "high" }
+        ],
+        "edges": [],
+        "openQuestions": []
+      },
+      "expect": {
+        "requiredPeople": ["dana"],
+        "requireGrid": true,
+        "gridBands": { "dana": { "power": [70, 95], "interest": [45, 70] } }
+      }
+    },
+    {
+      "id": "command-rubric-unresolvable-referent-asks",
+      "kind": "command",
+      "tags": ["map", "grid_rubric", "act_vs_ask", "referent"],
+      "input": {
+        "command": "map",
+        "text": "the far ball guy is pushing back now",
+        "context": {
+          "room": { "id": "apps", "name": "Apps Team" },
+          "decision": { "id": "launch", "title": "Launch plan", "context": { "deciding": "", "goal": "", "constraint": "" } },
+          "people": [
+            { "id": "casey", "name": "Casey", "role": "Eng", "currentPosition": "for", "currentPlacement": { "power": 60, "interest": 55 }, "goal": "", "context": "", "recentNotes": [] },
+            { "id": "taylor", "name": "Taylor", "role": "PM", "currentPosition": "neutral", "currentPlacement": { "power": 50, "interest": 50 }, "goal": "", "context": "", "recentNotes": [] }
+          ],
+          "edges": []
+        }
+      },
+      "golden": {
+        "summary": "Could not resolve the referent.",
+        "people": [],
+        "edges": [],
+        "openQuestions": ["Who do you mean by the far ball guy?"]
+      },
+      "expect": {
+        "requireOpenQuestion": true,
+        "noPeopleMutation": true,
+        "noGrid": true,
+        "maxEdges": 0
+      }
     }
   ]
 }
