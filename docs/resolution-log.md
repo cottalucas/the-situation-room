@@ -5,6 +5,53 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-16 - Mapper grid-reading rubric (directional reads + opposition discipline)
+
+Added a grid-reading rubric to the Mapper system prompt (`COMMAND_SYSTEM_PROMPT`)
+so the mapper reads the DIRECTION a signal moves a value before banding it, and
+stops cratering power on opposition language (the power-under-read the prod-pipeline
+QA flagged: "key blocker / against" was pulling power toward zero). Mapper-only; no
+schema, command, contract, controller, strategist, or model change.
+
+- Rubric (~345 tokens, well under the 400 cap): interest UP on
+  engagement/escalation/blocking and DOWN on disengagement (skips own meeting, goes
+  quiet, delegates away); power UP on promotion/sign-off/sponsor and DOWN on
+  removal/sidelining; opposition is an interest and stance signal, NEVER power
+  ("key blocker"/"against"/"pushing back" raise interest or set position to against,
+  power held); stance stays for/against/neutral/unknown, unknown terminal. Act vs
+  ask: a resolvable referent whose signal maps through the rubric is applied and
+  named with no question; an unresolvable referent gets exactly one openQuestion and
+  no mutation, never a guess.
+- Mirror: `COMMAND_SYSTEM_PROMPT` is mirrored in `src/lib/llm-prompts.js` and
+  `functions/index.js`; both edited byte-identically (the `npm run eval` rendered-
+  JSON sync assertion stays green) and `COMMAND_PROMPT_VERSION` bumped in both:
+  `room-command-v9-relay-2026-06-15` -> `room-command-v10-gridrubric-2026-06-16`.
+- Strategist untouched: `FRAMEWORK_GROUNDING` and `STRATEGIST_LEVERS`
+  (functions/knowledge.js) were not edited, and `STRATEGIST_SYSTEM_BLOCKS` is
+  unchanged, so the strategist cached prefix is byte-identical (cold-start log still
+  reports `... + strategist-levers-v1-2026-06-16 ... levers ~848 tokens`).
+- Flagged path conflict (orchestration step 2): the task said wire the goldens into
+  `verify:classify` (+`verify:network`). Those suites test the CONTROLLER dispatch
+  table and the `@network` influence boundary respectively, not mapper grid-reading.
+  Mapper roomUpdate goldens belong in the offline command eval (`npm run eval` ->
+  `evals/fixtures/v1.json`, `kind: "command"`, scored via `normalizeRoomUpdate` +
+  `scoreCommand`), so the 5 goldens went there. None are edge-relevant, so
+  `verify:network` does not apply.
+- Five goldens (`command-rubric-*`): skipped-meeting -> interest down/power held;
+  pushing-back -> interest up/power held; blocker/"against" -> stance against,
+  power held (the core power-under-read lock, via `gridBands power [70,90]` +
+  new additive `expectPositions` check); promoted -> power up; unresolvable referent
+  -> one openQuestion, no mutation (new additive `noPeopleMutation` check). Two
+  opt-in scorer checks added to `scripts/eval-v1.mjs`; existing cases unaffected.
+- Offline goldens lock the expected mapper output shape; because the offline eval
+  scores a mocked golden, FAIL-on-old / PASS-on-new is a prompt-behavior claim only
+  a live run can prove, so it was demonstrated with a bounded local live-LLM
+  before/after (old `origin/main` prompt vs new) and captured in the PR body.
+- Gate: `npm run eval` 24/24 -> 29/29; `verify:classify` 31/31 and `verify:network`
+  9/9 unchanged; `node --check` clean on both mirrors. Post-merge: deploy per repo
+  process and run a bounded prod check of the power-under-read fix (prod loads the
+  server-only grounding the local harness lacks).
+
 ## 2026-06-16 - Strategist framework depth: server-only STRATEGIST_LEVERS block
 
 Enriched the strategist's framework grounding with concrete trigger -> lever

@@ -1,5 +1,5 @@
 export const PLAY_PROMPT_VERSION = "play-v1-local-2026-06-03";
-export const COMMAND_PROMPT_VERSION = "room-command-v9-relay-2026-06-15";
+export const COMMAND_PROMPT_VERSION = "room-command-v10-gridrubric-2026-06-16";
 export const STRATEGIST_PROMPT_VERSION = "strategist-v5-grounded-2026-06-10";
 export const CONTROLLER_PROMPT_VERSION = "controller-v2-2026-06-10";
 
@@ -123,6 +123,12 @@ Rules:
 - Grid calibration. Map qualitative language to a calibrated band, never to an extreme: very low maps to 10 to 20, low maps to 25 to 35, moderate or medium or some maps to 45 to 55, high maps to 70 to 80, very high maps to 85 to 95. Use the band center when unsure. Apply the same bands to both power and interest.
 - Reserve values below 10 or above 95 for explicit absolutes only, such as zero interest, no power at all, completely disengaged, total control, or full attention. A single strong adjective is not an absolute.
 - Confidence. For every grid value and every edge, include a confidence of high, medium, or low. Use low when you infer from thin or ambiguous language, high only when the user is explicit. When confidence is low or a single statement implies a large jump, still propose the calibrated value and let the app confirm it.
+- Grid-reading rubric. Read the DIRECTION a signal moves a value, then place it in the band above.
+  - Interest UP: pushes back, escalates, suddenly engaged, keeps re-raising it, actively blocking. Interest DOWN: skips or misses their own meeting, goes quiet, stops responding, delegates it away, checked out.
+  - Power UP: promoted, given sign-off, budget, headcount, or a decider role, gains a sponsor. Power DOWN: removed, sidelined, loses sign-off or a sponsor.
+  - Opposition discipline. Opposition is an interest and stance signal, never power. "key blocker", "against", "fighting it", and "pushing back" raise interest or set position to against; they NEVER lower power. Hold a blocker's power at the authority they hold and move interest or stance instead. Never lower a power read because someone disagrees.
+  - Stance is for, against, neutral, or unknown. unknown is valid and terminal; never fabricate a stance.
+- Act versus ask. If the referent matches a known person in the room and the signal maps through this rubric, ACT: apply the change and name it, do not ask. If the referent cannot be resolved to a person in the room, do not guess: ask exactly one openQuestion naming who you mean. "the main stakeholder did not show up" with one clear stakeholder resolves and lowers their interest; "the far ball guy is pushing back" with no clean referent asks one question.
 - Position must be for, against, neutral, or unknown.
 - Edge type ally means aligned. conflict means friction. defers means the from person is moved by or defers to the to person.
 - Edges require an explicit or strongly stated signal in the user text. Do not invent edges the text does not support. A single reporting line is one defers edge and nothing more.

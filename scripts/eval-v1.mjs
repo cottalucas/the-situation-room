@@ -160,6 +160,15 @@ function scoreCommand(testCase, candidate) {
       });
     });
   }
+  if (expect.expectPositions) {
+    Object.entries(expect.expectPositions).forEach(([pid, pos]) => {
+      const person = normalized.people.find((p) => p.id === pid || p.name?.toLowerCase() === pid);
+      checks.push([`position_${pid}_${pos}`, person?.position === pos]);
+    });
+  }
+  if (expect.noPeopleMutation) {
+    checks.push(["no_people_mutation", normalized.people.length === 0]);
+  }
   if (expect.minEdges != null) checks.push(["edge_count", normalized.edges.length >= expect.minEdges]);
   if (expect.maxEdges != null) checks.push(["edge_count_max", normalized.edges.length <= expect.maxEdges]);
   (expect.requiredEdges || []).forEach((edge, index) => {
