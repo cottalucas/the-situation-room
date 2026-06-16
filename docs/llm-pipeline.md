@@ -210,7 +210,15 @@ user prose
   the mapper runs grounding then `GLOBAL_LEARNINGS` then `COMMAND_SYSTEM_PROMPT`
   (the extraction contract) on `@note`/`@grid`/`@network`/`@map` and internal
   `create`/`net`; the strategist runs grounding then `GLOBAL_LEARNINGS` then
-  `STRATEGIST_SYSTEM_PROMPT`, never the extraction contract. Each carries
+  `STRATEGIST_LEVERS` then `STRATEGIST_SYSTEM_PROMPT`, never the extraction
+  contract. `STRATEGIST_LEVERS` (`STRATEGIST_LEVERS_VERSION`, ~850 tokens) is a
+  strategist-only third block of trigger -> lever move-selection depth (grid
+  position + stance + edges -> which framework lever applies and why, e.g.
+  high-power/low-interest/against -> Mendelow keep satisfied + SCARF autonomy,
+  raise interest not fight power; a defers edge A -> B -> route influence through
+  B via Cialdini authority). It carries advice verbs the mapper must never act on,
+  so it is wired into the strategist prefix ONLY and the mapper's
+  `COMMAND_SYSTEM_BLOCKS` stays byte-identical. Each carries
   `cache_control: { type: "ephemeral" }` on its last static block; per-call text
   and room snapshot stay below in the user turn. On Haiku 4.5 the cache needs a
   4096-token prefix to activate, and each static prefix is ~2k tokens, so
@@ -218,7 +226,8 @@ user prose
   wiring is correct, free, and auto-activates if a prefix later crosses 4096 as
   the curated learnings grow. Command and strategist traces log
   `groundingVersion` and `learningsVersion` (commands also an approximate
-  `systemPrefixTokens`). The knowledge module is not mirrored in `src/`, so it
+  `systemPrefixTokens`; the strategist also logs `leversVersion`). The knowledge
+  module is not mirrored in `src/`, so it
   has its own versions and is excluded from the `COMMAND_PROMPT_VERSION` sync
   check (`COMMAND_SYSTEM_PROMPT` stays identical across both files); the Vite dev
   bridge does not carry it. The controller gets none of it: language and routing

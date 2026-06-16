@@ -9,10 +9,14 @@
 // across src/ and functions/ for the sync check). Extend by tightening, not
 // bloating: keep grounding + learnings under ~900 words.
 //
-// The mapper (/interpret-room-command) gets both plus the extraction contract
-// (COMMAND_SYSTEM_PROMPT). The strategist (/strategist) gets both and never the
-// extraction contract. The controller (/classify-intent) gets neither: it is a
-// language and intent expert, not a framework expert.
+// The mapper (/interpret-room-command) gets FRAMEWORK_GROUNDING + GLOBAL_LEARNINGS
+// plus the extraction contract (COMMAND_SYSTEM_PROMPT). The strategist (/strategist)
+// gets FRAMEWORK_GROUNDING + GLOBAL_LEARNINGS + STRATEGIST_LEVERS (move-selection
+// depth) and never the extraction contract. STRATEGIST_LEVERS is strategist-only:
+// it carries advice/move-selection guidance ("recommend", "route through") that the
+// mapper must never act on, so it is wired into the strategist prefix ONLY and the
+// mapper prefix stays byte-identical. The controller (/classify-intent) gets none of
+// this: it is a language and intent expert, not a framework expert.
 
 export const GROUNDING_VERSION = "framework-grounding-v1-2026-06-09";
 export const FRAMEWORK_GROUNDING = `
@@ -67,4 +71,38 @@ Global learnings. Curated, name-agnostic phrasing-to-mapping heuristics that hol
 - "[person] gets interrupted or talked over" -> power: low. Low deference.
 - "[person] agreed in the room but has not acted" -> stance: unknown. A stated position is not a real interest; watch behavior.
 - "[person] only cares how this hits their team or headcount" -> interest: high, with a SCARF status or fairness threat and a guarded stance.
+`.trim();
+
+// STRATEGIST-ONLY. Move-selection depth layered on FRAMEWORK_GROUNDING. The mapper
+// never sees this: it carries advice verbs ("recommend", "route through", "sequence")
+// that only the strategist should act on. Server-only, never client-readable. Each
+// mapping is trigger -> lever: given a real person's grid position, stance, and edges,
+// which lever applies and why. Name the lever in a move's framework field, and cite the
+// real person or edge it rests on. Never name a lever for a person who is not mapped.
+export const STRATEGIST_LEVERS_VERSION = "strategist-levers-v1-2026-06-16";
+export const STRATEGIST_LEVERS = `
+Strategist lever selection. Depth for choosing moves, layered on the framework grounding above. Apply a lever only when the room data shows its trigger. Name it in the move's framework field and cite the real person or edge it rests on. Never invent a lever to fill the field, and never name one for a person who is not in the room.
+
+GRID POSITION + STANCE -> LEVER.
+- High power, high interest, against: Mendelow manage closely. This is the live blocker spending real attention. Do not delay and do not fight on power. Use Fisher and Ury: hold their position apart from the interest beneath it and trade on the interest.
+- High power, low interest, against or neutral: Mendelow keep satisfied. They can veto but are not spending attention, so read the low interest as a SCARF certainty or autonomy guard, not as agreement. Raise their interest with one tight, low-effort ask framed as protecting what they already hold. Recommend interest-raising, never power-fighting; pushing on power triggers the autonomy threat and hardens the veto.
+- High power, low interest, supportive: a sponsor who delegates. Keep them satisfied and draw on their authority sparingly as air cover (Cialdini authority), not as a day-to-day ally.
+- Low power, high interest, supportive: a champion. Cialdini social proof and commitment. Have them carry the case sideways to peers and make their support visible; do not aim them straight at a high-power blocker, where their low power reads as weak.
+- Low power, high interest, against: a loud objector who cannot decide. Acknowledge to defuse the SCARF fairness or status threat, but do not overspend on them; route the real case to whoever decides.
+- Any power, unknown stance: do not pick a persuasion lever yet. Naming a lever on an unread person is fabrication. The move is to map the stance first.
+
+EDGES -> LEVER.
+- A defers edge from A to B: route influence through B. Do not work A directly on the contested point; move B and A follows. Cite the defers edge. Cialdini authority or social proof via the person they defer to.
+- A blocker who defers to a higher-power decider: the blocker's objection is borrowed power. Resolve it at the source by aligning the decider first, and the blocker has less to stand on.
+- An ally edge between A and B: use the aligned pair as social proof, but only where both already agree. Do not stage agreement that is not in the data.
+- A conflict edge between A and B: do not put them in the same room on this point early. Sequence them apart, settle the higher-power side first, or find a shared interest that outranks the conflict (Fisher and Ury).
+
+SEQUENCING.
+- Resolve the highest-power against or unknown stakeholder before spending effort on already-supportive low-power people.
+- When a supporter defers to the blocker, align the supporter's framing first, then approach the blocker with that framing already embedded, so the blocker meets alignment, not conflict.
+- Thomas-Kilmann: match the approach to the observed conflict behavior. A competing blocker needs a narrow, evidence-led ask, not collaboration theater. An avoiding stakeholder needs a small, forced decision point.
+
+DISCIPLINE.
+- Every lever names a real person or edge already in the room and rides in the cites array.
+- A sparse or unknown room is still grounded. The sharp move there is to name the single thing to map next, not to manufacture a lever.
 `.trim();
