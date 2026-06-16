@@ -776,6 +776,104 @@
       }
     },
     {
+      "id": "strategist-lever-keep-satisfied-raise-interest",
+      "kind": "strategist",
+      "tags": ["strategist", "levers", "trigger_to_lever", "mendelow", "scarf"],
+      "input": {
+        "question": "How do I move Quinn, the CFO, who is against this?",
+        "context": {
+          "room": { "id": "billing", "name": "Billing" },
+          "decision": { "id": "usage", "title": "Usage-based billing", "context": { "deciding": "Move billing to usage-based", "goal": "Approved next planning", "constraint": "Headcount freeze rumored" } },
+          "people": [
+            { "id": "quinn", "name": "Quinn", "role": "CFO", "currentPosition": "against", "currentPlacement": { "power": 85, "interest": 25 }, "goal": "", "context": "", "recentNotes": ["Worried about revenue predictability."] },
+            { "id": "drew", "name": "Drew", "role": "VP Engineering", "currentPosition": "supportive", "currentPlacement": { "power": 60, "interest": 75 }, "goal": "", "context": "", "recentNotes": ["Aligned and willing to make the case."] }
+          ],
+          "edges": [],
+          "recentTurns": []
+        }
+      },
+      "golden": {
+        "answer": "Quinn holds the veto but is barely spending attention on this, so her low interest reads as a certainty guard, not agreement. Do not fight her on power; raise her interest with one tight ask framed as protecting revenue predictability. Use Drew to carry the engineering cost case so Quinn sees cross-functional support before you ask.",
+        "moves": [
+          { "move": "Bring Quinn a single low-effort ask framed as protecting revenue predictability, to raise interest without a power fight.", "framework": "Mendelow keep satisfied + SCARF autonomy" },
+          { "move": "Have Drew make the engineering cost case visibly so Quinn sees aligned support.", "framework": "Cialdini social proof" }
+        ],
+        "cites": ["quinn", "drew"],
+        "grounded": true
+      },
+      "expect": {
+        "requireCites": true,
+        "requireMoves": true,
+        "requiredPeople": ["quinn"],
+        "requiredFrameworkLevers": ["keep satisfied", "SCARF autonomy"]
+      }
+    },
+    {
+      "id": "strategist-lever-defers-route-through",
+      "kind": "strategist",
+      "tags": ["strategist", "levers", "trigger_to_lever", "edges", "cialdini"],
+      "input": {
+        "question": "Drew is the decider but I cannot seem to move him. What do I do?",
+        "context": {
+          "room": { "id": "partner", "name": "Partner Platform" },
+          "decision": { "id": "pilot", "title": "Strategic partner integration", "context": { "deciding": "Land the integration", "goal": "Signed pilot", "constraint": "Board update in 4 weeks" } },
+          "people": [
+            { "id": "drew", "name": "Drew", "role": "VP BD", "currentPosition": "neutral", "currentPlacement": { "power": 80, "interest": 60 }, "goal": "", "context": "", "recentNotes": ["Makes the call but waits for strategy."] },
+            { "id": "robin", "name": "Robin", "role": "Strategy", "currentPosition": "neutral", "currentPlacement": { "power": 75, "interest": 70 }, "goal": "", "context": "", "recentNotes": ["Others run the strategic read past her."] }
+          ],
+          "edges": [
+            { "from": "drew", "to": "robin", "type": "defers" }
+          ],
+          "recentTurns": []
+        }
+      },
+      "golden": {
+        "answer": "Drew is the formal decider but he defers to Robin on strategy, so working Drew directly will not move the room. Align Robin first and Drew follows. Bring Robin the strategic fit she is waiting to see, then let Drew confirm.",
+        "moves": [
+          { "move": "Do not push Drew on the decision; align Robin first, since Drew defers to her and will follow her read.", "framework": "Cialdini authority via the person they defer to" }
+        ],
+        "cites": ["drew", "robin"],
+        "grounded": true
+      },
+      "expect": {
+        "requireCites": true,
+        "requireMoves": true,
+        "requiredPeople": ["robin"],
+        "requiredFrameworkLevers": ["Cialdini"]
+      }
+    },
+    {
+      "id": "strategist-lever-unknown-no-fabrication",
+      "kind": "strategist",
+      "tags": ["strategist", "levers", "discipline", "unknown_stance"],
+      "input": {
+        "question": "How do I win Lee over?",
+        "context": {
+          "room": { "id": "api", "name": "API Platform" },
+          "decision": { "id": "deprecate", "title": "Deprecate v1 API", "context": { "deciding": "Sunset v1", "goal": "Partners migrate without churn", "constraint": "SLA ends in two months" } },
+          "people": [
+            { "id": "lee", "name": "Lee", "role": "Partnerships", "currentPosition": "unknown", "currentPlacement": { "power": 70, "interest": 50 }, "goal": "", "context": "", "recentNotes": ["Cannot read where they stand yet."] }
+          ],
+          "edges": [],
+          "recentTurns": []
+        }
+      },
+      "golden": {
+        "answer": "There is not enough on Lee to pick an approach yet; their stance is unread. Naming a persuasion lever now would be guessing. The sharp move is to find out where Lee actually stands before choosing how to move them.",
+        "moves": [
+          { "move": "Ask Lee directly whether they are for or against the v1 sunset before choosing an approach." }
+        ],
+        "cites": ["lee"],
+        "grounded": true
+      },
+      "expect": {
+        "requireCites": true,
+        "requireMoves": true,
+        "requiredPeople": ["lee"],
+        "forbidFrameworkLevers": ["SCARF", "Cialdini", "Fisher", "Mendelow", "Thomas"]
+      }
+    },
+    {
       "id": "command-map-calibrated-mixed",
       "kind": "command",
       "tags": ["map", "calibration", "inference_discipline", "mixed_input"],

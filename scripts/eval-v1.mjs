@@ -204,6 +204,23 @@ function scoreStrategist(testCase, candidate) {
     const inText = flattenText(normalized).toLowerCase().includes(String(id).toLowerCase());
     checks.push([`required_person_${id}`, inCites || inText]);
   });
+  // Lock the trigger->lever enrichment: a declared lever substring must appear in at
+  // least one move's framework field (case-insensitive). Additive; only fires when a
+  // fixture sets requiredFrameworkLevers, so existing strategist cases are unaffected.
+  (expect.requiredFrameworkLevers || []).forEach((lever) => {
+    const present = normalized.moves.some(
+      (m) => typeof m.framework === "string" && m.framework.toLowerCase().includes(String(lever).toLowerCase())
+    );
+    checks.push([`framework_lever_${lever}`, present]);
+  });
+  // Discipline lock: on an unread (unknown-stance) person the strategist must NOT
+  // manufacture a lever. Assert none of these substrings appear in any framework field.
+  (expect.forbidFrameworkLevers || []).forEach((lever) => {
+    const present = normalized.moves.some(
+      (m) => typeof m.framework === "string" && m.framework.toLowerCase().includes(String(lever).toLowerCase())
+    );
+    checks.push([`no_framework_lever_${lever}`, !present]);
+  });
   return checks;
 }
 

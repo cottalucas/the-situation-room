@@ -5,6 +5,57 @@ entries; correct them with a follow up that references the original.
 
 ---
 
+## 2026-06-16 - Strategist framework depth: server-only STRATEGIST_LEVERS block
+
+Enriched the strategist's framework grounding with concrete trigger -> lever
+move-selection depth so The Read names sharper, better-justified moves. Scoped to
+the Strategist (`/strategist`); no Controller, Mapper, dispatch, contract, or
+`{answer, moves, cites, grounded}` schema change. Model unchanged
+(`claude-haiku-4-5`); a model swap is a separate later decision.
+
+- Two flagged conflicts with the task wording, resolved per the task's own hard
+  constraints (orchestration step 2):
+  1. The task said edit `FRAMEWORK_GROUNDING` in both `src/lib/llm-prompts.js` and
+     `functions/index.js`. Reality: the grounding is server-only in
+     `functions/knowledge.js` and deliberately NOT in `src/lib` (which ships to the
+     browser). Putting it in `src/lib` would leak server-only theory to the client,
+     which the task itself forbids. Resolution: enrich `functions/knowledge.js`
+     only.
+  2. `FRAMEWORK_GROUNDING` is shared by the mapper AND the strategist. The task is
+     "Strategist-only, do not touch the Mapper." Bloating the shared module would
+     feed advice verbs ("recommend", "route through") into the mapper prefix and
+     could silently shift mapper behavior (offline evals use mocked responses and
+     would not catch it). Resolution: add a NEW server-only `STRATEGIST_LEVERS`
+     block (`STRATEGIST_LEVERS_VERSION = strategist-levers-v1-2026-06-16`, ~848
+     tokens) wired into `STRATEGIST_SYSTEM_BLOCKS` ONLY. The mapper's
+     `COMMAND_SYSTEM_BLOCKS` stays byte-identical, so mapper behavior cannot drift.
+- Content: trigger -> lever mappings keyed on grid position + stance + edges, e.g.
+  high-power/low-interest/against -> Mendelow keep satisfied + SCARF autonomy
+  (raise interest, never fight power); a defers edge A -> B -> route influence
+  through B (Cialdini authority via the person they defer to); unknown stance ->
+  do not name a lever, map the stance first. Plus sequencing and discipline rules.
+- `@play` boundary: the play generator (`/generate-play`) uses `PLAY_SYSTEM_PROMPT`
+  only and does NOT consume the grounding module today, so it is untouched here.
+  Wiring the levers into `@play` is a separate change (it would introduce grounding
+  where there is none and re-validate the 29 play goldens); flagged as a follow-up.
+- Fixture-first: three new strategist goldens lock the enrichment via two additive,
+  opt-in scorer checks (`requiredFrameworkLevers`, `forbidFrameworkLevers` in
+  `scripts/eval-v1.mjs`): keep-satisfied/SCARF-autonomy lever, defers-edge ->
+  Cialdini-authority routing, and an unknown-stance discipline case that asserts NO
+  lever is fabricated. Existing discipline guards confirmed still green: grounded
+  cites filtered to real room ids, off-topic + roleplay decline (`grounded:false`,
+  empty moves), banned trait/diagnosis vocabulary absent, no em/en dashes.
+- Trace: strategist meta now also logs `leversVersion`; a `[strategist]` cold-start
+  log prints the cached prefix and levers token counts. The levers carry their own
+  version and are functions-only, so the `COMMAND_PROMPT_VERSION` src/functions
+  sync check is unaffected (the mirrored `STRATEGIST_SYSTEM_PROMPT` is unchanged).
+- Gate: `npm run eval` 21/21 -> 24/24 (the three new goldens); all `verify:*`
+  suites green (classify 31, play 29, self 13, learning 18, onboarding 44,
+  influence 7, influence-ring 26, network 9, persistence 24, autoread 10,
+  confidence 9, resolution 19, guard 12). `node --check` clean on both functions
+  files. The dev Vite bridge does not carry the knowledge module (accepted parity
+  gap), so the enrichment is prod-only.
+
 ## 2026-06-15 - Guided setup is a 4-question flow, no echo, one build pass
 
 Replaced the 3-question guided setup (which echoed a useless one-line
