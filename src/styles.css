@@ -1530,7 +1530,7 @@ code {
 .glyph { width: 64px; height: 40px; stroke: var(--ink-faint); stroke-width: 1.5; fill: none; stroke-linecap: round; }
 .glyph .glyph-dot { fill: var(--ink); stroke: none; }
 .landing-foot { border-top: 1px solid var(--line); padding-top: 24px; }
-.landing-frameworks { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-faint); max-width: 62ch; }
+.landing-frameworks { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-faint); max-width: none; }
 .landing-frameworks strong { color: var(--ink-soft); font-weight: 600; }
 .landing-cta-section { padding: 0; }
 .landing-cta-kicker {

@@ -618,8 +618,11 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   }, [store, onboarding.mode]);
 
   const openOnboardingRoom = useCallback(() => {
-    // Expand the rooms rail and land in the now-populated room.
+    // Finish: close the guided-setup panel and land in the now-populated room on
+    // the People lens. completeOnboarding already selected the room/decision and
+    // set the People tab; we reassert the tab so the end state is deterministic.
     store.setPref("railCollapsed", false);
+    setActiveTab("people");
     setOnboarding((current) => ({ ...current, active: false, busy: false }));
   }, [store]);
 

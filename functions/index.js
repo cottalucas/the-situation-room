@@ -574,11 +574,18 @@ function normalizePlay(raw, participants = []) {
 }
 
 function maxTokensForCommand(command) {
+  // note is single-focus (one person, one note) so it stays small. Every other
+  // command re-serializes the whole room (people, reads, edges) into one JSON
+  // object whose length scales with roster size (up to the 16-person cap in
+  // normalizeRoomUpdate). The model must be able to FINISH that JSON: a
+  // truncated response (stop_reason "max_tokens") is unparseable and surfaces as
+  // a 422 "invalid mapping shape". 4096 gives a full 16-person room comfortable
+  // headroom on every whole-room command. This is a ceiling, not a fixed cost.
   if (command === "note") return 800;
-  if (command === "grid") return 1200;
-  if (command === "network" || command === "net") return 2000;
-  if (command === "create") return 1800;
-  if (command === "map") return 2600;
+  if (command === "grid") return 4096;
+  if (command === "network" || command === "net") return 4096;
+  if (command === "create") return 4096;
+  if (command === "map") return 4096;
   return 1200;
 }
 

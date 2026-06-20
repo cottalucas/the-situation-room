@@ -11,13 +11,6 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
 
   return (
     <div className="landing">
-      <header className="landing-nav">
-        <span className="landing-brand">The Situation Room</span>
-        <button className="landing-register" onClick={() => setAuthOpen(true)}>
-          Get started
-        </button>
-      </header>
-
       <main className="landing-main">
         <section className="landing-hero">
           <span className="eyebrow">For managers and operators who move decisions through people</span>
@@ -54,11 +47,8 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
         <section className="landing-foot">
           <p className="landing-frameworks">
             Grounded in Power and Interest mapping, <strong>SCARF</strong>,{" "}
-            <strong>Thomas Kilmann</strong>, <strong>Cialdini</strong>, and interest based
-            negotiation. Not vibes.
-          </p>
-          <p className="landing-privacy-note">
-            Your notes are encrypted and stay yours. No sharing, no training.
+            <strong>Thomas Kilmann</strong>, <strong>Cialdini</strong>, and interest-based
+            negotiation. Not vibes. Your notes are encrypted and stay yours — no sharing, no training.
           </p>
           <p className="landing-colophon">
             © 2026 Lucas Cotta. All rights reserved.{" "}

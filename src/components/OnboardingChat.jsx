@@ -87,7 +87,7 @@ export function OnboardingChat({
       {phase === "done" ? (
         <div className="onboarding-actions">
           <button type="button" className="btn-primary" onClick={onOpenRoom}>
-            Open room
+            Finish
           </button>
         </div>
       ) : phase === "naming" ? (
