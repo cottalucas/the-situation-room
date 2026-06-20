@@ -610,12 +610,16 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     store.setPref("railCollapsed", false);
     trackEvent("onboarding_skipped", { mode: onboarding.mode });
     setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
-    const emptyRoom = store.getRooms().find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
-    const roomId = emptyRoom?.id || store.createRoom();
-    setActiveRoomId(roomId);
+    // Closing guided setup must NEVER create a room. A room is built only after
+    // the four questions are answered (completeOnboarding). Keep the user on their
+    // current room if they have one, fall back to any existing room, otherwise
+    // leave them on the "set up your first room" empty state with no room created.
+    const existing = store.getRooms();
+    const target = existing.find((r) => r.id === activeRoomId) || existing[0] || null;
+    setActiveRoomId(target ? target.id : null);
     setActiveDecisionId(null);
     setActiveTab("people");
-  }, [store, onboarding.mode]);
+  }, [store, onboarding.mode, activeRoomId]);
 
   const openOnboardingRoom = useCallback(() => {
     // Finish: close the guided-setup panel and land in the now-populated room on
