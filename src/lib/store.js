@@ -483,15 +483,61 @@ export function deleteRoom(roomId) {
   }
 }
 
-export function deletePerson(personId, roomId) {
+export function deletePerson(personId) {
+  // Full removal. "Remove from roster" deletes the person everywhere: every
+  // room roster, every decision's participants/externals/edges/placements, and
+  // the person record itself, so they no longer appear in any People list.
+  // Reuses peopleWithout so dangling relationships on other people are cleaned
+  // up too, the same way the room-delete path does it.
+  if (!state.people[personId]) return;
+
   const touchedRooms = state.rooms
-    .filter((room) => (!roomId || room.id === roomId) && (room.rosterIds || []).includes(personId))
+    .filter((room) => (room.rosterIds || []).includes(personId))
     .map((room) => ({ ...room, rosterIds: room.rosterIds.filter((id) => id !== personId) }));
-  if (!touchedRooms.length) return;
-  const byId = Object.fromEntries(touchedRooms.map((room) => [room.id, room]));
-  const rooms = state.rooms.map((room) => byId[room.id] || room);
-  commit({ ...state, rooms });
-  if (fs()) touchedRooms.forEach((room) => repo.putRoom(uid, room));
+  const roomById = Object.fromEntries(touchedRooms.map((room) => [room.id, room]));
+
+  const touchedDecisions = [];
+  const decisions = state.decisions.map((d) => {
+    const inParticipants = (d.participantIds || []).includes(personId);
+    const inExternals = (d.externalIds || []).includes(personId);
+    const inEdges = (d.edges || []).some((e) => e.from === personId || e.to === personId);
+    if (!inParticipants && !inExternals && !inEdges) return d;
+    const positions = { ...d.positions };
+    const placements = { ...d.placements };
+    const influence = { ...(d.influence || {}) };
+    delete positions[personId];
+    delete placements[personId];
+    delete influence[personId];
+    const next = {
+      ...d,
+      participantIds: (d.participantIds || []).filter((x) => x !== personId),
+      externalIds: (d.externalIds || []).filter((x) => x !== personId),
+      edges: (d.edges || []).filter((e) => e.from !== personId && e.to !== personId),
+      positions, placements, influence,
+    };
+    touchedDecisions.push(next);
+    return next;
+  });
+
+  const { people, changedRelations } = peopleWithout([personId]);
+  const rooms = state.rooms.map((room) => roomById[room.id] || room);
+  commit({ ...state, rooms, decisions, people });
+
+  if (fs()) {
+    touchedRooms.forEach((room) => repo.putRoom(uid, room));
+    touchedDecisions.forEach((d) =>
+      repo.updateDecisionFields(d.roomId, d.id, {
+        participantIds: d.participantIds,
+        externalIds: d.externalIds,
+        edges: d.edges,
+        positions: d.positions,
+        placements: d.placements,
+        influence: d.influence,
+      })
+    );
+    changedRelations.forEach((person) => repo.putPerson(uid, person));
+    repo.deletePersonDocument(personId);
+  }
 }
 
 /* ------------------------------------------------------------------ */

@@ -842,11 +842,18 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   );
   const confirmDeletePerson = useCallback(
     (id) => {
-      store.deletePerson(id, activeRoomId);
+      store.deletePerson(id);
       trackEvent("person_roster_remove");
       setModal(null);
+      // When removed from the person's own detail page, that page now points at
+      // a deleted record. Return the user to the People list of the active
+      // decision, where the person no longer appears.
+      if (route.view === "person" || route.view === "personNotes") {
+        setActiveTab("people");
+        writeSelectionHash(activeRoomId, activeDecisionId);
+      }
     },
-    [store, activeRoomId]
+    [store, activeRoomId, activeDecisionId, route.view]
   );
 
   /* Profile surfaces. Graph taps open the small node summary first; people,
@@ -1910,7 +1917,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             store.updatePerson(personPagePerson.id, patch);
             trackEvent("person_update");
           }}
-          onDelete={room?.rosterIds?.includes(personPagePerson.id) ? (id) => setModal({ type: "deletePerson", id }) : null}
+          onDelete={room?.rosterIds?.includes(personPagePerson.id) && !personPagePerson.isSelf ? (id) => setModal({ type: "deletePerson", id }) : null}
           onOpenFrameworks={openFrameworks}
           onOpenNotes={openPersonNotes}
           onOpenMenu={openMobileMenu}
@@ -2033,7 +2040,7 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       {modal?.type === "deletePerson" && modalPerson && (
         <ConfirmModal
           title="Remove from roster"
-          body={`This removes ${modalPerson.name} from ${room?.name || "this room"}'s roster. Their notes, placements, relationships, and influence in existing decisions stay.`}
+          body={`This permanently removes ${modalPerson.name} from ${room?.name || "this room"} and deletes their notes, placements, relationships, and influence across every decision. This cannot be undone.`}
           phrase="delete"
           confirmLabel="Remove from roster"
           onConfirm={() => confirmDeletePerson(modalPerson.id)}

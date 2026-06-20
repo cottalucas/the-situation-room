@@ -1366,9 +1366,10 @@ code {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  /* Above the mobile command companion (130) so a modal opened from the "/"
-     button is visible, not hidden behind the full-screen companion panel. */
-  z-index: 140;
+  /* Above the mobile command companion (130) and the full-screen .page
+     overlay (150) so a modal opened from the "/" button or from a person/
+     frameworks page is visible, not hidden behind that full-screen panel. */
+  z-index: 160;
   background: rgba(26, 25, 22, 0.28);
   display: flex;
   align-items: center;
@@ -1545,6 +1546,13 @@ code {
   font-size: 13px;
   color: var(--ink-faint);
 }
+.landing-colophon {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+.landing-colophon-link { color: var(--ink-soft); text-decoration: underline; text-underline-offset: 2px; }
+.landing-colophon-link:hover { color: var(--ink); }
 
 /* ================================================================== */
 /* RESPONSIVE                                                          */

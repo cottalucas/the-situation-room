@@ -20,7 +20,7 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
 
       <main className="landing-main">
         <section className="landing-hero">
-          <span className="eyebrow">For PMs and operators who move decisions through people</span>
+          <span className="eyebrow">For managers and operators who move decisions through people</span>
           <h1 className="landing-title">The Situation Room</h1>
           <p className="landing-prop">
             Read the room before you walk into it. Map who holds power, who cares, and who
@@ -51,15 +51,6 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
           </p>
         </section>
 
-        <section className="landing-cta-section">
-          <p className="landing-cta-kicker">Ready to read the room?</p>
-          <div className="landing-cta-row">
-            <button className="landing-cta" onClick={() => setAuthOpen(true)}>
-              Get started →
-            </button>
-          </div>
-        </section>
-
         <section className="landing-foot">
           <p className="landing-frameworks">
             Grounded in Power and Interest mapping, <strong>SCARF</strong>,{" "}
@@ -68,6 +59,12 @@ export default function Landing({ onLocalEnter, configured, localPreview = false
           </p>
           <p className="landing-privacy-note">
             Your notes are encrypted and stay yours. No sharing, no training.
+          </p>
+          <p className="landing-colophon">
+            © 2026 Lucas Cotta. All rights reserved.{" "}
+            <a className="landing-colophon-link" href="https://lucascotta.ch" target="_blank" rel="noreferrer">
+              More products by Lucas Cotta
+            </a>
           </p>
         </section>
       </main>
