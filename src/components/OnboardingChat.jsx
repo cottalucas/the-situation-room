@@ -73,7 +73,7 @@ export function OnboardingChat({
         )}
         {busy && (
           <div className="onboarding-msg onboarding-assistant">
-            <p>Building the room from your answers.</p>
+            <p>Working through your answer and updating the room…</p>
           </div>
         )}
         {error && (
@@ -114,7 +114,7 @@ export function OnboardingChat({
       ) : (
         <form className="onboarding-form" onSubmit={onSubmit}>
           <label className="onboarding-progress" htmlFor="onboarding-answer">
-            Question {step + 1} of {totalSteps}
+            {question?.id === "roomName" ? "Name your room" : `Question ${step + 1} of ${totalSteps}`}
           </label>
           <textarea
             id="onboarding-answer"

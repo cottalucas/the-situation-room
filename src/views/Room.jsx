@@ -14,7 +14,7 @@ import {
   ONBOARDING_INTRO_RETURNING,
   ONBOARDING_QUESTIONS,
   buildClosingSummary,
-  buildOnboardingCommandPlan,
+  buildOnboardingStepCommand,
   deriveDecisionSeed,
   forceCreatePeople,
   hasUsableRoom,
@@ -348,6 +348,10 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     thinking: false,
     busy: false,
     error: "",
+    // The room/decision being built incrementally across the answers. Created
+    // lazily on the first pipeline answer; discarded if the user closes early.
+    roomId: null,
+    decisionId: null,
   });
 
   const rooms = store.getRooms();
@@ -475,6 +479,10 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       // the screen; Phase C expands it again on "Open room".
       if (auto) store.setPref("railCollapsed", true);
       const intro = mode === "guided" ? ONBOARDING_INTRO_RETURNING : ONBOARDING_INTRO;
+      // Suppress the realtime listener for the whole guided-setup session so its
+      // lagging snapshots can't clobber the room we build optimistically across
+      // the answers. Resumed on finish or close.
+      store.setRemoteSuppressed(true);
       setOnboarding({
         active: true,
         mode,
@@ -490,6 +498,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         thinking: false,
         busy: false,
         error: "",
+        roomId: null,
+        decisionId: null,
       });
       trackEvent("onboarding_started", { auto, mode });
     },
@@ -606,25 +616,29 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   // and command surface visible, never in a modal. Manual room editing stays
   // reachable through the existing room-settings entry point (rail, empty state).
   const dismissOnboarding = useCallback(() => {
+    store.setRemoteSuppressed(false);
     store.setPref("onboardingPrompted", true);
     store.setPref("railCollapsed", false);
     trackEvent("onboarding_skipped", { mode: onboarding.mode });
-    setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "" }));
-    // Closing guided setup must NEVER create a room. A room is built only after
-    // the four questions are answered (completeOnboarding). Keep the user on their
-    // current room if they have one, fall back to any existing room, otherwise
-    // leave them on the "set up your first room" empty state with no room created.
-    const existing = store.getRooms();
+    // Closing before completion discards the partially built room so a half-built
+    // room is never left behind. A room only persists once guided setup finishes.
+    const inProgressRoomId = onboarding.roomId;
+    if (inProgressRoomId && onboarding.phase !== "done") store.deleteRoom(inProgressRoomId);
+    setOnboarding((current) => ({ ...current, active: false, phase: "questions", thinking: false, busy: false, error: "", roomId: null, decisionId: null }));
+    // Land on the user's current room if it still exists, else any other existing
+    // room, else the "set up your first room" empty state. Never re-create a room.
+    const existing = store.getRooms().filter((r) => r.id !== inProgressRoomId);
     const target = existing.find((r) => r.id === activeRoomId) || existing[0] || null;
     setActiveRoomId(target ? target.id : null);
     setActiveDecisionId(null);
     setActiveTab("people");
-  }, [store, onboarding.mode, activeRoomId]);
+  }, [store, onboarding.mode, onboarding.roomId, onboarding.phase, activeRoomId]);
 
   const openOnboardingRoom = useCallback(() => {
-    // Finish: close the guided-setup panel and land in the now-populated room on
-    // the People lens. completeOnboarding already selected the room/decision and
-    // set the People tab; we reassert the tab so the end state is deterministic.
+    // Finish: resume the realtime listener, close the panel, and land in the
+    // now-populated room on the People lens. The room/decision were selected as
+    // they were created; we reassert the People tab so the end state is stable.
+    store.setRemoteSuppressed(false);
     store.setPref("railCollapsed", false);
     setActiveTab("people");
     setOnboarding((current) => ({ ...current, active: false, busy: false }));
@@ -927,11 +941,23 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       // as per-user learning examples. Each is { axis, outcome, confidence }.
       const learned = [];
       const caps = commandCapabilities(sourceCommand);
+      // Within one update the model refers to the people it just listed by its own
+      // ids/names in the edges. createPerson assigns fresh store ids, so map the
+      // model's id and name to the real id here; edges resolve through this first
+      // to avoid creating a phantom person for an endpoint that is really one of
+      // the people in this same update.
+      const modelIdMap = new Map();
+      const mapModelRef = (value, storeId) => {
+        const key = String(value || "").toLowerCase().trim();
+        if (key && storeId) modelIdMap.set(key, storeId);
+      };
 
       update.people.forEach((item) => {
         const existed = Boolean(findPersonRef(item.id || item.name, currentParticipants));
         const id = ensurePersonForUpdate(item, currentRoom, currentDecision, currentParticipants);
         if (!id) return;
+        mapModelRef(item.id, id);
+        mapModelRef(item.name, id);
         if (!existed && item.create) created += 1;
         const person = store.getPerson(id);
         if (item.role && person && !person.role) store.updatePerson(id, { role: item.role });
@@ -990,8 +1016,16 @@ export default function Room({ onExit, userId, userName, userEmail }) {
       });
 
       if (caps.edges) update.edges.forEach((edge) => {
-        const from = ensurePersonForUpdate({ id: edge.from, name: edge.from, create: sourceCommand !== "grid" }, currentRoom, currentDecision, currentParticipants);
-        const to = ensurePersonForUpdate({ id: edge.to, name: edge.to, create: sourceCommand !== "grid" }, currentRoom, currentDecision, currentParticipants);
+        // Resolve an endpoint to a person already created in this same update
+        // before falling back to general resolution / creation, so an edge that
+        // names one of this update's people never spawns a phantom duplicate.
+        const resolveEndpoint = (ref) => {
+          const mapped = modelIdMap.get(String(ref || "").toLowerCase().trim());
+          if (mapped) return mapped;
+          return ensurePersonForUpdate({ id: ref, name: ref, create: sourceCommand !== "grid" }, currentRoom, currentDecision, currentParticipants);
+        };
+        const from = resolveEndpoint(edge.from);
+        const to = resolveEndpoint(edge.to);
         if (!from || !to || from === to) return;
         const id = store.addEdge(targetDecisionId, { from, to, type: edge.type });
         if (id) edges += 1;
@@ -1163,139 +1197,133 @@ export default function Room({ onExit, userId, userName, userEmail }) {
     [applyRoomUpdate, decision, participants, room, store]
   );
 
-  const completeOnboarding = useCallback(
-    async (answers, nameOverride) => {
-      if (!LIVE_LLM) {
-        throw new Error("Guided setup needs live local reasoning. Turn on VITE_ENABLE_LIVE_LLM, then try again.");
-      }
-
-      const seed = deriveDecisionSeed(answers.decision, nameOverride);
-      const emptyRoom = rooms.find((r) => !hasUsableRoom([r], (roomId) => store.getDecisions(roomId)));
-      const roomId = emptyRoom?.id || store.createRoom(seed.roomName);
-      if (emptyRoom) store.updateRoom(roomId, { name: seed.roomName });
-      trackEvent("onboarding_room_created", { reused: Boolean(emptyRoom) });
-
-      const decisionId = store.createDecision(roomId, {
-        title: seed.title,
-        context: seed.context,
-        participants: [],
-      });
-      store.ensureChat(decisionId);
-      setActiveRoomId(roomId);
-      setActiveDecisionId(decisionId);
-      setActiveTab("people");
-      setShowPath(false);
-      // Redirect to the new room's URL with its seeded decision, as a real route
-      // change so a refresh holds the position.
-      writeSelectionHash(roomId, decisionId, { push: true });
-
-      const plan = buildOnboardingCommandPlan(answers);
-      for (const item of plan) {
-        const currentDecision = store.getDecision(decisionId);
-        const currentRoom = store.getRoom(roomId);
-        const resp = await interpretRoomCommand({
-          command: item.command,
-          text: item.text,
-          room: currentRoom,
-          decision: currentDecision,
-          participants: store.getParticipants(decisionId),
-          edges: store.getEdges(decisionId),
-          messages: [],
-        });
-        if (resp.kind !== "update") throw new Error(resp.body || "The mapping pass failed.");
-        // The @create pass must never silently drop a named person, or the room
-        // can land on "No participants". Force-create guarantees each extracted
-        // person is added; apply-time resolution still prevents duplicates.
-        const update = item.command === "create" ? forceCreatePeople(resp.update) : resp.update;
-        applyRoomUpdate(update, item.command, { roomId, decisionId });
-      }
-
-      const finalDecision = store.getDecision(decisionId);
-      const finalParticipants = store.getParticipants(decisionId);
-      if (!finalParticipants.length) throw new Error("I could not map any people from that answer. Try names with short roles.");
-      setActiveTab("people");
-
-      const placedCount = Object.keys(finalDecision?.placements || {}).filter(
-        (id) => finalParticipants.some((p) => p.id === id)
-      ).length;
-      const edgeCount = (finalDecision?.edges || []).length;
-
-      store.pushMessage(decisionId, {
-        type: "updated",
-        label: "Room ready",
-        body: "Your first map is ready. Run @read for the first room read, or ask @ask who to talk to first.",
-      });
-      trackEvent("onboarding_completed", { people: finalParticipants.length, edges: edgeCount });
-
-      return {
-        names: finalParticipants.map((p) => p.name),
-        placedCount,
-        edgeCount,
-      };
-    },
-    [applyRoomUpdate, rooms, store]
-  );
-
+  // Sequenced guided setup. Each content answer (self, decision, people, context)
+  // runs through the relay against the room built so far and is persisted before
+  // the next question appears; the visible "working" pause is that real relay
+  // call. The final step (roomName) just labels the room. The room/decision are
+  // created lazily on the first answer and discarded if the user closes early.
   const submitOnboarding = useCallback(
     async (e) => {
       e.preventDefault();
       if (onboarding.thinking || onboarding.busy) return;
 
-      // Question phase. Q1 to Q3 are required; only the last question is
-      // skippable. Answers are stored intact and never echoed back as a
-      // restatement.
       const question = ONBOARDING_QUESTIONS[onboarding.step];
       const raw = onboarding.draft.trim();
       const skipped = !raw && question.skippable;
       if (!raw && !skipped) return;
       const answer = skipped ? "" : raw;
       const answers = { ...onboarding.answers, [question.id]: answer };
-      const isLast = onboarding.step >= ONBOARDING_QUESTIONS.length - 1;
 
-      // Last answer in: build the room from all four answers in one pass.
-      if (isLast) {
+      // Final step: name the room (or default to the decision title) and finish.
+      if (question.id === "roomName") {
+        const seed = deriveDecisionSeed(answers.decision);
+        const name = answer.replace(/\s+/g, " ").trim().slice(0, 80) || seed.title || "New room";
+        if (onboarding.roomId) store.updateRoom(onboarding.roomId, { name });
+        const finalParticipants = onboarding.decisionId ? store.getParticipants(onboarding.decisionId) : [];
+        const finalDecision = onboarding.decisionId ? store.getDecision(onboarding.decisionId) : null;
+        const edgeCount = (finalDecision?.edges || []).length;
+        if (onboarding.decisionId) {
+          store.pushMessage(onboarding.decisionId, {
+            type: "updated",
+            label: "Room ready",
+            body: "Your map is ready. Run @read for the first room read, or ask @ask who to talk to first.",
+          });
+        }
+        trackEvent("onboarding_completed", { people: finalParticipants.length, edges: edgeCount });
         setOnboarding((current) => ({
           ...current,
           answers,
           draft: "",
-          busy: true,
-          error: "",
-          messages: [...current.messages, { role: "user", body: skipped ? "Skip" : answer }],
+          busy: false,
+          phase: "done",
+          messages: [
+            ...current.messages,
+            { role: "user", body: skipped ? "Skip" : answer },
+            { role: "assistant", body: buildClosingSummary({ names: finalParticipants.map((p) => p.name), placedCount: finalParticipants.length, edgeCount }) },
+          ],
         }));
-        try {
-          const summary = await completeOnboarding(answers);
-          setOnboarding((current) => ({
-            ...current,
-            busy: false,
-            phase: "done",
-            messages: [...current.messages, { role: "assistant", body: buildClosingSummary(summary) }],
-          }));
-        } catch (err) {
-          setOnboarding((current) => ({
-            ...current,
-            busy: false,
-            error: err?.message || "Guided setup failed. You can try again or set up the room yourself.",
-          }));
-        }
         return;
       }
 
-      // Advance to the next question. No reflection, no echo.
-      const nextStep = onboarding.step + 1;
+      if (!LIVE_LLM) {
+        setOnboarding((current) => ({
+          ...current,
+          error: "Guided setup needs live reasoning. Turn on VITE_ENABLE_LIVE_LLM, then try again.",
+        }));
+        return;
+      }
+
+      // Show the real working state while this answer runs through the pipeline.
       setOnboarding((current) => ({
         ...current,
         answers,
         draft: "",
-        step: nextStep,
+        busy: true,
         error: "",
-        messages: [
-          ...current.messages,
-          { role: "user", body: answer },
-          { role: "assistant", body: ONBOARDING_QUESTIONS[nextStep].prompt },
-        ],
+        messages: [...current.messages, { role: "user", body: skipped ? "Skip" : answer }],
       }));
+
+      try {
+        // Lazily create the room + decision on the first answer so the build has a
+        // target. Self is added up front so the operator always renders on every
+        // lens. The room name is set at the final step; the decision title/context
+        // is refined when the decision answer arrives (decision naming unchanged).
+        let roomId = onboarding.roomId;
+        let decisionId = onboarding.decisionId;
+        if (!roomId || !decisionId) {
+          const seed = deriveDecisionSeed(answers.decision || "");
+          roomId = store.createRoom(seed.title || "New room");
+          decisionId = store.createDecision(roomId, { title: seed.title, context: seed.context, participants: [] });
+          const selfId = store.getSelfId();
+          if (selfId) store.addParticipant(decisionId, selfId);
+          store.ensureChat(decisionId);
+          setActiveRoomId(roomId);
+          setActiveDecisionId(decisionId);
+          setShowPath(false);
+          writeSelectionHash(roomId, decisionId, { push: true });
+          trackEvent("onboarding_room_created", {});
+        }
+        if (question.id === "decision") {
+          const seed = deriveDecisionSeed(answer);
+          store.updateDecision(decisionId, { title: seed.title, context: seed.context });
+        }
+
+        // Run this answer through the relay and apply it before advancing.
+        const cmd = skipped ? null : buildOnboardingStepCommand(question.id, answer);
+        if (cmd) {
+          const resp = await interpretRoomCommand({
+            command: cmd.command,
+            text: cmd.text,
+            room: store.getRoom(roomId),
+            decision: store.getDecision(decisionId),
+            participants: store.getParticipants(decisionId),
+            edges: store.getEdges(decisionId),
+            messages: [],
+          });
+          if (resp.kind !== "update") throw new Error(resp.body || "That pass failed. You can try again.");
+          // Force-create guarantees a named person is never dropped; apply-time
+          // resolution still prevents duplicates of people already in the room.
+          applyRoomUpdate(forceCreatePeople(resp.update), "map", { roomId, decisionId });
+        }
+
+        const nextStep = onboarding.step + 1;
+        setOnboarding((current) => ({
+          ...current,
+          roomId,
+          decisionId,
+          busy: false,
+          step: nextStep,
+          messages: [...current.messages, { role: "assistant", body: ONBOARDING_QUESTIONS[nextStep].prompt }],
+        }));
+      } catch (err) {
+        setOnboarding((current) => ({
+          ...current,
+          busy: false,
+          error: err?.message || "That pass failed. You can try again.",
+        }));
+      }
     },
-    [completeOnboarding, onboarding]
+    [onboarding, store, applyRoomUpdate]
   );
 
   /* chat */

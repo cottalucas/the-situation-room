@@ -34,6 +34,13 @@ let uid = null;
 let remoteUnsubscribe = null;
 let connectionToken = 0;
 let connectingUid = null;
+// When a flow does many rapid optimistic local writes (guided setup builds a
+// whole room across several relay passes), the realtime listener can deliver a
+// lagging server snapshot that overwrites that just-written local state. While
+// suppressed, incoming snapshots are dropped so optimistic local state is never
+// clobbered mid-build; the writes still go to Firestore. On resume we keep the
+// (correct) local state and let the next live snapshot reconcile.
+let remoteSuppressed = false;
 const DEFAULT_PREFS = { railCollapsed: false, userSettingsReady: !isConfigured, remoteReady: false };
 
 function withDefaultPrefs(prefs = {}) {
@@ -140,6 +147,7 @@ export async function connect(authedUid) {
   const token = ++connectionToken;
   remoteUnsubscribe?.();
   remoteUnsubscribe = null;
+  remoteSuppressed = false; // never carry a suppression flag across reconnects
   mode = "firestore";
   uid = authedUid;
   connectingUid = authedUid;
@@ -173,6 +181,10 @@ export async function connect(authedUid) {
       uid,
       (loaded) => {
         if (token !== connectionToken) return;
+        // Never let a lagging snapshot overwrite optimistic local state that a
+        // build-in-progress (e.g. guided setup) is still writing. Dropping it is
+        // safe: local state is the newer truth and a fresh snapshot will follow.
+        if (remoteSuppressed) return;
         commit({
           ...loaded,
           chats: chatsFor(loaded.decisions, loaded.chats),
@@ -210,6 +222,13 @@ export async function reset() {
   uid = null;
   await clearCache();
   commit(buildLocalState());
+}
+
+// Pause/resume the realtime listener's clobber of local state. Guided setup wraps
+// its multi-pass build in setRemoteSuppressed(true)/(false) so lagging snapshots
+// cannot wipe the participants/placements it is writing. No-op in local mode.
+export function setRemoteSuppressed(on) {
+  remoteSuppressed = Boolean(on);
 }
 
 const fs = () => mode === "firestore";

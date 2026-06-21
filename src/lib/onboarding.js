@@ -17,15 +17,24 @@ export const ONBOARDING_QUESTIONS = [
     prompt: "Anything else that's relevant — history, timing, constraints, politics, whatever shapes this room.",
     skippable: true,
   },
+  {
+    id: "roomName",
+    prompt: "Last one — what should we call this room? A short name you'll recognize later.",
+    skippable: true,
+  },
 ];
+
+// Question ids that run through the relay to build the room. roomName is a plain
+// label step, so it is not in this set.
+export const ONBOARDING_PIPELINE_STEPS = new Set(["self", "decision", "people", "context"]);
 
 // First-run framing carries a one-line product intro. The returning-user door
 // ("+ New room") reuses the same engine without it.
 export const ONBOARDING_INTRO =
-  "The Situation Room maps the people behind a decision and helps you plan how to move the room. Four quick questions and I'll build your first map.";
+  "The Situation Room maps the people behind a decision and helps you plan how to move the room. I'll build your first map one answer at a time as you go.";
 
 export const ONBOARDING_INTRO_RETURNING =
-  "Let's map a new decision. Four quick questions and I'll build the room.";
+  "Let's map a new decision. I'll build the room one answer at a time as you go.";
 
 function cleanAnswer(value, max = 1200) {
   return String(value || "")
@@ -163,6 +172,39 @@ export function forceCreatePeople(update) {
   return {
     ...update,
     people: update.people.map((p) => ({ ...p, create: p.create || Boolean(p.name) })),
+  };
+}
+
+// Per-step lead-in for the sequenced flow. Each guided-setup answer is run
+// through the relay on its own (against the room built so far), so the room
+// grows one answer at a time instead of one batch pass at the end.
+const STEP_LEADS = {
+  self:
+    "This is the operator describing themselves. Resolve them to the existing isSelf user; never create a second person for the operator. Set the operator's role and add an edge for who they report to. Only create another person if the operator explicitly names someone. ",
+  decision:
+    "This describes the decision and the desired outcome. Do not create a person from a generic function or team name such as Sales, Finance, or Engineering; only create a person if a specific individual is named. ",
+  people:
+    "Create one person for each distinct individual named or described. Use the person's name; when only a role is given, for example \"the head of engineering\", use that role as the name and set it as the role. Resolve anyone already in the room instead of creating a duplicate. ",
+  context:
+    "This adds history, timing, constraints, and politics. Enrich the people already in the room with any stance, power, interest, influence, or relationship it supports. Resolve to existing people; do not create duplicates. ",
+};
+
+/**
+ * Build the single relay command for one guided-setup answer. Returns null for
+ * the room-name step or an empty answer (nothing to run through the pipeline).
+ * Uses the comprehensive @map shape so each answer can add people, grid reads,
+ * influence, and relationships, resolved against the people already in the room.
+ */
+export function buildOnboardingStepCommand(questionId, answer) {
+  const text = sanitizeAnswer(answer);
+  if (!text || !ONBOARDING_PIPELINE_STEPS.has(questionId)) return null;
+  return {
+    command: "map",
+    text:
+      (STEP_LEADS[questionId] || "") +
+      "For every person, extract every read the text actually supports: stance toward the decision (for, against, neutral, or unknown), power and interest using the calibrated bands, influence over this decision, a short note in the operator's words, and any relationship the text states or strongly implies (who reports to whom, who is aligned, who leans on whom, who holds the power). " +
+      "Leave a field out when the text gives no signal for it. Never invent a person, a placement, a stance, an influence level, or a relationship the text does not support. " +
+      "Operator's words: " + text,
   };
 }
 
