@@ -104,7 +104,7 @@ function NoteList({ notes }) {
  * mapped framework state, and route to all notes. Generic framework explanation
  * never lives here; the quiet explainer link routes to the shared framework page.
  */
-export function PersonPage({ person, position, placement, onBack, onSave, onDelete, onOpenFrameworks, onOpenNotes, onOpenMenu }) {
+export function PersonPage({ person, position, placement, onBack, onSave, onDelete, onOpenFrameworks, onOpenNotes, onOpenMenu, embedded = false }) {
   const stance = position || "unknown";
   const pi = placement || { power: 50, interest: 55 };
   const quad = quadrantFor(pi.power, pi.interest);
@@ -124,39 +124,29 @@ export function PersonPage({ person, position, placement, onBack, onSave, onDele
     { key: "fisher", name: "Fisher & Ury", rationale: read.fisherUry },
   ];
 
-  return (
-    <div className="page person-page">
-      <div className="page-bar page-bar-app page-desktop-bar">
-        <button type="button" className="page-back" onClick={onBack}>
-          ‹ People
-        </button>
-        <span className="page-brand">The Situation Room</span>
-      </div>
-      <div className="page-mobile-top">
-        <span className="page-brand">The Situation Room</span>
-        <button className="burger page-menu" onClick={onOpenMenu} aria-label="Open menu">
-          <span />
-          <span />
-          <span />
-        </button>
-      </div>
-      <div className="page-mobile-back">
-        <button type="button" className="page-back" onClick={onBack}>
-          ‹ People
-        </button>
-      </div>
-      <div className="page-scroll">
-        <header className="person-page-head">
-          <Avatar name={person.name} size="lg" />
-          <div className="person-page-id">
-            <h1 className="page-title">{person.name}</h1>
-            <div className="person-page-role">
-              <EditableField value={person.role} placeholder="Add a role" editable onSave={(v) => onSave?.({ role: v })} />
-            </div>
+  const body = (
+    <div className="page-scroll">
+      <header className="person-page-head">
+        <Avatar name={person.name} size="lg" />
+        <div className="person-page-id">
+          <h1 className="page-title">
+            <EditableField
+              value={person.name}
+              placeholder="Add a name"
+              editable
+              onSave={(v) => {
+                const name = v.trim();
+                if (name) onSave?.({ name });
+              }}
+            />
+          </h1>
+          <div className="person-page-role">
+            <EditableField value={person.role} placeholder="Add a role" editable onSave={(v) => onSave?.({ role: v })} />
           </div>
-        </header>
+        </div>
+      </header>
 
-        <div className="person-page-meta">
+      <div className="person-page-meta">
           <PositionBadge position={stance} />
           <QuadChip quad={quad} />
           <span className="muted-text">
@@ -240,7 +230,47 @@ export function PersonPage({ person, position, placement, onBack, onSave, onDele
             </button>
           </div>
         )}
+    </div>
+  );
+
+  // Embedded: lives inside the People column, so the rooms rail and the
+  // conversation panel stay visible. Just a back control + the content.
+  if (embedded) {
+    return (
+      <div className="person-page-embedded">
+        <div className="person-embedded-bar">
+          <button type="button" className="page-back" onClick={onBack}>
+            ‹ People
+          </button>
+        </div>
+        {body}
       </div>
+    );
+  }
+
+  // Full-screen fallback (kept for direct deep links to a person route).
+  return (
+    <div className="page person-page">
+      <div className="page-bar page-bar-app page-desktop-bar">
+        <button type="button" className="page-back" onClick={onBack}>
+          ‹ People
+        </button>
+        <span className="page-brand">The Situation Room</span>
+      </div>
+      <div className="page-mobile-top">
+        <span className="page-brand">The Situation Room</span>
+        <button className="burger page-menu" onClick={onOpenMenu} aria-label="Open menu">
+          <span />
+          <span />
+          <span />
+        </button>
+      </div>
+      <div className="page-mobile-back">
+        <button type="button" className="page-back" onClick={onBack}>
+          ‹ People
+        </button>
+      </div>
+      {body}
     </div>
   );
 }

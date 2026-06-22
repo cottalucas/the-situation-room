@@ -2706,6 +2706,14 @@ code {
 }
 .page-head { margin-bottom: var(--s5); }
 .page-title { font-family: var(--serif); font-size: clamp(28px, 6vw, 36px); font-weight: 600; line-height: 1.1; margin: 6px 0 0; }
+/* Editable name keeps the serif title look in both the button and the input. */
+.page-title .editable-text { display: inline-flex; align-items: baseline; }
+.page-title .inline-edit { font-family: var(--serif); font-size: inherit; font-weight: inherit; line-height: 1.1; padding: 2px 8px; }
+/* Person page embedded in the People column: fills the column and scrolls, so
+   the rooms rail and the conversation panel stay in view. */
+.person-page-embedded { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.person-embedded-bar { flex-shrink: 0; padding: 12px clamp(12px, 3vw, 24px); border-bottom: 1px solid var(--line); }
+.person-page-embedded .page-scroll { padding-top: clamp(16px, 3vw, 28px); }
 .page-lede { font-size: 15px; line-height: 1.6; color: var(--ink-soft); margin-top: 12px; max-width: 60ch; }
 
 .fw-ref { padding: var(--s5) 0; border-top: 1px solid var(--line); }
