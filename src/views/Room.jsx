@@ -1689,9 +1689,11 @@ export default function Room({ onExit, userId, userName, userEmail }) {
   const summaryPosition = summaryPerson ? decision?.positions?.[summaryPerson.id] || "unknown" : "unknown";
   const summaryPlacement = summaryPerson && decision ? store.getPlacement(decision.id, summaryPerson.id) : null;
   const onGraphLens = activeTab === "grid" || activeTab === "network";
+  // The person page now renders inside the People column (so the rooms rail and
+  // the conversation panel stay visible), so it is NOT a full-screen route here.
   const routePageOpen =
     route.view === "frameworks" ||
-    ((route.view === "person" || route.view === "personNotes") && Boolean(personPagePerson));
+    (route.view === "personNotes" && Boolean(personPagePerson));
 
   // Account identity: the saved profile name wins over the Auth display name in
   // the greeting and everywhere the name is shown.
@@ -1811,7 +1813,24 @@ export default function Room({ onExit, userId, userName, userEmail }) {
             ) : (
               <>
                 <main className="workspace">
-                  {!rooms.length ? (
+                  {route.view === "person" && personPagePerson ? (
+                    <PersonPage
+                      embedded
+                      key={personPagePerson.id}
+                      person={personPagePerson}
+                      position={personPagePosition}
+                      placement={personPagePlacement}
+                      onBack={pageBack}
+                      onSave={(patch) => {
+                        store.updatePerson(personPagePerson.id, patch);
+                        trackEvent("person_update");
+                      }}
+                      onDelete={room?.rosterIds?.includes(personPagePerson.id) && !personPagePerson.isSelf ? (id) => setModal({ type: "deletePerson", id }) : null}
+                      onOpenFrameworks={openFrameworks}
+                      onOpenNotes={openPersonNotes}
+                      onOpenMenu={openMobileMenu}
+                    />
+                  ) : !rooms.length ? (
                     <div className="empty-state">
                       <div className="empty-icon">◦</div>
                       <p className="empty-title">Set up your first room</p>
@@ -1940,24 +1959,8 @@ export default function Room({ onExit, userId, userName, userEmail }) {
         />
       )}
 
-      {/* Person, person notes, and frameworks pages, full-screen and linkable. */}
-      {route.view === "person" && personPagePerson && (
-        <PersonPage
-          key={personPagePerson.id}
-          person={personPagePerson}
-          position={personPagePosition}
-          placement={personPagePlacement}
-          onBack={pageBack}
-          onSave={(patch) => {
-            store.updatePerson(personPagePerson.id, patch);
-            trackEvent("person_update");
-          }}
-          onDelete={room?.rosterIds?.includes(personPagePerson.id) && !personPagePerson.isSelf ? (id) => setModal({ type: "deletePerson", id }) : null}
-          onOpenFrameworks={openFrameworks}
-          onOpenNotes={openPersonNotes}
-          onOpenMenu={openMobileMenu}
-        />
-      )}
+      {/* Person notes and frameworks remain full-screen, linkable pages. The
+          person page itself is now embedded in the People column above. */}
       {route.view === "personNotes" && personPagePerson && (
         <PersonNotesPage
           key={`${personPagePerson.id}-notes`}
